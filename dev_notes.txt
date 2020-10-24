@@ -9,3 +9,33 @@
 
 Разное
 linux syscall args [ %rdi, %rsi, %rdx, %r10, %r8, %r9 ]
+
+
+// atoi function
+// <str pointer> <number> <string>
+
+str_size(string) - string size
+str_char(string, n) - n-th char
+
+str_size "123"      | 3
+str_char "123" 1    | '2'
+
+def "atoi" {
+    drop-n 3 swap-n 3 dup-n 2 
+    while { 
+        not and 
+            = 
+                str_char dup-n 4 dup-n 5 
+                str_size dup-n 4 
+            and 
+                < str_char dup-n 3 dup-n 4 48 
+                < str_char dup-n 2 dup-n 3 48 
+    } { 
+        drop swap-n 2
+        + 
+            * 10 dup-n 3 
+            - str_char dup-n 3 dup-n 4 48
+        drop swap-n 1
+        + 1 dup-n 1 
+    } 0 0
+};

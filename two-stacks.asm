@@ -1,6 +1,5 @@
         global    _start
 
-   
 %macro  push_registers 0
         push        r11
         push        r12
@@ -31,11 +30,8 @@
 %endmacro
 
 
-
-stdin_read_buffer_size: equ    1024
 data_stack_size:        equ    10240
 return_stack_size:      equ    10240
-dictionary_size:        equ    10240
 
         section   .text
 
@@ -50,10 +46,24 @@ iloop:
 data_stack_underflow_handler:
         mov         r12, data_stack
         mov         r13, return_stack
-        mov         r11, i_data_stack_underflow_handler
+        mov         r11, f_data_stack_underflow_handler
         jmp iloop
 
 
+
+i_call:
+        mov         rax, [r11]              ; next word is the instruciton pointer
+        sub         r11, 8                  ; move instruction pointer to the next instruction
+        mov         [r13], r11              ; save return pointer
+        add         r13, 8                  ; bump return stack, TODO: check for overflow
+        mov         r11, rax                ; jump to callee
+        jmp iloop
+
+i_return:
+        sub         r13, 8                  ; pop return stack, TODO: check for underflow
+        mov         r11, [r13]              ; restore return pointer
+        jmp iloop
+        
 
 ;<buffer pointer> <length>
 print_buffer:
@@ -67,7 +77,7 @@ print_buffer:
         pop_registers
         jmp iloop
 
-push_to_stack:
+i_push_to_stack:
         mov         rax, [r11]              ; next word is value
         mov         [r12], rax              ; write to stack
         sub         r11, 8                  ; move instruction pointer to the next instruction
@@ -80,7 +90,7 @@ exit:
         syscall
             
 _start: 
-        mov         r11, i_start
+        mov         r11, f_start
         mov         r12, data_stack
         mov         r13, return_stack
         jmp         iloop
@@ -104,16 +114,21 @@ debug_message:
         db        "debug", 10
         
 ; data stack underflow handler
-        dq          exit, print_buffer, stack_underflow_message, push_to_stack, stack_underflow_message_size, push_to_stack
-i_data_stack_underflow_handler: equ     $-8
+        dq          exit, print_buffer, stack_underflow_message, i_push_to_stack, stack_underflow_message_size, i_push_to_stack
+f_data_stack_underflow_handler: equ     $-8
+        
+; print "Hello world"
+        dq          i_return, print_buffer, message, i_push_to_stack, 13, i_push_to_stack
+f_print_hello_world: equ     $-8
         
 ; interpreter's entry point
         dq          exit, 
-        dq          print_buffer, message, push_to_stack, 13, push_to_stack
-        dq          print_buffer, message, push_to_stack, 13, push_to_stack
-i_start: equ     $-8
+        dq          f_print_hello_world, i_call
+        dq          f_print_hello_world, i_call
+        dq          f_print_hello_world, i_call
+        dq          f_print_hello_world, i_call
+f_start: equ     $-8
 
         section   .bss
-stdin_read_buffer:  resb    stdin_read_buffer_size
 data_stack:         resb    data_stack_size
 return_stack:       resb    return_stack_size
