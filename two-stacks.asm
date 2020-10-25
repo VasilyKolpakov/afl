@@ -1,5 +1,11 @@
         global    _start
 
+%macro  def_static_string 2
+%1:
+        db        %2, 10      ; note the newline at the end
+%1_size: equ $-%1
+%endmacro
+
 %macro  push_registers 0
         push        r11
         push        r12
@@ -12,10 +18,22 @@
         pop         r11
 %endmacro
 
+%macro  bump_data_stack 1
+        add         r12, 8 * %1
+        cmp         r12, data_stack + data_stack_size
+        jg          data_stack_overflow_handler
+%endmacro
+
 %macro  drop_data_stack 1
         sub         r12, 8 * %1
         cmp         r12, data_stack
         jl          data_stack_underflow_handler
+%endmacro
+
+%macro  bump_return_stack 1
+        add         r13, 8 * %1
+        cmp         r13, return_stack + return_stack_size
+        jg          return_stack_overflow_handler
 %endmacro
 
 %macro  drop_return_stack 1
@@ -28,8 +46,8 @@
         mov         rdx, rax
         mov         rax, 1
         mov         rdi, 1
-        mov         rsi, debug_message            
-        mov         rdx, 6               
+        mov         rsi, ss_debug            
+        mov         rdx, ss_debug_size               
         push        r11
         syscall
         pop         r11
@@ -49,10 +67,22 @@ iloop:
         sub         r11, 8
         jmp         [r11 + 8]
 
+data_stack_overflow_handler:
+        mov         r12, data_stack
+        mov         r13, return_stack
+        mov         r11, f_data_stack_overflow_handler
+        jmp iloop
+        
 data_stack_underflow_handler:
         mov         r12, data_stack
         mov         r13, return_stack
         mov         r11, f_data_stack_underflow_handler
+        jmp iloop
+
+return_stack_overflow_handler:
+        mov         r12, data_stack
+        mov         r13, return_stack
+        mov         r11, f_return_stack_overflow_handler
         jmp iloop
 
 return_stack_underflow_handler:
@@ -62,34 +92,40 @@ return_stack_underflow_handler:
         jmp iloop
 
 
+i_rjmp:
+        add         r11, [r11]             ; next word is the offset
+        jmp iloop
+        
+
+
 i_call:
+        bump_return_stack 1
         mov         rax, [r11]              ; next word is the instruciton pointer
         sub         r11, 8                  ; move instruction pointer to the next instruction
-        mov         [r13], r11              ; save return pointer
-        add         r13, 8                  ; bump return stack, TODO: check for overflow
+        mov         [r13 - 8], r11           ; save return pointer
         mov         r11, rax                ; jump to callee
         jmp iloop
 
 i_indirect_call:
         drop_data_stack 1
         mov         rax, [r12]              ; top of the data stack is the instruciton pointer
-        mov         [r13], r11              ; save return pointer
-        add         r13, 8                  ; bump return stack, TODO: check for overflow
+        bump_return_stack 1
+        mov         [r13 - 8], r11          ; save return pointer
         mov         r11, rax                ; jump to callee
         jmp iloop
 
 i_push_to_ret_stack:
         drop_data_stack 1
+        bump_return_stack 1
         mov         rax, [r12]              ; top of the data stack
         mov         [r13], rax              ; save value
-        add         r13, 8                  ; bump return stack, TODO: check for overflow
         jmp iloop
         
 i_pop_from_ret_stack:
         drop_return_stack 1
-        mov         rax, [r13]              ; restore value
-        mov         [r12], rax              ; write to stack
-        add         r12, 8                  ; move stack pointer, TODO: check for overflow
+        bump_data_stack 1
+        mov         rax, [r13 + 8]              ; restore value
+        mov         [r12 - 8], rax          ; write to stack
         jmp iloop
 
 i_return:
@@ -114,10 +150,10 @@ i_syscall:
         jmp iloop
                 
 i_push_to_stack:
+        bump_data_stack 1
         mov         rax, [r11]              ; next word is value
-        mov         [r12], rax              ; write to stack
+        mov         [r12 - 8], rax          ; write to stack
         sub         r11, 8                  ; move instruction pointer to the next instruction
-        add         r12, 8                  ; move stack pointer, TODO: check for overflow
         jmp iloop
 
 _start: 
@@ -127,29 +163,37 @@ _start:
         jmp         iloop        
 
         section   .data
-message:
-        db        "Hello, World", 10      ; note the newline at the end
-data_stack_underflow_message:
-        db        "Data stack underflow", 10
-data_stack_underflow_message_size: equ $-data_stack_underflow_message
 
-return_stack_underflow_message:
-        db        "Return stack underflow", 10
-return_stack_underflow_message_size: equ $-return_stack_underflow_message
 
-debug_message:
-        db        "debug", 10
+def_static_string ss_debug, "debug"
+def_static_string ss_hello_world, "Hello, World"
+
+def_static_string ss_data_stack_overflow, "Data stack overflow"
+def_static_string ss_data_stack_underflow, "Data stack underflow"
+
+def_static_string ss_return_stack_overflow, "Return stack overflow"
+def_static_string ss_return_stack_underflow, "Return stack underflow"
 
 
 %define val(value) value, i_push_to_stack
 
+; data stack overflow handler
+        dq          f_exit_0, i_call, f_print_buffer, i_call, val(ss_data_stack_overflow), val(ss_data_stack_overflow_size)
+f_data_stack_overflow_handler: equ     $-8
+
 ; data stack underflow handler
-        dq          f_exit_0, i_call, f_print_buffer, i_call, val(data_stack_underflow_message), val(data_stack_underflow_message_size)
+        dq          f_exit_0, i_call, f_print_buffer, i_call, val(ss_data_stack_underflow), val(ss_data_stack_underflow_size)
 f_data_stack_underflow_handler: equ     $-8
         
+
+; return stack overflow handler
+        dq          f_exit_0, i_call, f_print_buffer, i_call, val(ss_return_stack_overflow), val(ss_return_stack_overflow_size)
+f_return_stack_overflow_handler: equ     $-8
+
 ; return stack underflow handler
-        dq          f_exit_0, i_call, f_print_buffer, i_call, val(return_stack_underflow_message), val(return_stack_underflow_message_size)
+        dq          f_exit_0, i_call, f_print_buffer, i_call, val(ss_return_stack_underflow), val(ss_return_stack_underflow_size)
 f_return_stack_underflow_handler: equ     $-8
+
 
 ; <buffer pointer> <length>        
 ; print buffer
@@ -168,22 +212,32 @@ f_print_buffer: equ     $-8
         dq          val(0)                      ; exit code
         dq          val(1), val(1), val(1), val(1), val(1) ; filler
 f_exit_0: equ     $-8
+
+; data stack overflow
+        dq          i_return, 40, i_rjmp, val(13), f_print_hello_world, i_call
+f_dstack_overflow: equ     $-8
+
+; return stack overflow
+        dq          i_return, 48, i_rjmp, i_push_to_ret_stack, val(13), f_print_hello_world, i_call
+f_rstack_overflow: equ     $-8
+
         
 ; print "Hello world"
-        dq          i_return, f_print_buffer, i_call, val(message), val(13)
+        dq          i_return, f_print_buffer, i_call, val(ss_hello_world), val(13)
 f_print_hello_world: equ     $-8
 ; print "Data stack underflow"
-        dq          i_return, f_print_buffer, i_call, val(data_stack_underflow_message), val(data_stack_underflow_message_size)
+        dq          i_return, f_print_buffer, i_call, val(ss_data_stack_underflow), val(ss_data_stack_underflow_size)
 f_print_data_overflow: equ     $-8
 ; print "Return stack underflow"
-        dq          i_return, f_print_buffer, i_call, val(return_stack_underflow_message), val(return_stack_underflow_message_size)
+        dq          i_return, f_print_buffer, i_call, val(ss_return_stack_underflow), val(ss_return_stack_underflow_size)
 f_print_stack_overflow: equ     $-8
         
 ; interpreter's entry point
         dq          f_exit_0, i_call
-        dq          f_print_hello_world, i_call
-;        dq          i_indirect_call, i_indirect_call, i_indirect_call, 
-;        dq          val(f_print_hello_world), val(f_print_data_overflow), val(f_print_stack_overflow)
+;        dq          f_dstack_overflow, i_call
+;        dq          f_rstack_overflow, i_call
+        dq          i_indirect_call, i_indirect_call, i_indirect_call, 
+        dq          val(f_print_hello_world), val(f_print_data_overflow), val(f_print_stack_overflow)
 f_start: equ     $-8
 
         section   .bss

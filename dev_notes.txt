@@ -15,6 +15,7 @@ def не позволяет легко определить переменную
 
 идея: использовать late-binding чтобы работала рекурсия
 идея: оставлять тексты определение функций в словаре для late-binding
+идея: tail-call optimisation
 
 
 linux syscall args [ %rdi, %rsi, %rdx, %r10, %r8, %r9 ]
@@ -47,4 +48,12 @@ def "atoi" {
         drop swap-n 1
         + 1 dup-n 1 
     } 0 0
+};
+
+// <string>
+def "atoi-fun" {
+    fold_left {+ * 10}
+    map {- '0'}
+    take_while {and >= '0' swap <= '9' dup }
+    string_to_vec
 };
