@@ -139,49 +139,51 @@ return_stack_underflow_message_size: equ $-return_stack_underflow_message
 
 debug_message:
         db        "debug", 10
-        
+
+
+%define val(value) value, i_push_to_stack
+
 ; data stack underflow handler
-        dq          f_exit_0, i_call, f_print_buffer, i_call, data_stack_underflow_message, i_push_to_stack, data_stack_underflow_message_size, i_push_to_stack
+        dq          f_exit_0, i_call, f_print_buffer, i_call, val(data_stack_underflow_message), val(data_stack_underflow_message_size)
 f_data_stack_underflow_handler: equ     $-8
         
 ; return stack underflow handler
-        dq          f_exit_0, i_call, f_print_buffer, i_call, return_stack_underflow_message, i_push_to_stack, return_stack_underflow_message_size, i_push_to_stack
+        dq          f_exit_0, i_call, f_print_buffer, i_call, val(return_stack_underflow_message), val(return_stack_underflow_message_size)
 f_return_stack_underflow_handler: equ     $-8
 
 ; <buffer pointer> <length>        
 ; print buffer
         dq          i_return, i_syscall, 
-        dq          1, i_push_to_stack          ; syscall num
-        dq          1, i_push_to_stack          ; fd
+        dq          val(1), val(1)              ; syscall num, fd
         dq          i_pop_from_ret_stack        ; buffer pointer
         dq          i_pop_from_ret_stack        ; buffer length
-        dq          1, i_push_to_stack, 1, i_push_to_stack, 1, i_push_to_stack ; filler
-        dq          i_push_to_ret_stack ; buffer length
-        dq          i_push_to_ret_stack ; buffer pointer
+        dq          val(1), val(1), val(1)      ; filler
+        dq          i_push_to_ret_stack         ; buffer length
+        dq          i_push_to_ret_stack         ; buffer pointer
 f_print_buffer: equ     $-8
         
 ; exit_0
         dq          i_return, i_syscall, 
-        dq          60, i_push_to_stack         ; syscall num
-        dq          0, i_push_to_stack          ; exit code
-        dq          1, i_push_to_stack, 1, i_push_to_stack, 1, i_push_to_stack, 1, i_push_to_stack, 1, i_push_to_stack ; filler
+        dq          val(60)                     ; syscall num
+        dq          val(0)                      ; exit code
+        dq          val(1), val(1), val(1), val(1), val(1) ; filler
 f_exit_0: equ     $-8
         
 ; print "Hello world"
-        dq          i_return, f_print_buffer, i_call, message, i_push_to_stack, 13, i_push_to_stack
+        dq          i_return, f_print_buffer, i_call, val(message), val(13)
 f_print_hello_world: equ     $-8
 ; print "Data stack underflow"
-        dq          i_return, f_print_buffer, i_call, data_stack_underflow_message, i_push_to_stack, data_stack_underflow_message_size, i_push_to_stack
+        dq          i_return, f_print_buffer, i_call, val(data_stack_underflow_message), val(data_stack_underflow_message_size)
 f_print_data_overflow: equ     $-8
 ; print "Return stack underflow"
-        dq          i_return, f_print_buffer, i_call, return_stack_underflow_message, i_push_to_stack, return_stack_underflow_message_size, i_push_to_stack
+        dq          i_return, f_print_buffer, i_call, val(return_stack_underflow_message), val(return_stack_underflow_message_size)
 f_print_stack_overflow: equ     $-8
         
 ; interpreter's entry point
         dq          f_exit_0, i_call
         dq          f_print_hello_world, i_call
 ;        dq          i_indirect_call, i_indirect_call, i_indirect_call, 
-;        dq          f_print_hello_world, i_push_to_stack, f_print_data_overflow, i_push_to_stack, f_print_stack_overflow, i_push_to_stack
+;        dq          val(f_print_hello_world), val(f_print_data_overflow), val(f_print_stack_overflow)
 f_start: equ     $-8
 
         section   .bss
