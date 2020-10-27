@@ -130,14 +130,22 @@ i_indirect_call:
         mov         r11, rax                ; jump to callee
         jmp iloop
 
-; <bool value> <a> <b>
-i_swap_if_not:
+; <a> <b> <bool value>
+i_swap_if_false:
         drop_data_stack 3
-        mov         r10, [r12 + 8*2]
-        mov         r8,  [r12 + 8*1]
-        mov         r9,  [r12 + 8*0]
+        mov         r10, [r12 + 8*2]        ; a
+        mov         r8,  [r12 + 8*1]        ; b
+        mov         r9,  [r12 + 8*0]        ; bool value
+        add         r12, 8*2
         cmp         r9, 0
-        jne         iloop
+        je          i_swap_if_false__false_branch
+        mov         [r12 - 8*1], r10
+        mov         [r12 - 8*2], r8
+        jmp iloop
+i_swap_if_false__false_branch:
+        mov         [r12 - 8*1], r8
+        mov         [r12 - 8*2], r10
+        jmp iloop
 
 ; peeks n-th value from return stack
 ; <number>
@@ -259,11 +267,15 @@ f_return_stack_underflow_handler: equ     $-8
 ; <bool function> <true function> <false function>
 ; if function
         dq          i_return,
-        dq          i_pop_from_ret_stack        ; buffer pointer
-        dq          i_pop_from_ret_stack        ; buffer length
-        dq          i_push_to_ret_stack         ; false f
-        dq          i_push_to_ret_stack         ; true f
-        dq          i_push_to_ret_stack         ; bool f
+        dq          i_indirect_call, i_drop
+        dq          i_swap_if_false
+        dq          i_drop, i_pop_from_ret_stack                ; drop bool f
+        dq          i_pop_from_ret_stack                        ; true f
+        dq          i_pop_from_ret_stack                        ; false f
+        dq          i_indirect_call, i_peek_ret_stack, val(3)   ; bool value
+        dq          i_push_to_ret_stack                         ; false f -> ret stack
+        dq          i_push_to_ret_stack                         ; true f -> ret stack
+        dq          i_push_to_ret_stack                         ; bool f -> ret stack
 f_if: equ     $-8
 
 
@@ -354,10 +366,20 @@ f_print_stack_overflow: equ     $-8
         dq          f_read_from_std_in, i_call, i_swap, val(100), i_dup
         dq          f_mmap_anon, i_call, val(100)
 f_echo: equ     $-8
+
+; false function
+        dq          i_return, val(0)
+f_false: equ     $-8
+; true function
+        dq          i_return, val(1)
+f_true: equ     $-8
         
 ; interpreter's entry point
         dq          f_exit_0, i_call
-        dq          f_test_peek_ret_stack, i_call
+;        dq          i_indirect_call, i_swap_if_false, val(f_print_hello_world), val(f_print_data_overflow), val(1)
+;        dq          i_indirect_call, i_swap_if_false, val(f_print_hello_world), val(f_print_data_overflow), val(0)
+        dq          f_if, i_call, val(f_false), val(f_print_hello_world), val(f_print_data_overflow),
+        dq          f_if, i_call, val(f_true), val(f_print_hello_world), val(f_print_data_overflow),
 ;        dq          f_dstack_overflow, i_call
 ;        dq          f_rstack_overflow, i_call
 ;        dq          i_indirect_call, i_indirect_call, i_indirect_call, 
