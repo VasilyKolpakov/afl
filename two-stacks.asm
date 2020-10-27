@@ -92,8 +92,8 @@ return_stack_underflow_handler:
         jmp iloop
 
 
-i_rjmp:
-        add         r11, [r11]             ; next word is the offset
+i_jmp:
+        mov         r11, [r11]             ; next word is the instruction pointer
         jmp iloop
         
 
@@ -261,11 +261,11 @@ f_mmap_anon: equ     $-8
 f_exit_0: equ     $-8
 
 ; data stack overflow
-        dq          i_return, 40, i_rjmp, val(13), f_print_hello_world, i_call
+        dq          i_return, $ + 8*6, i_jmp, val(13), f_print_hello_world, i_call
 f_dstack_overflow: equ     $-8
 
 ; return stack overflow
-        dq          i_return, 48, i_rjmp, i_push_to_ret_stack, val(13), f_print_hello_world, i_call
+        dq          i_return, $ + 8*7, i_jmp, i_push_to_ret_stack, val(13), f_print_hello_world, i_call
 f_rstack_overflow: equ     $-8
 
         

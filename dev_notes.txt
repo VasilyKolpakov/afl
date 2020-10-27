@@ -7,7 +7,7 @@
   + написать интерпретатор, threaded code
   + заменить инструкции exit и write_buffer на syscall и функции
   + добавить проверку на overflow и underflow для обоих стеков
-  - заменить i_rjmp на обычный i_jmp
+  + заменить i_rjmp на обычный i_jmp
   - сделать кучу
   - check syscall return codes
   - написать интерпретатор 2s
