@@ -147,6 +147,29 @@ i_syscall:
         push_registers
         syscall
         pop_registers
+        mov         [r12], rax
+        bump_data_stack 1
+        jmp iloop
+
+i_dup:
+        drop_data_stack 1
+        mov         rax,  [r12 + 8*0]
+        bump_data_stack 2
+        mov         [r12 - 8*1], rax
+        mov         [r12 - 8*2], rax
+        jmp iloop
+                
+i_swap:
+        drop_data_stack 2
+        mov         rax,  [r12 + 8*1]
+        mov         rdi,  [r12 + 8*0]
+        bump_data_stack 2
+        mov         [r12 - 8*1], rdi
+        mov         [r12 - 8*2], rax
+        jmp iloop
+                
+i_drop:
+        drop_data_stack 1
         jmp iloop
                 
 i_push_to_stack:
@@ -197,7 +220,7 @@ f_return_stack_underflow_handler: equ     $-8
 
 ; <buffer pointer> <length>        
 ; print buffer
-        dq          i_return, i_syscall, 
+        dq          i_return, i_drop, i_syscall, 
         dq          val(1), val(1)              ; syscall num, fd
         dq          i_pop_from_ret_stack        ; buffer pointer
         dq          i_pop_from_ret_stack        ; buffer length
@@ -205,6 +228,30 @@ f_return_stack_underflow_handler: equ     $-8
         dq          i_push_to_ret_stack         ; buffer length
         dq          i_push_to_ret_stack         ; buffer pointer
 f_print_buffer: equ     $-8
+        
+; <buffer pointer> <count> -> <bytes read>
+; read to buffer
+        dq          i_return, i_syscall, 
+        dq          val(0), val(0)              ; syscall num, fd
+        dq          i_pop_from_ret_stack        ; buffer pointer
+        dq          i_pop_from_ret_stack        ; count
+        dq          val(1), val(1), val(1)      ; filler
+        dq          i_push_to_ret_stack         ; count
+        dq          i_push_to_ret_stack         ; buffer pointer
+f_read_from_std_in: equ     $-8
+        
+; <length> -> <addr>       
+; allocate virtual memory
+        dq          i_return, i_syscall,
+        dq          val(9)                      ; mmap syscall num
+        dq          val(0)                      ; NULL address
+        dq          i_pop_from_ret_stack        ; length
+        dq          val(3)                      ; PROT_READ | PROT_WRITE
+        dq          val(34),                    ; MAP_ANONYMOUS|MAP_PRIVATE
+        dq          val(-1)                     ; fd
+        dq          val(0)                      ; offset
+        dq          i_push_to_ret_stack         ; length
+f_mmap_anon: equ     $-8
         
 ; exit_0
         dq          i_return, i_syscall, 
@@ -231,15 +278,23 @@ f_print_data_overflow: equ     $-8
 ; print "Return stack underflow"
         dq          i_return, f_print_buffer, i_call, val(ss_return_stack_underflow), val(ss_return_stack_underflow_size)
 f_print_stack_overflow: equ     $-8
+
+; echo
+        dq          i_return, f_print_buffer, i_call, i_swap
+        dq          f_read_from_std_in, i_call, i_swap, val(100), i_dup
+        dq          f_mmap_anon, i_call, val(100)
+f_echo: equ     $-8
         
 ; interpreter's entry point
         dq          f_exit_0, i_call
+        dq          f_echo, i_call
 ;        dq          f_dstack_overflow, i_call
 ;        dq          f_rstack_overflow, i_call
-        dq          i_indirect_call, i_indirect_call, i_indirect_call, 
-        dq          val(f_print_hello_world), val(f_print_data_overflow), val(f_print_stack_overflow)
+;        dq          i_indirect_call, i_indirect_call, i_indirect_call, 
+;        dq          val(f_print_hello_world), val(f_print_data_overflow), val(f_echo)
 f_start: equ     $-8
 
         section   .bss
 data_stack:         resb    data_stack_size
 return_stack:       resb    return_stack_size
+read_buffer:        resb    1000

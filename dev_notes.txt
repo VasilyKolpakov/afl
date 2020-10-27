@@ -6,16 +6,40 @@
 План
   + написать интерпретатор, threaded code
   + заменить инструкции exit и write_buffer на syscall и функции
-  - добавить проверку на overflow и underflow для обоих стеков
+  + добавить проверку на overflow и underflow для обоих стеков
+  - заменить i_rjmp на обычный i_jmp
+  - сделать кучу
+  - check syscall return codes
+  - написать интерпретатор 2s
+    - check end of execution in i_return
+  - conservative GC
+    - cuckoo hashing
+  - статическая проверка операций с return стеком
+  - статическая проверка типов, вывод stack effect
+    - optional args
+  - test harness in 2s (instead of bash)
+  
+  - интерпретатор лиспа
+    - компиляция в виртуальную машину форта
+  - оптимизирующий компилятор лиспа (SSA, coloring, lambda calculus?)
+    - jit
 
 Разное
 
 
 def не позволяет легко определить переменную (значение), нужен def-val?
 
-идея: использовать late-binding чтобы работала рекурсия
-идея: оставлять тексты определение функций в словаре для late-binding
-идея: tail-call optimisation
+идеи:
+
+- использовать late-binding чтобы работала рекурсия
+- оставлять тексты определение функций в словаре для late-binding
+- tail-call optimisation
+  - все функции линейные, нет control flow
+- interpreter state pointer
+- function suggestion by type, через алгоритм Дейкстры
+- boxed types
+- sigsegv handler for stack guard and stack trace
+- set_type function
 
 
 linux syscall args [ %rdi, %rsi, %rdx, %r10, %r8, %r9 ]
