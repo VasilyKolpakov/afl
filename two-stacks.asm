@@ -20,24 +20,40 @@
 
 %macro  bump_data_stack 1
         add         r12, 8 * %1
+        check_data_stack_overflow
+%endmacro
+
+%macro  check_data_stack_overflow 0
         cmp         r12, data_stack + data_stack_size
         jg          data_stack_overflow_handler
 %endmacro
 
 %macro  drop_data_stack 1
         sub         r12, 8 * %1
+        check_data_stack_underflow
+%endmacro
+
+%macro  check_data_stack_underflow 0
         cmp         r12, data_stack
         jl          data_stack_underflow_handler
 %endmacro
 
 %macro  bump_return_stack 1
         add         r13, 8 * %1
+        check_return_stack_overflow
+%endmacro
+
+%macro  check_return_stack_overflow 0
         cmp         r13, return_stack + return_stack_size
         jg          return_stack_overflow_handler
 %endmacro
 
 %macro  drop_return_stack 1
         sub         r13, 8 * %1
+        check_return_stack_underflow
+%endmacro
+
+%macro  check_return_stack_underflow 0
         cmp         r13, return_stack
         jl          return_stack_underflow_handler
 %endmacro
@@ -102,7 +118,7 @@ i_call:
         bump_return_stack 1
         mov         rax, [r11]              ; next word is the instruciton pointer
         sub         r11, 8                  ; move instruction pointer to the next instruction
-        mov         [r13 - 8], r11           ; save return pointer
+        mov         [r13 - 8], r11          ; save return pointer
         mov         r11, rax                ; jump to callee
         jmp iloop
 
@@ -114,17 +130,40 @@ i_indirect_call:
         mov         r11, rax                ; jump to callee
         jmp iloop
 
+; <bool value> <a> <b>
+i_swap_if_not:
+        drop_data_stack 3
+        mov         r10, [r12 + 8*2]
+        mov         r8,  [r12 + 8*1]
+        mov         r9,  [r12 + 8*0]
+        cmp         r9, 0
+        jne         iloop
+
+; peeks n-th value from return stack
+; <number>
+i_peek_ret_stack:
+        drop_data_stack 1
+        mov         rax,  [r12 + 8*0]       ; read number, TODO: check for non-positive
+        check_return_stack_underflow
+        imul        rax, 8                  ; mul by word length
+        sub         r13, rax                ; move stack pointer
+        mov         rdi, [r13]              ; read value from return stack
+        add         r13, rax                ; restore stack pointer
+        mov         [r12], rdi              ; write value to data stack
+        add         r12, 8                  ; bump data stack
+        jmp iloop
+
 i_push_to_ret_stack:
         drop_data_stack 1
         bump_return_stack 1
         mov         rax, [r12]              ; top of the data stack
-        mov         [r13], rax              ; save value
+        mov         [r13 - 8], rax          ; save value
         jmp iloop
         
 i_pop_from_ret_stack:
         drop_return_stack 1
         bump_data_stack 1
-        mov         rax, [r13 + 8]              ; restore value
+        mov         rax, [r13]              ; restore value
         mov         [r12 - 8], rax          ; write to stack
         jmp iloop
 
@@ -217,8 +256,19 @@ f_return_stack_overflow_handler: equ     $-8
         dq          f_exit_0, i_call, f_print_buffer, i_call, val(ss_return_stack_underflow), val(ss_return_stack_underflow_size)
 f_return_stack_underflow_handler: equ     $-8
 
+; <bool function> <true function> <false function>
+; if function
+        dq          i_return,
+        dq          i_pop_from_ret_stack        ; buffer pointer
+        dq          i_pop_from_ret_stack        ; buffer length
+        dq          i_push_to_ret_stack         ; false f
+        dq          i_push_to_ret_stack         ; true f
+        dq          i_push_to_ret_stack         ; bool f
+f_if: equ     $-8
 
-; <buffer pointer> <length>        
+
+
+; <buffer pointer> <length>
 ; print buffer
         dq          i_return, i_drop, i_syscall, 
         dq          val(1), val(1)              ; syscall num, fd
@@ -240,8 +290,8 @@ f_print_buffer: equ     $-8
         dq          i_push_to_ret_stack         ; buffer pointer
 f_read_from_std_in: equ     $-8
         
-; <length> -> <addr>       
-; allocate virtual memory
+; <length> -> <addr>
+; allocate virtual memory pages
         dq          i_return, i_syscall,
         dq          val(9)                      ; mmap syscall num
         dq          val(0)                      ; NULL address
@@ -252,7 +302,16 @@ f_read_from_std_in: equ     $-8
         dq          val(0)                      ; offset
         dq          i_push_to_ret_stack         ; length
 f_mmap_anon: equ     $-8
-        
+
+; <length> -> <addr>
+; malloc
+        dq          i_return, i_syscall, 
+        dq          val(60)                     ; syscall num
+        dq          val(0)                      ; exit code
+        dq          val(1), val(1), val(1), val(1), val(1) ; filler
+f_malloc: equ     $-8
+
+
 ; exit_0
         dq          i_return, i_syscall, 
         dq          val(60)                     ; syscall num
@@ -260,6 +319,7 @@ f_mmap_anon: equ     $-8
         dq          val(1), val(1), val(1), val(1), val(1) ; filler
 f_exit_0: equ     $-8
 
+; TESTS
 ; data stack overflow
         dq          i_return, $ + 8*6, i_jmp, val(13), f_print_hello_world, i_call
 f_dstack_overflow: equ     $-8
@@ -267,6 +327,16 @@ f_dstack_overflow: equ     $-8
 ; return stack overflow
         dq          i_return, $ + 8*7, i_jmp, i_push_to_ret_stack, val(13), f_print_hello_world, i_call
 f_rstack_overflow: equ     $-8
+; i_peek_ret_stack
+        dq          i_return
+        dq          i_drop, i_pop_from_ret_stack, i_drop, i_pop_from_ret_stack ; restore ret stack
+        dq          i_indirect_call
+        dq          i_peek_ret_stack, val(2)    ; peek f_print_hello_world
+        dq          i_push_to_ret_stack         ; f_print_data_overflow
+        dq          i_push_to_ret_stack         ; f_print_hello_world
+        dq          val(f_print_hello_world)
+        dq          val(f_print_data_overflow)
+f_test_peek_ret_stack: equ     $-8
 
         
 ; print "Hello world"
@@ -287,7 +357,7 @@ f_echo: equ     $-8
         
 ; interpreter's entry point
         dq          f_exit_0, i_call
-        dq          f_echo, i_call
+        dq          f_test_peek_ret_stack, i_call
 ;        dq          f_dstack_overflow, i_call
 ;        dq          f_rstack_overflow, i_call
 ;        dq          i_indirect_call, i_indirect_call, i_indirect_call, 
@@ -297,4 +367,4 @@ f_start: equ     $-8
         section   .bss
 data_stack:         resb    data_stack_size
 return_stack:       resb    return_stack_size
-read_buffer:        resb    1000
+heap_pointer:       resq    1

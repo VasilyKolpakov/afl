@@ -8,6 +8,7 @@
   + заменить инструкции exit и write_buffer на syscall и функции
   + добавить проверку на overflow и underflow для обоих стеков
   + заменить i_rjmp на обычный i_jmp
+  - i_peek_ret_stack: check for non-positive arg
   - сделать кучу
   - check syscall return codes
   - написать интерпретатор 2s
@@ -28,6 +29,7 @@
 
 
 def не позволяет легко определить переменную (значение), нужен def-val?
+'if' function is terrible
 
 идеи:
 
