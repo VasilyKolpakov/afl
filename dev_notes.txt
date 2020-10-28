@@ -12,7 +12,7 @@
   - сделать кучу
   - check syscall return codes
   - написать интерпретатор 2s
-    - check end of execution in i_return
+    - интерпретатор генерирует код, который делает tail-call в него
   - conservative GC
     - cuckoo hashing
   - статическая проверка операций с return стеком
@@ -33,12 +33,13 @@ def не позволяет легко определить переменную
 
 идеи:
 
+- function pointer indirection for JIT
 - использовать late-binding чтобы работала рекурсия
 - оставлять тексты определение функций в словаре для late-binding
 - tail-call optimisation
   - все функции линейные, нет control flow
 - interpreter state pointer
-- function suggestion by type, через алгоритм Дейкстры
+!- function suggestion by type, через алгоритм Дейкстры
 - boxed types
 - sigsegv handler for stack guard and stack trace
 - set_type function

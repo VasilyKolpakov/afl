@@ -111,7 +111,22 @@ return_stack_underflow_handler:
 i_jmp:
         mov         r11, [r11]             ; next word is the instruction pointer
         jmp iloop
+; <address> <value>
+i_write_mem_i64:
+        drop_data_stack 2
+        mov         rax,  [r12 + 8*1]        ; address
+        mov         rdi,  [r12 + 8*0]        ; value
+        mov         [rax], rdi
+        jmp iloop
         
+; <address> -> <value>
+i_read_mem_i64:
+        drop_data_stack 1
+        mov         rax,  [r12 + 8*0]        ; address
+        mov         rdi, [rax]
+        mov         [r12], rdi
+        add         r12, 8
+        jmp iloop
 
 
 i_call:
@@ -376,10 +391,15 @@ f_true: equ     $-8
         
 ; interpreter's entry point
         dq          f_exit_0, i_call
+        dq          f_echo, i_call
+
+        dq          i_indirect_call, i_read_mem_i64, val(heap_pointer)
+        dq          i_write_mem_i64, val(heap_pointer), val(f_print_hello_world)
+
 ;        dq          i_indirect_call, i_swap_if_false, val(f_print_hello_world), val(f_print_data_overflow), val(1)
 ;        dq          i_indirect_call, i_swap_if_false, val(f_print_hello_world), val(f_print_data_overflow), val(0)
-        dq          f_if, i_call, val(f_false), val(f_print_hello_world), val(f_print_data_overflow),
-        dq          f_if, i_call, val(f_true), val(f_print_hello_world), val(f_print_data_overflow),
+;        dq          f_if, i_call, val(f_false), val(f_print_hello_world), val(f_print_data_overflow),
+;        dq          f_if, i_call, val(f_true), val(f_print_hello_world), val(f_print_data_overflow),
 ;        dq          f_dstack_overflow, i_call
 ;        dq          f_rstack_overflow, i_call
 ;        dq          i_indirect_call, i_indirect_call, i_indirect_call, 
