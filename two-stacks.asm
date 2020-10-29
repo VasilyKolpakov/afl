@@ -1,6 +1,6 @@
         global    _start
 
-%macro  def_static_string 2
+%macro  def_nl_terminated_static_string 2
 %1:
         db        %2, 10      ; note the newline at the end
 %1_size: equ $-%1
@@ -107,10 +107,98 @@ return_stack_underflow_handler:
         mov         r11, f_return_stack_underflow_handler
         jmp iloop
 
-
-i_jmp:
-        mov         r11, [r11]             ; next word is the instruction pointer
+; <number> <number> -> <number>
+i_add:
+        drop_data_stack 2
+        mov         rax,  [r12 + 8*1]        ; number
+        mov         rdi,  [r12 + 8*0]        ; number
+        add         r12, 8
+        add         rax, rdi
+        mov         [r12 - 8], rax
         jmp iloop
+
+; <a> <b> -> <a - b>
+i_sub:
+        drop_data_stack 2
+        mov         rax,  [r12 + 8*1]        ; a
+        mov         rdi,  [r12 + 8*0]        ; b
+        add         r12, 8
+        sub         rax, rdi
+        mov         [r12 - 8], rax
+        jmp iloop
+
+; <true> -> <false>
+; <false> -> <true>
+i_not:
+        drop_data_stack 1
+        mov         rax,  [r12 + 8*0]        ; bool
+        add         r12, 8
+        cmp         rax, 0
+        je          i_not__true_branch
+        mov QWORD   [r12 - 8], 0
+        jmp iloop
+i_not__true_branch:
+        mov QWORD   [r12 - 8], 1
+        jmp iloop
+
+; <a> <b> -> <a && b>
+i_and:
+        drop_data_stack 2
+        mov         rax,  [r12 + 8*1]        ; a
+        mov         rdi,  [r12 + 8*0]        ; b
+        add         r12, 8
+        cmp         rax, 0
+        je          i_and__false_branch
+        cmp         rdi, 0
+        je          i_and__false_branch
+        mov QWORD   [r12 - 8], 1
+        jmp iloop
+i_and__false_branch:
+        mov QWORD   [r12 - 8], 0
+        jmp iloop
+
+; <a> <b> -> <a == b>
+i_equal:
+        drop_data_stack 2
+        mov         rax,  [r12 + 8*1]        ; a
+        mov         rdi,  [r12 + 8*0]        ; b
+        add         r12, 8
+        cmp         rax, rdi
+        je          i_equal__true_branch
+        mov QWORD   [r12 - 8], 0
+        jmp iloop
+i_equal__true_branch:
+        mov QWORD   [r12 - 8], 1
+        jmp iloop
+
+; <a> <b> -> <a < b>
+i_lt:
+        drop_data_stack 2
+        mov         rax,  [r12 + 8*1]        ; a
+        mov         rdi,  [r12 + 8*0]        ; b
+        add         r12, 8
+        cmp         rax, rdi
+        jl          i_lt__true_branch
+        mov QWORD   [r12 - 8], 0
+        jmp iloop
+i_lt__true_branch:
+        mov QWORD   [r12 - 8], 1
+        jmp iloop
+
+; <a> <b> -> <a > b>
+i_gt:
+        drop_data_stack 2
+        mov         rax,  [r12 + 8*1]        ; a
+        mov         rdi,  [r12 + 8*0]        ; b
+        add         r12, 8
+        cmp         rax, rdi
+        jg          i_gt__true_branch
+        mov QWORD   [r12 - 8], 0
+        jmp iloop
+i_gt__true_branch:
+        mov QWORD   [r12 - 8], 1
+        jmp iloop
+
 ; <address> <value>
 i_write_mem_i64:
         drop_data_stack 2
@@ -129,6 +217,11 @@ i_read_mem_i64:
         jmp iloop
 
 
+
+i_jmp:
+        mov         r11, [r11]             ; next word is the instruction pointer
+        jmp iloop
+
 i_call:
         bump_return_stack 1
         mov         rax, [r11]              ; next word is the instruciton pointer
@@ -145,21 +238,20 @@ i_indirect_call:
         mov         r11, rax                ; jump to callee
         jmp iloop
 
-; <a> <b> <bool value>
-i_swap_if_false:
+; <a> <b> <true> -> <a>
+; <a> <b> <false> -> <b>
+i_value_if:
         drop_data_stack 3
         mov         r10, [r12 + 8*2]        ; a
         mov         r8,  [r12 + 8*1]        ; b
         mov         r9,  [r12 + 8*0]        ; bool value
-        add         r12, 8*2
+        add         r12, 8
         cmp         r9, 0
-        je          i_swap_if_false__false_branch
+        je          i_value_if__false_branch
         mov         [r12 - 8*1], r10
-        mov         [r12 - 8*2], r8
         jmp iloop
-i_swap_if_false__false_branch:
+i_value_if__false_branch:
         mov         [r12 - 8*1], r8
-        mov         [r12 - 8*2], r10
         jmp iloop
 
 ; peeks n-th value from return stack
@@ -250,14 +342,18 @@ _start:
         section   .data
 
 
-def_static_string ss_debug, "debug"
-def_static_string ss_hello_world, "Hello, World"
+def_nl_terminated_static_string ss_true, "true"
+def_nl_terminated_static_string ss_false, "false"
 
-def_static_string ss_data_stack_overflow, "Data stack overflow"
-def_static_string ss_data_stack_underflow, "Data stack underflow"
 
-def_static_string ss_return_stack_overflow, "Return stack overflow"
-def_static_string ss_return_stack_underflow, "Return stack underflow"
+def_nl_terminated_static_string ss_debug, "debug"
+def_nl_terminated_static_string ss_hello_world, "Hello, World"
+
+def_nl_terminated_static_string ss_data_stack_overflow, "Data stack overflow"
+def_nl_terminated_static_string ss_data_stack_underflow, "Data stack underflow"
+
+def_nl_terminated_static_string ss_return_stack_overflow, "Return stack overflow"
+def_nl_terminated_static_string ss_return_stack_underflow, "Return stack underflow"
 
 
 %define val(value) value, i_push_to_stack
@@ -282,8 +378,8 @@ f_return_stack_underflow_handler: equ     $-8
 ; <bool function> <true function> <false function>
 ; if function
         dq          i_return,
-        dq          i_indirect_call, i_drop
-        dq          i_swap_if_false
+        dq          i_indirect_call
+        dq          i_value_if
         dq          i_drop, i_pop_from_ret_stack                ; drop bool f
         dq          i_pop_from_ret_stack                        ; true f
         dq          i_pop_from_ret_stack                        ; false f
@@ -382,6 +478,21 @@ f_print_stack_overflow: equ     $-8
         dq          f_mmap_anon, i_call, val(100)
 f_echo: equ     $-8
 
+; identity
+        dq          i_return
+f_id: equ     $-8
+
+
+; print boolean
+        dq          i_return, val(ss_false), val(ss_false_size)
+f_print_bool_false: equ     $-8
+        dq          i_return, val(ss_true), val(ss_true_size)
+f_print_bool_true: equ     $-8
+        dq          i_return, f_print_buffer, i_call, f_if, i_call, val(f_id), val(f_print_bool_true), val(f_print_bool_false)
+f_print_bool: equ     $-8
+
+
+
 ; false function
         dq          i_return, val(0)
 f_false: equ     $-8
@@ -391,13 +502,46 @@ f_true: equ     $-8
         
 ; interpreter's entry point
         dq          f_exit_0, i_call
-        dq          f_echo, i_call
+        dq          f_print_bool, i_call,
+        dq          i_and, i_not
+        dq              i_equal, val(0), val(1)
+        dq          i_and,
+        dq              i_equal
+        dq                  val(4)
+        dq                  i_add, val(2), val(2)
+        dq          i_and
+        dq              i_equal
+        dq                  val(4)
+        dq                  i_sub, val(6), val(2)
+        dq          i_and, i_not
+        dq              i_gt, val(1), val(1)
+        dq          i_and
+        dq              i_gt, val(10), val(1)
+        dq          i_and, i_not
+        dq              i_lt, val(1), val(1)
+        dq          i_and
+        dq              i_lt, val(0), val(1)
+        dq          val(1)
 
-        dq          i_indirect_call, i_read_mem_i64, val(heap_pointer)
-        dq          i_write_mem_i64, val(heap_pointer), val(f_print_hello_world)
 
-;        dq          i_indirect_call, i_swap_if_false, val(f_print_hello_world), val(f_print_data_overflow), val(1)
-;        dq          i_indirect_call, i_swap_if_false, val(f_print_hello_world), val(f_print_data_overflow), val(0)
+
+;        dq          f_print_bool, i_call,
+;        dq              i_and, val(1), val(0)
+;        dq          f_print_bool, i_call,
+;        dq              i_and, val(0), val(1)
+;        dq          f_print_bool, i_call,
+;        dq              i_and, val(0), val(0)
+;        dq          f_print_bool, i_call,
+;        dq              i_and, val(1), val(1)
+;        dq          f_print_bool, i_call,
+;        dq              i_not, val(1)
+;        dq          f_print_bool, i_call,
+;        dq              i_not, val(0)
+
+;        dq          i_indirect_call, i_read_mem_i64, val(heap_pointer)
+;        dq          i_write_mem_i64, val(heap_pointer), val(f_print_hello_world)
+
+;        dq          f_print_buffer, i_call, i_indirect_call, i_value_if, val(f_print_bool_true), val(f_print_bool_false), val(0)
 ;        dq          f_if, i_call, val(f_false), val(f_print_hello_world), val(f_print_data_overflow),
 ;        dq          f_if, i_call, val(f_true), val(f_print_hello_world), val(f_print_data_overflow),
 ;        dq          f_dstack_overflow, i_call

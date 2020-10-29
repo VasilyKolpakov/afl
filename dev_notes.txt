@@ -8,13 +8,19 @@
   + заменить инструкции exit и write_buffer на syscall и функции
   + добавить проверку на overflow и underflow для обоих стеков
   + заменить i_rjmp на обычный i_jmp
-  - i_peek_ret_stack: check for non-positive arg
+  - parse i64
+    + '=', '+', '-', '<', '>'
+    - while
+    - dup-n
+    - str_char
+    - and
+  - print i64
   - сделать кучу
   - check syscall return codes
-  - написать интерпретатор 2s
-    - интерпретатор генерирует код, который делает tail-call в него
   - conservative GC
     - cuckoo hashing
+  - написать интерпретатор 2s
+    - интерпретатор генерирует код, который делает tail-call в него
   - статическая проверка операций с return стеком
   - статическая проверка типов, вывод stack effect
     - optional args
@@ -23,7 +29,12 @@
   - интерпретатор лиспа
     - компиляция в виртуальную машину форта
   - оптимизирующий компилятор лиспа (SSA, coloring, lambda calculus?)
+    - сначала написать ассемблер
     - jit
+
+not unrgent, maybe important:
+  - i_peek_ret_stack: check for non-positive arg
+
 
 Разное
 
@@ -49,32 +60,43 @@ linux syscall args [ %rdi, %rsi, %rdx, %r10, %r8, %r9 ]
 
 
 // atoi function
-// <str pointer> <number> <string>
+// <char index> <number> <buffer> <string size>
 
-str_size(string) - string size
-str_char(string, n) - n-th char
+str_char(n, string) - n-th char
 
 str_size "123"      | 3
 str_char "123" 1    | '2'
 
 def "atoi" {
-    drop-n 3 swap-n 3 dup-n 2 
-    while { 
-        not and 
-            = 
-                str_char dup-n 4 dup-n 5 
-                str_size dup-n 4 
-            and 
-                < str_char dup-n 3 dup-n 4 48 
-                < str_char dup-n 2 dup-n 3 48 
+    drop swap
+    drop swap
+    drop
+    while {
+        not and
+                =
+                    dup-n 3 // char index
+                    dup-n 5 // string size
+                and
+                    < 57
+                    swap
+                    > 48
+                    dup str_char dup-n 2 dup-n 3
     } { 
-        drop swap-n 2
+        + 1 // increment index
+        swap
         + 
-            * 10 dup-n 3 
-            - str_char dup-n 3 dup-n 4 48
-        drop swap-n 1
-        + 1 dup-n 1 
-    } 0 0
+            -
+                str_char dup-n 4 dup-n 5
+                48
+            * 10
+        swap
+    }
+    0
+    if { // '-asfasf' case is not handled
+        =
+            45
+            str_char dup-n 2 dup-n 3
+        } { -1 } { 0 }
 };
 
 // <string>
