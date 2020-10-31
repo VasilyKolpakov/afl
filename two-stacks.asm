@@ -172,30 +172,58 @@ i_equal__true_branch:
         jmp iloop
 
 ; <a> <b> -> <a < b>
-i_lt:
+i_lower:
         drop_data_stack 2
         mov         rax,  [r12 + 8*1]        ; a
         mov         rdi,  [r12 + 8*0]        ; b
         add         r12, 8
         cmp         rax, rdi
-        jl          i_lt__true_branch
+        jl          i_lower__true_branch
         mov QWORD   [r12 - 8], 0
         jmp iloop
-i_lt__true_branch:
+i_lower__true_branch:
+        mov QWORD   [r12 - 8], 1
+        jmp iloop
+
+; <a> <b> -> <a <= b>
+i_lower_or_equal:
+        drop_data_stack 2
+        mov         rax,  [r12 + 8*1]        ; a
+        mov         rdi,  [r12 + 8*0]        ; b
+        add         r12, 8
+        cmp         rax, rdi
+        jle         i_lower__true_branch
+        mov QWORD   [r12 - 8], 0
+        jmp iloop
+i_lower_or_equal__true_branch:
         mov QWORD   [r12 - 8], 1
         jmp iloop
 
 ; <a> <b> -> <a > b>
-i_gt:
+i_greater:
         drop_data_stack 2
         mov         rax,  [r12 + 8*1]        ; a
         mov         rdi,  [r12 + 8*0]        ; b
         add         r12, 8
         cmp         rax, rdi
-        jg          i_gt__true_branch
+        jg          i_greater__true_branch
         mov QWORD   [r12 - 8], 0
         jmp iloop
-i_gt__true_branch:
+i_greater__true_branch:
+        mov QWORD   [r12 - 8], 1
+        jmp iloop
+
+; <a> <b> -> <a >= b>
+i_greater_or_equal:
+        drop_data_stack 2
+        mov         rax,  [r12 + 8*1]        ; a
+        mov         rdi,  [r12 + 8*0]        ; b
+        add         r12, 8
+        cmp         rax, rdi
+        jge          i_greater__true_branch
+        mov QWORD   [r12 - 8], 0
+        jmp iloop
+i_greater_or_equal__true_branch:
         mov QWORD   [r12 - 8], 1
         jmp iloop
 
@@ -220,6 +248,17 @@ i_read_mem_i64:
 
 i_jmp:
         mov         r11, [r11]             ; next word is the instruction pointer
+        jmp iloop
+
+;<bool>
+i_jmp_if:
+        drop_data_stack 1
+        sub         r11, 8                  ; move instruction pointer to the next instruction
+        mov         rax, [r12]              ; top of the data stack is the boolean
+        cmp         rax, 0
+        je          i_jmp_if__false_branch
+        mov         r11, [r11 + 8]          ; next word is the instruction pointer
+i_jmp_if__false_branch:
         jmp iloop
 
 i_call:
@@ -312,7 +351,20 @@ i_dup:
         mov         [r12 - 8*1], rax
         mov         [r12 - 8*2], rax
         jmp iloop
-                
+
+; <n> -> <a>
+i_dup_n:
+        drop_data_stack 1
+        mov         rax,  [r12 + 8*0]
+        imul         rax, 8                  ; TODO: check positive
+        sub         r12, rax
+        check_data_stack_underflow
+        mov         rdi, [r12 + 8*0]       ; value
+        add         r12, rax
+        add         r12, 8
+        mov         [r12 - 8*1], rdi
+        jmp iloop
+
 i_swap:
         drop_data_stack 2
         mov         rax,  [r12 + 8*1]
@@ -332,6 +384,7 @@ i_push_to_stack:
         mov         [r12 - 8], rax          ; write to stack
         sub         r11, 8                  ; move instruction pointer to the next instruction
         jmp iloop
+
 
 _start: 
         mov         r11, f_start
@@ -357,6 +410,7 @@ def_nl_terminated_static_string ss_return_stack_underflow, "Return stack underfl
 
 
 %define val(value) value, i_push_to_stack
+%define call(value) value, i_call
 
 ; data stack overflow handler
         dq          f_exit_0, i_call, f_print_buffer, i_call, val(ss_data_stack_overflow), val(ss_data_stack_overflow_size)
@@ -389,6 +443,25 @@ f_return_stack_underflow_handler: equ     $-8
         dq          i_push_to_ret_stack                         ; bool f -> ret stack
 f_if: equ     $-8
 
+; <cond function> <body function>
+; while function
+        dq          i_return,
+        dq          i_drop, i_pop_from_ret_stack                ; drop cond f
+        dq          i_drop                                      ; drop body f
+f_while__end:
+        dq          i_pop_from_ret_stack                        ; pop  body f
+        dq          call(f_print_debug)
+        dq          f_while__loop + 8, i_jmp                    ; loop
+        dq          i_indirect_call, i_peek_ret_stack, val(1)   ; run body f
+        dq          f_while__end, i_jmp_if, i_not               ; check condition
+        dq          i_indirect_call,                            ; bool value
+        dq          i_peek_ret_stack,
+f_while__loop:
+        dq          val(2)
+        dq          i_push_to_ret_stack                         ; body f -> ret stack
+        dq          i_push_to_ret_stack                         ; cond f -> ret stack
+f_while: equ     $-8
+
 
 
 ; <buffer pointer> <length>
@@ -401,7 +474,7 @@ f_if: equ     $-8
         dq          i_push_to_ret_stack         ; buffer length
         dq          i_push_to_ret_stack         ; buffer pointer
 f_print_buffer: equ     $-8
-        
+
 ; <buffer pointer> <count> -> <bytes read>
 ; read to buffer
         dq          i_return, i_syscall, 
@@ -412,7 +485,7 @@ f_print_buffer: equ     $-8
         dq          i_push_to_ret_stack         ; count
         dq          i_push_to_ret_stack         ; buffer pointer
 f_read_from_std_in: equ     $-8
-        
+
 ; <length> -> <addr>
 ; allocate virtual memory pages
         dq          i_return, i_syscall,
@@ -461,7 +534,10 @@ f_rstack_overflow: equ     $-8
         dq          val(f_print_data_overflow)
 f_test_peek_ret_stack: equ     $-8
 
-        
+
+; print "debug"
+        dq          i_return, f_print_buffer, i_call, val(ss_debug), val(ss_debug_size)
+f_print_debug: equ     $-8
 ; print "Hello world"
         dq          i_return, f_print_buffer, i_call, val(ss_hello_world), val(13)
 f_print_hello_world: equ     $-8
@@ -481,6 +557,27 @@ f_echo: equ     $-8
 ; identity
         dq          i_return
 f_id: equ     $-8
+
+; <n> <function>
+; do n times
+
+        dq          i_return
+        dq          i_lower, val(0), i_dup
+f_do_n_times__cond: equ     $-8
+        dq          i_return
+        dq          i_add, val(-1)
+        dq          i_pop_from_ret_stack
+        dq          i_indirect_call,
+        dq          i_dup
+        dq          i_push_to_ret_stack,
+f_do_n_times__body: equ     $-8
+        dq          i_return,
+
+        dq          i_drop, i_drop,
+        dq          f_while, i_call, val(f_do_n_times__cond), val(f_do_n_times__body)
+
+
+f_do_n_times: equ     $-8
 
 
 ; print boolean
@@ -514,14 +611,28 @@ f_true: equ     $-8
         dq                  val(4)
         dq                  i_sub, val(6), val(2)
         dq          i_and, i_not
-        dq              i_gt, val(1), val(1)
+        dq              i_greater, val(1), val(1)
         dq          i_and
-        dq              i_gt, val(10), val(1)
+        dq              i_greater, val(10), val(1)
         dq          i_and, i_not
-        dq              i_lt, val(1), val(1)
+        dq              i_lower, val(1), val(1)
         dq          i_and
-        dq              i_lt, val(0), val(1)
+        dq              i_lower, val(0), val(1)
+        dq          i_and
+        dq              i_equal
+        dq                  val(0)
+        dq                  i_add, val(-1), val(1)
         dq          val(1)
+
+        dq          i_indirect_call, i_dup_n, val(1)
+        dq          val(f_print_hello_world), val(f_print_data_overflow), val(f_echo)
+
+        ;dq          jmp_test, i_jmp_if, val(0)
+        ;dq          f_do_n_times, i_call, val(3), val(f_print_data_overflow)
+        ;dq          call(f_echo)
+
+
+;        dq          f_exit_0, i_jmp, val(1)
 
 
 

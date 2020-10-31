@@ -1,3 +1,6 @@
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!! TIME TRACKING !!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 Архитектура
   - Минимальное ядро - писать на ассемблере как можно меньше, парсер тоже на форте надо написать
   - интерпретатор выполняет Read-Eval-Loop
@@ -10,10 +13,11 @@
   + заменить i_rjmp на обычный i_jmp
   - parse i64
     + '=', '+', '-', '<', '>'
-    - while
-    - dup-n
+    + and
+    + while (prediction 30 min, actual 3 hours)
+      + jmp_if (prediction 10 min, actual 15 min) - BUG!
+    + dup-n (actual 10 min)
     - str_char
-    - and
   - print i64
   - сделать кучу
   - check syscall return codes
@@ -44,6 +48,7 @@ def не позволяет легко определить переменную
 
 идеи:
 
+- stack allocation, frame pointer
 - function pointer indirection for JIT
 - использовать late-binding чтобы работала рекурсия
 - оставлять тексты определение функций в словаре для late-binding
@@ -70,6 +75,11 @@ str_char "123" 1    | '2'
 def "atoi" {
     drop swap
     drop swap
+    if {
+        =
+            45
+            str_char 0 dup-n 2
+        } { * -1  } { }
     drop
     while {
         not and
@@ -91,12 +101,13 @@ def "atoi" {
             * 10
         swap
     }
-    0
-    if { // '-asfasf' case is not handled
+    0 0
+    if {
         =
             45
             str_char dup-n 2 dup-n 3
-        } { -1 } { 0 }
+        } { + 1 } {}
+
 };
 
 // <string>
