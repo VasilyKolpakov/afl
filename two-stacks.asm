@@ -352,6 +352,28 @@ i_dup:
         mov         [r12 - 8*2], rax
         jmp iloop
 
+i_rot:
+        drop_data_stack 3
+        mov         r8, [r12 + 8*2]
+        mov         r9,  [r12 + 8*1]
+        mov         r10,  [r12 + 8*0]
+        add         r12, 8*3
+        mov         [r12 - 8*1], r10
+        mov         [r12 - 8*2], r8
+        mov         [r12 - 8*3], r9
+        jmp iloop
+
+i_rev_rot:
+        drop_data_stack 3
+        mov         r8, [r12 + 8*2]
+        mov         r9,  [r12 + 8*1]
+        mov         r10,  [r12 + 8*0]
+        add         r12, 8*3
+        mov         [r12 - 8*1], r9
+        mov         [r12 - 8*2], r10
+        mov         [r12 - 8*3], r8
+        jmp iloop
+
 ; <n> -> <a>
 i_dup_n:
         drop_data_stack 1
@@ -399,6 +421,7 @@ def_nl_terminated_static_string ss_true, "true"
 def_nl_terminated_static_string ss_false, "false"
 
 
+def_nl_terminated_static_string ss_error, "error"
 def_nl_terminated_static_string ss_debug, "debug"
 def_nl_terminated_static_string ss_hello_world, "Hello, World"
 
@@ -486,26 +509,51 @@ f_print_buffer: equ     $-8
         dq          i_push_to_ret_stack         ; buffer pointer
 f_read_from_std_in: equ     $-8
 
-; <length> -> <addr>
+; <size> -> <addr>
 ; allocate virtual memory pages
         dq          i_return, i_syscall,
         dq          val(9)                      ; mmap syscall num
         dq          val(0)                      ; NULL address
         dq          i_pop_from_ret_stack        ; length
         dq          val(3)                      ; PROT_READ | PROT_WRITE
-        dq          val(34),                    ; MAP_ANONYMOUS|MAP_PRIVATE
+        dq          val(34),                    ; MAP_A NONYMOUS|MAP_PRIVATE
         dq          val(-1)                     ; fd
         dq          val(0)                      ; offset
         dq          i_push_to_ret_stack         ; length
 f_mmap_anon: equ     $-8
 
-; <length> -> <addr>
+; <addr> <size>
+; deallocate virtual memory pages
+        dq          i_return, i_syscall,
+        dq          val(11)                     ; munmap syscall num
+        dq          i_pop_from_ret_stack        ; address
+        dq          i_pop_from_ret_stack        ; length
+        dq          val(0), val(0), val(0), val(0)
+        dq          i_push_to_ret_stack         ; length
+        dq          i_push_to_ret_stack         ; address
+f_munmap: equ     $-8
+
+; <size> -> <addr>
 ; malloc
-        dq          i_return, i_syscall, 
-        dq          val(60)                     ; syscall num
-        dq          val(0)                      ; exit code
-        dq          val(1), val(1), val(1), val(1), val(1) ; filler
+        dq          i_return
+        dq          i_add, val(8)                       ; <addr>
+        dq          i_write_mem_i64                     ; <addr>
+        dq          i_rev_rot, i_dup                    ; <addr> <size> <addr>
+        dq          call(f_mmap_anon), i_add, val(8)    ; <addr> <size>
+        dq          i_dup                               ; <size> <size>
 f_malloc: equ     $-8
+
+; <addr>
+; free
+        dq          i_return, i_greater, val(0)
+f_free__less_than_zero: equ     $-8
+        dq          i_return
+        dq          call(f_if), val(f_free__less_than_zero), val(f_print_error), val(f_id)
+        dq          call(f_munmap)
+        dq          i_swap                              ; <addr> <size>
+        dq          i_read_mem_i64, i_dup               ; <size> <addr>
+        dq          i_add, val(-8)                      ; <addr>
+f_free: equ     $-8
 
 
 ; exit_0
@@ -534,10 +582,28 @@ f_rstack_overflow: equ     $-8
         dq          val(f_print_data_overflow)
 f_test_peek_ret_stack: equ     $-8
 
+; test malloc/free
+        dq          i_read_mem_i64
+        dq          call(f_free)
+        dq          i_dup
+        dq          call(f_print_bool)
+        dq          i_equal
+        dq          val(42)
+        dq          i_read_mem_i64
+        dq          i_dup
+        dq          i_write_mem_i64, i_swap, val(42)
+        dq          i_dup
+        dq          call(f_malloc), val(100)
+f_test_malloc_free: equ     $-8
+
+
 
 ; print "debug"
         dq          i_return, f_print_buffer, i_call, val(ss_debug), val(ss_debug_size)
 f_print_debug: equ     $-8
+; print "error"
+        dq          i_return, f_print_buffer, i_call, val(ss_error), val(ss_error_size)
+f_print_error: equ     $-8
 ; print "Hello world"
         dq          i_return, f_print_buffer, i_call, val(ss_hello_world), val(13)
 f_print_hello_world: equ     $-8
@@ -624,8 +690,8 @@ f_true: equ     $-8
         dq                  i_add, val(-1), val(1)
         dq          val(1)
 
-        dq          i_indirect_call, i_dup_n, val(1)
-        dq          val(f_print_hello_world), val(f_print_data_overflow), val(f_echo)
+        dq          call(f_test_malloc_free)
+
 
         ;dq          jmp_test, i_jmp_if, val(0)
         ;dq          f_do_n_times, i_call, val(3), val(f_print_data_overflow)
