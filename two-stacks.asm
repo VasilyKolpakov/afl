@@ -157,6 +157,22 @@ i_and__false_branch:
         mov QWORD   [r12 - 8], 0
         jmp iloop
 
+; <a> <b> -> <a || b>
+i_or:
+        drop_data_stack 2
+        mov         rax,  [r12 + 8*1]        ; a
+        mov         rdi,  [r12 + 8*0]        ; b
+        add         r12, 8
+        cmp         rax, 0
+        jne          i_or__true_branch
+        cmp         rdi, 0
+        jne          i_or__true_branch
+        mov QWORD   [r12 - 8], 0
+        jmp iloop
+i_or__true_branch:
+        mov QWORD   [r12 - 8], 1
+        jmp iloop
+
 ; <a> <b> -> <a == b>
 i_equal:
         drop_data_stack 2
@@ -244,7 +260,23 @@ i_read_mem_i64:
         add         r12, 8
         jmp iloop
 
+; <address> <value>
+i_write_mem_byte:
+        drop_data_stack 2
+        mov         rax,  [r12 + 8*1]        ; address
+        mov         rdi,  [r12 + 8*0]        ; value
+        mov         [rax], dil
+        jmp iloop
 
+; <address> -> <value>
+i_read_mem_byte:
+        drop_data_stack 1
+        mov         rax,  [r12 + 8*0]        ; address
+        mov         rdi,  0
+        mov         dil, [rax]
+        mov         [r12], rdi
+        add         r12, 8
+        jmp iloop
 
 i_jmp:
         mov         r11, [r11]             ; next word is the instruction pointer
@@ -352,17 +384,30 @@ i_dup:
         mov         [r12 - 8*2], rax
         jmp iloop
 
+i_2dup:
+        drop_data_stack 2
+        mov         rax,  [r12 + 8*1]
+        mov         rdi,  [r12 + 8*0]
+        bump_data_stack 4
+        mov         [r12 - 8*1], rax
+        mov         [r12 - 8*2], rdi
+        mov         [r12 - 8*3], rax
+        mov         [r12 - 8*4], rdi
+        jmp iloop
+
+; <a> <b> <c> -> <c> <a> <b>
 i_rot:
         drop_data_stack 3
-        mov         r8, [r12 + 8*2]
+        mov         r8,  [r12 + 8*2]
         mov         r9,  [r12 + 8*1]
-        mov         r10,  [r12 + 8*0]
+        mov         r10, [r12 + 8*0]
         add         r12, 8*3
         mov         [r12 - 8*1], r10
         mov         [r12 - 8*2], r8
         mov         [r12 - 8*3], r9
         jmp iloop
 
+; <a> <b> <c> -> <b> <c> <a>
 i_rev_rot:
         drop_data_stack 3
         mov         r8, [r12 + 8*2]
@@ -422,7 +467,7 @@ def_nl_terminated_static_string ss_false, "false"
 
 
 def_nl_terminated_static_string ss_syscall_error, "syscall error"
-def_nl_terminated_static_string ss_error, "error"
+def_nl_terminated_static_string ss_panic, "panic"
 def_nl_terminated_static_string ss_debug, "debug"
 def_nl_terminated_static_string ss_hello_world, "Hello, World"
 
@@ -548,7 +593,7 @@ f_malloc: equ     $-8
 ; <addr>
 ; free
         dq          i_return
-        dq          i_drop, call(f_log_syscall_error)         ;
+        dq          i_drop, call(f_log_syscall_error)
         dq          call(f_munmap)                      ; <err code>
         dq          i_swap                              ; <addr> <size>
         dq          i_read_mem_i64, i_dup               ; <size> <addr>
@@ -596,6 +641,19 @@ f_test_peek_ret_stack: equ     $-8
         dq          call(f_malloc), val(100)
 f_test_malloc_free: equ     $-8
 
+; test byte array
+        dq           i_return
+        dq           call(f_free), i_pop_from_ret_stack
+        dq              call(f_byte_array_print), i_peek_ret_stack, val(1)
+        dq              call(f_byte_array_set), i_peek_ret_stack, val(1), val(5), val(10)
+        dq              call(f_byte_array_set), i_peek_ret_stack, val(1), val(4), val(111)
+        dq              call(f_byte_array_set), i_peek_ret_stack, val(1), val(3), val(108)
+        dq              call(f_byte_array_set), i_peek_ret_stack, val(1), val(2), val(108)
+        dq              call(f_byte_array_set), i_peek_ret_stack, val(1), val(1), val(101)
+        dq              call(f_byte_array_set), i_peek_ret_stack, val(1), val(0), val(104)
+        dq           i_push_to_ret_stack, call(f_make_byte_array), val(6)
+f_test_byte_array: equ     $-8
+
 
 
 ; check syscall error
@@ -612,12 +670,87 @@ f_log_syscall_error__log_error: equ     $-8
         dq          call(f_if), val(f_log_syscall_error__is_error), val(f_log_syscall_error__log_error), val(f_id)
 f_log_syscall_error: equ     $-8
 
+
+; make byte array
+; <n> -> <addr>
+        dq          i_return, i_greater, val(0), i_dup
+f_make_byte_array__is_negative: equ     $-8
+        dq          i_return,
+        dq          i_write_mem_i64                                         ; <addr>
+        dq          i_rev_rot, i_dup                                        ; <addr> <size> <addr>
+        dq          call(f_malloc)                                          ; <addr> <n>
+        dq          i_add, val(8), i_dup                                    ; <n + 8> <n>
+        dq          call(f_panic_if), val(f_make_byte_array__is_negative)   ; <n>
+f_make_byte_array: equ     $-8
+
+; byte array pointer
+; <addr> -> <addr>
+        dq          i_return, i_add, val(8)
+f_byte_array_pointer: equ     $-8
+
+; byte array size
+; <addr> -> <n>
+        dq          i_return, i_read_mem_i64
+f_byte_array_size: equ     $-8
+
+; byte array get byte
+; <addr> <n> -> <value>
+        dq          i_return
+        dq          i_or                            ; <bool>
+        dq              i_greater, val(0), i_swap   ; <bool> <bool>
+        dq              i_greater_or_equal          ; <bool> <n>
+        dq          i_rev_rot, i_dup                ; <n> <size> <n>
+        dq          i_swap                          ; <n> <size>
+f_byte_array_get__is_not_in_range: equ     $-8
+        dq          i_return, i_read_mem_byte
+        dq          i_add, val(8)               ; <addr>    skip size
+        dq          i_add                       ; <addr>    add index
+        dq          call(f_panic_if), val(f_byte_array_get__is_not_in_range) ; <n> <addr>
+        dq          i_rot                       ; <size> <n> <n> <addr>
+        dq          i_dup                       ; <n> <n> <size> <addr>
+        dq          i_rot                       ; <n> <size> <addr>
+        dq          i_read_mem_i64, i_dup       ; <size> <addr> <n>
+f_byte_array_get: equ     $-8
+
+; byte array set byte
+; <addr> <n> <value>
+        dq          i_return
+        dq          i_or                           ; <bool>
+        dq              i_greater, val(0), i_swap   ; <bool> <bool>
+        dq              i_greater_or_equal          ; <bool> <n>
+        dq          i_rev_rot, i_dup                ; <n> <size> <n>
+        dq          i_swap                          ; <n> <size>
+f_byte_array_set__is_not_in_range: equ     $-8
+        dq          i_return, i_write_mem_byte
+        dq          i_add, val(8)               ; <addr> <value>   skip size
+        dq          i_add                       ; <addr> <value>   add index
+        dq          call(f_panic_if), val(f_byte_array_set__is_not_in_range) ; <n> <addr> <value>
+        dq          i_rot                       ; <size> <n> <n> <addr> <value>
+        dq          i_dup                       ; <n> <n> <size> <addr> <value>
+        dq          i_rot                       ; <n> <size> <addr> <value>
+        dq          i_read_mem_i64, i_dup       ; <size> <addr> <n> <value>
+f_byte_array_set: equ     $-8
+
+; write byte array to stdout
+; <addr>
+        dq          i_return
+        dq          call(f_print_buffer), i_add, val(8), i_swap
+        dq          i_read_mem_i64, i_dup       ; <size> <addr>
+f_byte_array_print: equ     $-8
+
+; panic_if function
+        dq          call(f_exit_0), call(f_print_panic)
+f_panic_if__do_panic: equ     $-8
+        dq          i_return,
+        dq          call(f_if), i_rot, val(f_panic_if__do_panic), val(f_id)
+f_panic_if: equ     $-8
+
 ; print "debug"
         dq          i_return, f_print_buffer, i_call, val(ss_debug), val(ss_debug_size)
 f_print_debug: equ     $-8
-; print "error"
-        dq          i_return, f_print_buffer, i_call, val(ss_error), val(ss_error_size)
-f_print_error: equ     $-8
+; print "panic"
+        dq          i_return, f_print_buffer, i_call, val(ss_panic), val(ss_panic_size)
+f_print_panic: equ     $-8
 ; print "Hello world"
         dq          i_return, f_print_buffer, i_call, val(ss_hello_world), val(13)
 f_print_hello_world: equ     $-8
@@ -681,6 +814,14 @@ f_true: equ     $-8
         dq          call(f_exit_0)
         dq          f_print_bool, i_call,
         dq          i_and, i_not
+        dq              i_or, val(0), val(0)
+        dq          i_and,
+        dq              i_or, val(1), val(0)
+        dq          i_and,
+        dq              i_or, val(0), val(1)
+        dq          i_and,
+        dq              i_or, val(1), val(1)
+        dq          i_and, i_not
         dq              i_equal, val(0), val(1)
         dq          i_and,
         dq              i_equal
@@ -702,10 +843,25 @@ f_true: equ     $-8
         dq              i_equal
         dq                  val(0)
         dq                  i_add, val(-1), val(1)
+        dq          i_and
+        dq              i_equal
+        dq                  val(101)
+        dq                  i_read_mem_byte, i_add, val(1), val(ss_hello_world)
+        dq          i_and
+        dq              i_equal
+        dq                  val(10)
+        dq                  i_read_mem_i64, call(f_make_byte_array), val(10)
+        dq          i_and
+        dq              call(f_free), i_pop_from_ret_stack
+        dq              i_equal
+        dq                  val(42)
+        dq                  call(f_byte_array_get), i_peek_ret_stack, val(1), val(3)
+        dq              call(f_byte_array_set), i_peek_ret_stack, val(1), val(3), val(42)
+        dq              i_push_to_ret_stack, call(f_make_byte_array), val(10)
         dq          val(1)
 
-        dq          call(f_test_malloc_free)
-
+        dq          call(f_test_byte_array)
+        ;dq          call(f_print_buffer),call(f_print_buffer), i_2dup, val(ss_hello_world), val(13)
 
         ;dq          jmp_test, i_jmp_if, val(0)
         ;dq          f_do_n_times, i_call, val(3), val(f_print_data_overflow)

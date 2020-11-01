@@ -20,23 +20,30 @@
     - byte_array ()
       + malloc/free (p 10-20 min, actual 50 min, I thought that malloc was implemented)
         + i_rot, i_rev_rot
-      - simple error logging for syscalls (p 5 min, a )
-      - make_byte_array (p 5 min)
-      - byte_array_at (p 5 min)
-      - byte_array_set (p 5 min)
-      - byte_array_pointer (p 5 min)
-      - byte_array_size (p 5 min)
-      - print_byte_array
+      + simple error logging for syscalls (p 5 min, a 30 min)
+      + byte_array (p 1 hour, a 1 hour 20 min)
+        + make_byte_array (~ 5 min)
+          + check args
+        + byte_array_pointer (~ 2 min)
+        + byte_array_size (~ 3 min)
+        + byte_array_get (~ 15 min )
+          + i_read_mem_byte (a 7 min)
+          + range check, panic
+            + i_2dup
+            + i_or
+        + byte_array_set (~5 min)
+          + i_write_mem_byte
+          + range check, panic
+        + write_byte_array_to_std (~ 5 min)
+        + test (~15 min)
       - read byte array from stdin (p 5 min)
       - syscall error check (p 10 min)
   - print i64
   - conservative GC: simple and inefficient
-  - сделать кучу
-  - check syscall return codes
-  - conservative GC
-    - cuckoo hashing
   - написать интерпретатор 2s
     - интерпретатор генерирует код, который делает tail-call в него
+  - conservative GC
+    - cuckoo hashing
   - статическая проверка операций с return стеком
   - статическая проверка типов, вывод stack effect
     - optional args
@@ -55,6 +62,9 @@ API:
         # bytes. Returns addr + 8.
     - free a
         # Reads size from addr - 8. Deallocates memory addr - 8.
+    - make_byte_array n
+        # allocates a byte array. returns pointer to the array
+        # array memory layout: [<size i64> <byte>...]
 
 not unrgent, maybe important:
   - i_peek_ret_stack: check for non-positive arg
@@ -68,6 +78,7 @@ def не позволяет легко определить переменную
 
 идеи:
 
+- named stack vars, print stack states for functions
 - stack allocation, frame pointer
 - function pointer indirection for JIT
 - использовать late-binding чтобы работала рекурсия
