@@ -172,30 +172,30 @@ i_equal__true_branch:
         jmp iloop
 
 ; <a> <b> -> <a < b>
-i_lower:
+i_less:
         drop_data_stack 2
         mov         rax,  [r12 + 8*1]        ; a
         mov         rdi,  [r12 + 8*0]        ; b
         add         r12, 8
         cmp         rax, rdi
-        jl          i_lower__true_branch
+        jl          i_less__true_branch
         mov QWORD   [r12 - 8], 0
         jmp iloop
-i_lower__true_branch:
+i_less__true_branch:
         mov QWORD   [r12 - 8], 1
         jmp iloop
 
 ; <a> <b> -> <a <= b>
-i_lower_or_equal:
+i_less_or_equal:
         drop_data_stack 2
         mov         rax,  [r12 + 8*1]        ; a
         mov         rdi,  [r12 + 8*0]        ; b
         add         r12, 8
         cmp         rax, rdi
-        jle         i_lower__true_branch
+        jle         i_less__true_branch
         mov QWORD   [r12 - 8], 0
         jmp iloop
-i_lower_or_equal__true_branch:
+i_less_or_equal__true_branch:
         mov QWORD   [r12 - 8], 1
         jmp iloop
 
@@ -421,6 +421,7 @@ def_nl_terminated_static_string ss_true, "true"
 def_nl_terminated_static_string ss_false, "false"
 
 
+def_nl_terminated_static_string ss_syscall_error, "syscall error"
 def_nl_terminated_static_string ss_error, "error"
 def_nl_terminated_static_string ss_debug, "debug"
 def_nl_terminated_static_string ss_hello_world, "Hello, World"
@@ -539,17 +540,16 @@ f_munmap: equ     $-8
         dq          i_add, val(8)                       ; <addr>
         dq          i_write_mem_i64                     ; <addr>
         dq          i_rev_rot, i_dup                    ; <addr> <size> <addr>
+        dq          call(f_log_syscall_error)           ; <addr> <size>
         dq          call(f_mmap_anon), i_add, val(8)    ; <addr> <size>
         dq          i_dup                               ; <size> <size>
 f_malloc: equ     $-8
 
 ; <addr>
 ; free
-        dq          i_return, i_greater, val(0)
-f_free__less_than_zero: equ     $-8
         dq          i_return
-        dq          call(f_if), val(f_free__less_than_zero), val(f_print_error), val(f_id)
-        dq          call(f_munmap)
+        dq          i_drop, call(f_log_syscall_error)         ;
+        dq          call(f_munmap)                      ; <err code>
         dq          i_swap                              ; <addr> <size>
         dq          i_read_mem_i64, i_dup               ; <size> <addr>
         dq          i_add, val(-8)                      ; <addr>
@@ -598,6 +598,20 @@ f_test_malloc_free: equ     $-8
 
 
 
+; check syscall error
+        dq          i_return
+        dq          i_and
+        dq              i_less_or_equal, val(-4095), i_swap
+        dq              i_greater_or_equal, val(-1)
+        dq          i_dup, i_dup
+f_log_syscall_error__is_error: equ     $-8
+        dq          i_return,
+        dq          call(f_print_buffer), val(ss_syscall_error), val(ss_syscall_error_size)
+f_log_syscall_error__log_error: equ     $-8
+        dq          i_return,
+        dq          call(f_if), val(f_log_syscall_error__is_error), val(f_log_syscall_error__log_error), val(f_id)
+f_log_syscall_error: equ     $-8
+
 ; print "debug"
         dq          i_return, f_print_buffer, i_call, val(ss_debug), val(ss_debug_size)
 f_print_debug: equ     $-8
@@ -628,7 +642,7 @@ f_id: equ     $-8
 ; do n times
 
         dq          i_return
-        dq          i_lower, val(0), i_dup
+        dq          i_less, val(0), i_dup
 f_do_n_times__cond: equ     $-8
         dq          i_return
         dq          i_add, val(-1)
@@ -664,7 +678,7 @@ f_false: equ     $-8
 f_true: equ     $-8
         
 ; interpreter's entry point
-        dq          f_exit_0, i_call
+        dq          call(f_exit_0)
         dq          f_print_bool, i_call,
         dq          i_and, i_not
         dq              i_equal, val(0), val(1)
@@ -681,9 +695,9 @@ f_true: equ     $-8
         dq          i_and
         dq              i_greater, val(10), val(1)
         dq          i_and, i_not
-        dq              i_lower, val(1), val(1)
+        dq              i_less, val(1), val(1)
         dq          i_and
-        dq              i_lower, val(0), val(1)
+        dq              i_less, val(0), val(1)
         dq          i_and
         dq              i_equal
         dq                  val(0)
