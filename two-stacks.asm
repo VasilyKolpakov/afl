@@ -108,6 +108,16 @@ return_stack_underflow_handler:
         jmp iloop
 
 ; <number> <number> -> <number>
+i_mul:
+        drop_data_stack 2
+        mov         rax,  [r12 + 8*1]        ; number
+        mov         rdi,  [r12 + 8*0]        ; number
+        add         r12, 8
+        imul        rax, rdi
+        mov         [r12 - 8], rax
+        jmp iloop
+
+; <number> <number> -> <number>
 i_add:
         drop_data_stack 2
         mov         rax,  [r12 + 8*1]        ; number
@@ -466,6 +476,8 @@ def_nl_terminated_static_string ss_true, "true"
 def_nl_terminated_static_string ss_false, "false"
 
 
+def_nl_terminated_static_string ss_test_atoi, "-123"
+
 def_nl_terminated_static_string ss_syscall_error, "syscall error"
 def_nl_terminated_static_string ss_panic, "panic"
 def_nl_terminated_static_string ss_debug, "debug"
@@ -738,6 +750,52 @@ f_byte_array_set: equ     $-8
         dq          i_read_mem_i64, i_dup       ; <size> <addr>
 f_byte_array_print: equ     $-8
 
+; atoi, string to int
+; <addr> <size> -> <number>
+; loop invariant: <char index> <number> <buffer> <string size>
+        dq          i_return
+        dq          i_swap, i_mul, val(-1), i_swap
+f_atoi__mul_by_minus_one: equ     $-8
+        dq          i_return
+        dq          i_add, val(1)
+f_atoi__add_one: equ     $-8
+        dq          i_return
+        dq          i_equal
+        dq              val(45)
+        dq              i_read_mem_byte, i_dup_n, val(3)
+f_atoi__first_char_is_minus: equ     $-8
+        dq          i_return
+        dq          i_not, i_or
+        dq              i_equal, i_dup_n, val(2), i_dup_n, val(5) ; size == char index
+        dq              i_or
+        dq                  i_less, val(57)
+        dq                  i_swap
+        dq                  i_greater, val(48)
+        dq                      i_dup, i_read_mem_byte
+        dq                          i_add, i_dup_n, val(2),  i_dup_n, val(3),
+f_atoi__while_cond: equ     $-8
+        dq          i_return
+        dq          i_add, val(1) ; advanсe char index
+        dq          i_swap
+        dq          i_add
+        dq              i_sub,   ; next digit
+        dq                  i_read_mem_byte
+        dq                      i_add, i_dup_n, val(4), i_dup_n, val(4), ; add <char index> and <buffer>
+        dq                  val(48) ; <val 48> <number> <char index>  <buffer> <string size>
+        dq              i_mul, val(10)                              ; multiply number by 10
+        dq          i_swap ; <number> <char index>  <buffer> <string size>
+f_atoi__consume_one_char: equ     $-8
+        dq          i_return
+        dq          i_drop, i_swap
+        dq          i_drop, i_swap
+        dq          i_drop
+        dq          call(f_if), val(f_atoi__first_char_is_minus), val(f_atoi__mul_by_minus_one), val(f_id)
+        dq          call(f_while), val(f_atoi__while_cond), val(f_atoi__consume_one_char)
+        dq          call(f_if), val(f_atoi__first_char_is_minus), val(f_atoi__add_one), val(f_id)
+        dq          val(0)                          ; <char index>
+        dq          val(0)                          ; <number>
+f_atoi: equ     $-8
+
 ; panic_if function
         dq          call(f_exit_0), call(f_print_panic)
 f_panic_if__do_panic: equ     $-8
@@ -809,6 +867,11 @@ f_false: equ     $-8
 ; true function
         dq          i_return, val(1)
 f_true: equ     $-8
+
+; check print and exit
+        dq          call(f_exit_0), call(f_print_bool), i_equal
+f_check: equ     $-8
+
         
 ; interpreter's entry point
         dq          call(f_exit_0)
@@ -858,9 +921,13 @@ f_true: equ     $-8
         dq                  call(f_byte_array_get), i_peek_ret_stack, val(1), val(3)
         dq              call(f_byte_array_set), i_peek_ret_stack, val(1), val(3), val(42)
         dq              i_push_to_ret_stack, call(f_make_byte_array), val(10)
+        dq          i_and
+        dq              i_equal
+        dq                  val(-123)
+        dq                  call(f_atoi), val(ss_test_atoi), val(ss_test_atoi_size)
         dq          val(1)
 
-        dq          call(f_test_byte_array)
+        ;dq          call(f_test_byte_array)
         ;dq          call(f_print_buffer),call(f_print_buffer), i_2dup, val(ss_hello_world), val(13)
 
         ;dq          jmp_test, i_jmp_if, val(0)

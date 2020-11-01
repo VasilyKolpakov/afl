@@ -11,7 +11,7 @@
   + заменить инструкции exit и write_buffer на syscall и функции
   + добавить проверку на overflow и underflow для обоих стеков
   + заменить i_rjmp на обычный i_jmp
-  - parse i64
+  + parse i64 (a 1 hour 10 min)
     + '=', '+', '-', '<', '>'
     + and
     + while (prediction 30 min, actual 3 hours)
@@ -113,11 +113,11 @@ def "atoi" {
         } { * -1  } { }
     drop
     while {
-        not and
+        not or
                 =
                     dup-n 3 // char index
                     dup-n 5 // string size
-                and
+                or
                     < 57
                     swap
                     > 48
