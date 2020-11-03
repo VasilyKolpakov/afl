@@ -7,44 +7,44 @@
   - инструкции идут в обратном порядке чтобы можно было писать на "форте" в ассемблере
 
 План
-  + написать интерпретатор, threaded code
-  + заменить инструкции exit и write_buffer на syscall и функции
-  + добавить проверку на overflow и underflow для обоих стеков
-  + заменить i_rjmp на обычный i_jmp
-  + parse i64 (a 1 hour 10 min)
-    + '=', '+', '-', '<', '>'
-    + and
-    + while (prediction 30 min, actual 3 hours)
-      + jmp_if (prediction 10 min, actual 15 min) - BUG!
-    + dup-n (actual 10 min)
-  + byte_array ()
-      + malloc/free (p 10-20 min, actual 50 min, I thought that malloc was implemented)
-        + i_rot, i_rev_rot
-      + simple error logging for syscalls (p 5 min, a 30 min)
-      + byte_array (p 1 hour, a 1 hour 20 min)
-        + make_byte_array (~ 5 min)
-          + check args
-        + byte_array_pointer (~ 2 min)
-        + byte_array_size (~ 3 min)
-        + byte_array_get (~ 15 min )
-          + i_read_mem_byte (a 7 min)
-          + range check, panic
-            + i_2dup
-            + i_or
-        + byte_array_set (~5 min)
-          + i_write_mem_byte
-          + range check, panic
-        + write_byte_array_to_std (~ 5 min)
-        + test (~15 min)
-  + print i64 (p 50 min, a 1 hour 40 min)
-    + i64_str_size (p 20 min, a 40 min)
-      + i_div
-      + i_mod
-    + write_i64_to_buffer (p 30 min, a 1 hour)
-      + i_over
-      + check size (p 8 min)
-      + print minus (p 3 min)
-      + print digits (negate number if positive) (p 15 min)
+    + написать интерпретатор, threaded code
+    + заменить инструкции exit и write_buffer на syscall и функции
+    + добавить проверку на overflow и underflow для обоих стеков
+    + заменить i_rjmp на обычный i_jmp
+    + parse i64 (a 1 hour 10 min)
+        + '=', '+', '-', '<', '>'
+        + and
+        + while (prediction 30 min, actual 3 hours)
+            + jmp_if (prediction 10 min, actual 15 min) - BUG!
+        + dup-n (actual 10 min)
+    + byte_array ()
+        + malloc/free (p 10-20 min, actual 50 min, I thought that malloc was implemented)
+            + i_rot, i_rev_rot
+        + simple error logging for syscalls (p 5 min, a 30 min)
+        + byte_array (p 1 hour, a 1 hour 20 min)
+            + make_byte_array (~ 5 min)
+                + check args
+            + byte_array_pointer (~ 2 min)
+            + byte_array_size (~ 3 min)
+            + byte_array_get (~ 15 min )
+                + i_read_mem_byte (a 7 min)
+                + range check, panic
+                    + i_2dup
+                + i_or
+            + byte_array_set (~5 min)
+                + i_write_mem_byte
+                + range check, panic
+            + write_byte_array_to_std (~ 5 min)
+            + test (~15 min)
+    + print i64 (p 50 min, a 1 hour 40 min)
+        + i64_str_size (p 20 min, a 40 min)
+            + i_div
+            + i_mod
+        + write_i64_to_buffer (p 30 min, a 1 hour)
+            + i_over
+            + check size (p 8 min)
+            + print minus (p 3 min)
+            + print digits (negate number if positive) (p 15 min)
   - написать интерпретатор 2s
   - conservative GC: simple and inefficient
     - интерпретатор генерирует код, который делает tail-call в него
