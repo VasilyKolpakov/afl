@@ -1,1 +1,1 @@
-nasm -felf64 -g two-stacks.asm && ld -o two-stacks two-stacks.o && ./two-stacks
+nasm -felf64 -g afl.asm && ld -o afl afl.o && ./afl
