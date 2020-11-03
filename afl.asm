@@ -979,7 +979,17 @@ f_print_bool_true: equ     $-8
         dq          i_return, f_print_buffer, i_call, f_if, i_call, val(f_id), val(f_print_bool_true), val(f_print_bool_false)
 f_print_bool: equ     $-8
 
-
+; print number
+        dq              i_return
+        dq              call(f_free), i_pop_from_ret_stack
+        dq              call(f_print_buffer),
+        dq                  i_peek_ret_stack, val(1)
+        dq                  call(f_write_i64_to_buffer)
+        dq                      i_rot
+        dq                      i_peek_ret_stack, val(1)
+        dq                      val(20)
+        dq              i_push_to_ret_stack, call(f_malloc), val(20)
+f_print_number: equ     $-8
 
 ; false function
         dq          i_return, val(0)

@@ -45,6 +45,9 @@
             + check size (p 8 min)
             + print minus (p 3 min)
             + print digits (negate number if positive) (p 15 min)
+    + print_number funciton (p 5 min, a 7 min)
+    - lexer
+        # splits input into tokens (token_type - string pairs)
   - написать интерпретатор 2s
   - conservative GC: simple and inefficient
     - интерпретатор генерирует код, который делает tail-call в него
