@@ -124,7 +124,7 @@ i_div:
         mov         rdi,  [r12 + 8*0]       ; b
         add         r12, 8
         cqo                                 ; mov sign-extend of rax to rdx
-        idiv         rdi                     ; divide rdx:rax by rdi
+        idiv         rdi                    ; divide rdx:rax by rdi
         mov         [r12 - 8], rax          ; rax is the quotient
         jmp iloop
 
@@ -135,7 +135,7 @@ i_mod:
         mov         rdi,  [r12 + 8*0]       ; b
         add         r12, 8
         cqo                                 ; mov sign-extend of rax to rdx
-        idiv         rdi                     ; divide rdx:rax by rdi
+        idiv         rdi                    ; divide rdx:rax by rdi
         mov         [r12 - 8], rdx          ; rdx is the remainder
         jmp iloop
 
@@ -406,6 +406,17 @@ i_syscall:
         pop_registers
         mov         [r12], rax
         bump_data_stack 1
+        jmp iloop
+
+i_stack_depth:
+        mov         rax, r12
+        sub         rax, data_stack
+        cqo                             ; mov sign-extend of rax to rdx
+        mov         r9, 8
+        idiv        r9                  ; divide rdx:rax by 8
+
+        bump_data_stack 1
+        mov         [r12 - 8*1], rax    ; rax is the quotient
         jmp iloop
 
 i_dup:
@@ -991,6 +1002,36 @@ f_print_bool: equ     $-8
         dq              i_push_to_ret_stack, call(f_malloc), val(20)
 f_print_number: equ     $-8
 
+; print char (byte)
+        dq              i_return
+        dq              call(f_free), i_pop_from_ret_stack
+        dq              call(f_print_buffer),
+        dq                  i_peek_ret_stack, val(1)
+        dq                  val(1)
+        dq                  i_write_mem_byte
+        dq                      i_peek_ret_stack, val(1)
+        dq              i_push_to_ret_stack, call(f_malloc), val(1)
+f_write_byte_to_stdout: equ     $-8
+
+; print stack
+; loop invariant: <index> <stack depth>
+        dq              i_return
+        dq              i_not, i_equal, i_2dup
+f_print_data_stack__is_not_equal: equ     $-8
+        dq              i_return
+        dq              call(f_write_byte_to_stdout), val(32),
+        dq              call(f_print_number), i_dup_n,
+        dq              i_dup, i_add, val(1)
+f_print_data_stack__print_number: equ     $-8
+        dq              i_return
+        dq              i_drop, i_drop
+        dq              call(f_write_byte_to_stdout), val(10),
+        dq              call(f_write_byte_to_stdout), val(59),
+        dq              call(f_while), val(f_print_data_stack__is_not_equal), val(f_print_data_stack__print_number)
+        dq              val(2) ; <index> <stack depth>
+        dq              i_add, val(2), i_stack_depth ; <stack depth>
+f_print_data_stack: equ     $-8
+
 ; false function
         dq          i_return, val(0)
 f_false: equ     $-8
@@ -1124,6 +1165,9 @@ f_check: equ     $-8
                     test_write_i64_to_buffer__atoi__roundtrip(-9223372036854775808)
 
         dq          val(1)
+
+        dq          call(f_print_data_stack)
+        dq              val(1), val(2), val(3), val(4), val(5)
 
 
 

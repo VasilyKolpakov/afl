@@ -46,6 +46,10 @@
             + print minus (p 3 min)
             + print digits (negate number if positive) (p 15 min)
     + print_number funciton (p 5 min, a 7 min)
+    + print stack (30 min, a 25 min)
+        + i_stack_depth (5 min, 8 min #idiv problem, it doesn't support immediate values)
+        + function (15 min, a 16 min)
+            + print_byte
     - lexer
         # splits input into tokens (token_type - string pairs)
   - написать интерпретатор 2s
