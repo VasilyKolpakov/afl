@@ -110,18 +110,40 @@ return_stack_underflow_handler:
 ; <number> <number> -> <number>
 i_mul:
         drop_data_stack 2
-        mov         rax,  [r12 + 8*1]        ; number
-        mov         rdi,  [r12 + 8*0]        ; number
+        mov         rax,  [r12 + 8*1]       ; number
+        mov         rdi,  [r12 + 8*0]       ; number
         add         r12, 8
         imul        rax, rdi
         mov         [r12 - 8], rax
         jmp iloop
 
+; <a> <b> -> <a / b>
+i_div:
+        drop_data_stack 2
+        mov         rax,  [r12 + 8*1]       ; a
+        mov         rdi,  [r12 + 8*0]       ; b
+        add         r12, 8
+        cqo                                 ; mov sign-extend of rax to rdx
+        idiv         rdi                     ; divide rdx:rax by rdi
+        mov         [r12 - 8], rax          ; rax is the quotient
+        jmp iloop
+
+; <a> <b> -> <a % b>
+i_mod:
+        drop_data_stack 2
+        mov         rax,  [r12 + 8*1]       ; a
+        mov         rdi,  [r12 + 8*0]       ; b
+        add         r12, 8
+        cqo                                 ; mov sign-extend of rax to rdx
+        idiv         rdi                     ; divide rdx:rax by rdi
+        mov         [r12 - 8], rdx          ; rdx is the remainder
+        jmp iloop
+
 ; <number> <number> -> <number>
 i_add:
         drop_data_stack 2
-        mov         rax,  [r12 + 8*1]        ; number
-        mov         rdi,  [r12 + 8*0]        ; number
+        mov         rax,  [r12 + 8*1]       ; number
+        mov         rdi,  [r12 + 8*0]       ; number
         add         r12, 8
         add         rax, rdi
         mov         [r12 - 8], rax
@@ -130,8 +152,8 @@ i_add:
 ; <a> <b> -> <a - b>
 i_sub:
         drop_data_stack 2
-        mov         rax,  [r12 + 8*1]        ; a
-        mov         rdi,  [r12 + 8*0]        ; b
+        mov         rax,  [r12 + 8*1]       ; a
+        mov         rdi,  [r12 + 8*0]       ; b
         add         r12, 8
         sub         rax, rdi
         mov         [r12 - 8], rax
@@ -394,6 +416,16 @@ i_dup:
         mov         [r12 - 8*2], rax
         jmp iloop
 
+i_over:
+        drop_data_stack 2
+        mov         rax,  [r12 + 8*1]
+        mov         rdi,  [r12 + 8*0]
+        bump_data_stack 3
+        mov         [r12 - 8*1], rdi
+        mov         [r12 - 8*2], rax
+        mov         [r12 - 8*3], rdi
+        jmp iloop
+
 i_2dup:
         drop_data_stack 2
         mov         rax,  [r12 + 8*1]
@@ -474,6 +506,8 @@ _start:
 
 def_nl_terminated_static_string ss_true, "true"
 def_nl_terminated_static_string ss_false, "false"
+
+def_nl_terminated_static_string ss_newline, ""
 
 
 def_nl_terminated_static_string ss_test_atoi, "-123"
@@ -796,12 +830,98 @@ f_atoi__consume_one_char: equ     $-8
         dq          val(0)                          ; <number>
 f_atoi: equ     $-8
 
+; <number> -> <number string size>
+; loop invariant <number> <string size>
+        dq          i_return
+        dq          i_swap, i_add, val(1), i_swap
+        dq          i_div, i_swap, val(10)
+f_i64_str_size__while_body: equ     $-8
+        dq          i_return
+        dq          i_greater, val(-9), i_dup
+f_i64_str_size__less_than_minus_9: equ     $-8
+        dq          i_return
+        dq          i_mul, val(-1)
+f_i64_str_size__if_non_neg: equ     $-8
+        dq          i_return
+        dq          i_swap, i_add, val(1), i_swap ; add 1 to str size for minus sign
+f_i64_str_size__if_neg: equ     $-8
+        dq          i_return
+        dq          i_greater, val(0), i_dup
+f_i64_str_size__is_negative: equ     $-8
+        dq          i_return
+        dq          i_drop      
+        dq          call(f_while), val(f_i64_str_size__less_than_minus_9), val(f_i64_str_size__while_body)
+        dq          call(f_if), val(f_i64_str_size__is_negative), val(f_i64_str_size__if_neg), val(f_i64_str_size__if_non_neg)
+        dq          i_swap  ; <number> <string size>
+        dq          val(1)
+f_i64_str_size: equ     $-8
+
+
+; number to string
+; <number> <buffer address> <buffer size> -> <string size>
+
+; loop invariant: <last digit address> <number> <string size>
+        dq          i_return
+        dq          i_mul, val(-1)
+f_write_i64_to_buffer__negate: equ     $-8
+        dq          i_return
+        dq          i_greater, val(0), i_dup
+f_write_i64_to_buffer__is_negative: equ     $-8
+        dq          i_return
+        dq          i_write_mem_byte, i_swap, val(45), i_over ; write '-'
+f_write_i64_to_buffer__if_negative_case: equ     $-8
+        dq          i_return
+        dq          i_write_mem_byte, i_swap, val(48), i_over ; write '0'
+f_write_i64_to_buffer__if_positive_case: equ     $-8
+        dq          i_return
+        dq          i_swap, i_div, i_swap, val(10), i_swap ; <last digit address> <number>
+        dq          i_add, val(-1) ; <last digit address> <number>
+        dq          i_write_mem_byte, i_over ; <last digit address> <number>
+        dq          i_add, val(48), i_mul, val(-1), i_mod, i_swap, val(10) ; <last digit> <last digit address> <number>
+        dq          i_over
+f_write_i64_to_buffer__write_digit: equ     $-8
+        dq          i_return
+        dq          i_not, i_equal, val(0)
+        dq          i_over
+f_write_i64_to_buffer__number_is_not_zero: equ     $-8
+        dq          i_return
+        dq          i_greater
+f_write_i64_to_buffer__greater: equ     $-8
+        dq          i_return
+        dq          i_drop, i_drop
+        dq          call(f_while), val(f_write_i64_to_buffer__number_is_not_zero), val(f_write_i64_to_buffer__write_digit)
+
+        dq          i_swap ; <last digit address> <number> <string size>
+        dq          call(f_if), val(f_write_i64_to_buffer__is_negative)
+        dq              val(f_id)
+        dq              val(f_write_i64_to_buffer__negate)
+        dq          i_swap
+
+        dq          i_rev_rot, call(f_i64_str_size), i_over ; ; <last digit address> <number> <string size>
+
+        dq          i_add, i_add, val(-1) ; <last digit address> <number>
+        dq          i_rot ; <buffer address> <number str size> <number>
+        dq          call(f_i64_str_size), i_dup ; <number str size> <number> <buffer address>
+        dq          call(f_if), val(f_write_i64_to_buffer__is_negative) ; <number> <buffer address>
+        dq              val(f_write_i64_to_buffer__if_negative_case)
+        dq              val(f_write_i64_to_buffer__if_positive_case)
+        dq          i_write_mem_byte, i_swap, val(48), i_over ; <number> <buffer address>
+        dq          call(f_panic_if), val(f_write_i64_to_buffer__greater), ; <number> <buffer address>
+        dq              call(f_i64_str_size)
+        dq              i_over ;  <number> <buffer size> <number> <buffer address>
+        dq          i_rot ; <buffer size> <number> <buffer address>
+f_write_i64_to_buffer: equ     $-8
+
 ; panic_if function
         dq          call(f_exit_0), call(f_print_panic)
 f_panic_if__do_panic: equ     $-8
         dq          i_return,
         dq          call(f_if), i_rot, val(f_panic_if__do_panic), val(f_id)
 f_panic_if: equ     $-8
+
+; print newline
+        dq          i_return, f_print_buffer, i_call, val(ss_newline), val(ss_newline_size)
+f_print_newline: equ     $-8
 
 ; print "debug"
         dq          i_return, f_print_buffer, i_call, val(ss_debug), val(ss_debug_size)
@@ -906,6 +1026,33 @@ f_check: equ     $-8
         dq              i_equal
         dq                  val(0)
         dq                  i_add, val(-1), val(1)
+
+        dq          i_and
+        dq              i_equal
+        dq                  val(10)
+        dq                  i_div, val(100), val(10)
+        dq          i_and
+        dq              i_equal
+        dq                  val(-10)
+        dq                  i_div, val(-100), val(10)
+        dq          i_and
+        dq              i_equal
+        dq                  val(-9223372036854775807)
+        dq                  i_div, val(9223372036854775807), val(-1)
+
+        dq          i_and
+        dq              i_equal
+        dq                  val(0)
+        dq                  i_mod, val(100), val(10)
+        dq          i_and
+        dq              i_equal
+        dq                  val(-1)
+        dq                  i_mod, val(-101), val(10)
+        dq          i_and
+        dq              i_equal
+        dq                  val(-8)
+        dq                  i_mod, val(-9223372036854775808), val(10)
+        
         dq          i_and
         dq              i_equal
         dq                  val(101)
@@ -925,8 +1072,69 @@ f_check: equ     $-8
         dq              i_equal
         dq                  val(-123)
         dq                  call(f_atoi), val(ss_test_atoi), val(ss_test_atoi_size)
+; test f_i64_str_size
+        dq          i_and
+        dq              i_equal
+        dq                  val(3)
+        dq                  call(f_i64_str_size), val(101)
+        dq          i_and
+        dq              i_equal
+        dq                  val(4)
+        dq                  call(f_i64_str_size), val(-101)
+        dq          i_and
+        dq              i_equal
+        dq                  val(20)
+        dq                  call(f_i64_str_size), val(-9223372036854775808)
+        dq          i_and
+        dq              i_equal
+        dq                  val(1)
+        dq                  call(f_i64_str_size), val(0)
+        dq          i_and
+        dq              i_equal
+        dq                  val(19)
+        dq                  call(f_i64_str_size), val(9223372036854775807)
+; test f_write_i64_to_buffer <number> <buffer address> <buffer size>
+%macro  test_write_i64_to_buffer__atoi__roundtrip 1
+        dq          i_and
+        dq              call(f_free), i_pop_from_ret_stack
+        dq              i_equal
+        dq                  val(%1)
+        dq                  call(f_atoi), i_peek_ret_stack, val(1), val(100)
+        dq              i_and
+        dq                  i_equal
+        dq                      call(f_i64_str_size), val(%1)
+        dq                      call(f_write_i64_to_buffer), val(%1), i_peek_ret_stack, val(1), val(100)
+        dq              i_push_to_ret_stack, call(f_malloc), val(100)
+%endmacro
+                    test_write_i64_to_buffer__atoi__roundtrip(0)
+                    test_write_i64_to_buffer__atoi__roundtrip(100)
+                    test_write_i64_to_buffer__atoi__roundtrip(9223372036854775807)
+                    test_write_i64_to_buffer__atoi__roundtrip(-1)
+                    test_write_i64_to_buffer__atoi__roundtrip(-11)
+                    test_write_i64_to_buffer__atoi__roundtrip(-9223372036854775808)
+
         dq          val(1)
 
+
+
+; echo number
+;        dq          call(f_free), i_pop_from_ret_stack
+;        dq          call(f_print_newline),
+;        dq          call(f_print_buffer),
+;        dq              call(f_byte_array_pointer), i_peek_ret_stack, val(1)
+;        dq          call(f_write_i64_to_buffer), ; returns str size
+;        dq              i_rot
+;        dq              call(f_byte_array_pointer), i_peek_ret_stack, val(1)
+;        dq              call(f_byte_array_size), i_peek_ret_stack, val(1)
+;        dq          call(f_atoi),
+;        dq              call(f_byte_array_pointer), i_peek_ret_stack, val(1)
+;        dq          call(f_read_from_std_in), ; returns str size
+;        dq              call(f_byte_array_pointer), i_peek_ret_stack, val(1)
+;        dq              call(f_byte_array_size), i_peek_ret_stack, val(1)
+;        dq          i_push_to_ret_stack, call(f_make_byte_array), val(100)
+
+
+        ;dq                  call(f_i64_str_size), val(101)
         ;dq          call(f_test_byte_array)
         ;dq          call(f_print_buffer),call(f_print_buffer), i_2dup, val(ss_hello_world), val(13)
 
@@ -960,8 +1168,11 @@ f_check: equ     $-8
 ;        dq          f_if, i_call, val(f_true), val(f_print_hello_world), val(f_print_data_overflow),
 ;        dq          f_dstack_overflow, i_call
 ;        dq          f_rstack_overflow, i_call
+
+;        dq          call(f_exit_0)
 ;        dq          i_indirect_call, i_indirect_call, i_indirect_call, 
-;        dq          val(f_print_hello_world), val(f_print_data_overflow), val(f_echo)
+;        dq          i_over
+;        dq          val(f_print_hello_world), val(f_print_data_overflow)
 f_start: equ     $-8
 
         section   .bss

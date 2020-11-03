@@ -17,7 +17,7 @@
     + while (prediction 30 min, actual 3 hours)
       + jmp_if (prediction 10 min, actual 15 min) - BUG!
     + dup-n (actual 10 min)
-    - byte_array ()
+  + byte_array ()
       + malloc/free (p 10-20 min, actual 50 min, I thought that malloc was implemented)
         + i_rot, i_rev_rot
       + simple error logging for syscalls (p 5 min, a 30 min)
@@ -36,18 +36,23 @@
           + range check, panic
         + write_byte_array_to_std (~ 5 min)
         + test (~15 min)
-      - read byte array from stdin (p 5 min)
-      - syscall error check (p 10 min)
-  - print i64
-  - conservative GC: simple and inefficient
+  + print i64 (p 50 min, a 1 hour 40 min)
+    + i64_str_size (p 20 min, a 40 min)
+      + i_div
+      + i_mod
+    + write_i64_to_buffer (p 30 min, a 1 hour)
+      + i_over
+      + check size (p 8 min)
+      + print minus (p 3 min)
+      + print digits (negate number if positive) (p 15 min)
   - написать интерпретатор 2s
+  - conservative GC: simple and inefficient
     - интерпретатор генерирует код, который делает tail-call в него
   - conservative GC
     - cuckoo hashing
   - статическая проверка операций с return стеком
   - статическая проверка типов, вывод stack effect
     - optional args
-  - test harness in 2s (instead of bash)
 
   - интерпретатор лиспа
     - компиляция в виртуальную машину форта
@@ -78,6 +83,10 @@ def не позволяет легко определить переменную
 
 идеи:
 
+- test harness in 2s (instead of bash)
+- literal arrays with commas
+- recursive descent for parser and lexer?
+- look at how c works with signal handlers
 - named stack vars, print stack states for functions
 - stack allocation, frame pointer
 - function pointer indirection for JIT
@@ -93,6 +102,16 @@ def не позволяет легко определить переменную
 
 
 linux syscall args [ %rdi, %rsi, %rdx, %r10, %r8, %r9 ]
+
+
+// <number> -> <number>
+def "i64_str_size" {
+
+}
+// <number> <buffer> <buffer_size>
+def "i64_to_str" {
+
+}
 
 
 // atoi function
