@@ -923,6 +923,23 @@ f_write_i64_to_buffer__greater: equ     $-8
         dq          i_rot ; <buffer size> <number> <buffer address>
 f_write_i64_to_buffer: equ     $-8
 
+; -> <scanner>
+; scanner_make
+        dq          i_return
+        dq          i_drop, call(f_read_from_std_in), i_over, val(1)
+        dq          call(f_malloc), val(1)
+f_scanner_make: equ     $-8
+; <scanner> -> <byte>
+; scanner_peek
+        dq          i_return
+        dq          i_read_mem_byte
+f_scanner_peek: equ     $-8
+; <scanner>
+; scanner_advance
+        dq          i_return
+        dq          i_drop, call(f_read_from_std_in), i_swap, val(1)
+f_scanner_advance: equ     $-8
+
 ; panic_if function
         dq          call(f_exit_0), call(f_print_panic)
 f_panic_if__do_panic: equ     $-8
@@ -1170,6 +1187,20 @@ f_check: equ     $-8
         dq              val(1), val(2), val(3), val(4), val(5)
 
 
+        dq          call(f_free), i_pop_from_ret_stack
+        dq              call(f_write_byte_to_stdout), val(10)
+        dq              call(f_write_byte_to_stdout), call(f_scanner_peek), i_peek_ret_stack, val(1)
+        dq              call(f_write_byte_to_stdout), call(f_scanner_peek), i_peek_ret_stack, val(1)
+        dq              call(f_scanner_advance), i_peek_ret_stack, val(1)
+        dq              call(f_write_byte_to_stdout), call(f_scanner_peek), i_peek_ret_stack, val(1)
+        dq              call(f_write_byte_to_stdout), call(f_scanner_peek), i_peek_ret_stack, val(1)
+        dq              call(f_scanner_advance), i_peek_ret_stack, val(1)
+        dq              call(f_write_byte_to_stdout), call(f_scanner_peek), i_peek_ret_stack, val(1)
+        dq              call(f_write_byte_to_stdout), call(f_scanner_peek), i_peek_ret_stack, val(1)
+        dq              call(f_scanner_advance), i_peek_ret_stack, val(1)
+        dq              call(f_write_byte_to_stdout), call(f_scanner_peek), i_peek_ret_stack, val(1)
+        dq              call(f_write_byte_to_stdout), call(f_scanner_peek), i_peek_ret_stack, val(1)
+        dq          i_push_to_ret_stack, call(f_scanner_make)
 
 ; echo number
 ;        dq          call(f_free), i_pop_from_ret_stack

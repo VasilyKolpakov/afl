@@ -51,8 +51,44 @@
         + function (15 min, a 16 min)
             + print_byte
     - lexer
+        - design sketch #1 (p 20 min, a 30)
         # splits input into tokens (token_type - string pairs)
-  - написать интерпретатор 2s
+        # reads one token per call !!!!
+        # returns token type and string
+        # save line and column numbers for error reporting?
+        > tokens
+            # whitespace is delimiter except in string literals
+            > ';'
+            > '}'
+            > '{'
+            > string literal
+                # escape sequences ('\n', '\t')
+                # string literal cannot be on multiple lines
+            > number literal
+            > word
+                # "2dup" word is allowed
+            > error
+                # bad string literals?
+        - growable byte buffer
+            - realloc
+            - rewrite byte buffer
+            - grow <n> # returns pointer to the new slice
+        + scanner # 1 byte lookahead scanner (p 20, a 13 min)
+            # keep the byte on stack ?
+            # interpreter state ?
+            # closures, function generation, append_function_args?
+            # just keep it on the heap !
+            + scanner_make (p 5)
+                # allocates memory and reads first byte
+            + scanner_peek (p 10)
+                # returns cached value
+            + scanner_advance (p 5)
+                # reads stdin
+    - parser
+    - codegen
+    - написать интерпретатор 2s
+    - b-tree
+        # lazy maintenance
   - conservative GC: simple and inefficient
     - интерпретатор генерирует код, который делает tail-call в него
   - conservative GC
@@ -136,7 +172,7 @@ def "atoi" {
         =
             45
             str_char 0 dup-n 2
-        } { * -1  } { }
+        } { * -1 } { }
     drop
     while {
         not or
@@ -163,7 +199,7 @@ def "atoi" {
         =
             45
             str_char dup-n 2 dup-n 3
-        } { + 1 } {}
+        } { + 1 } { }
 
 };
 
