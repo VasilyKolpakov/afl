@@ -636,6 +636,21 @@ f_mmap_anon: equ     $-8
         dq          i_push_to_ret_stack         ; address
 f_munmap: equ     $-8
 
+; <addr> <old size> <new size>
+; remap virtual memory pages
+        dq          i_return, i_syscall,
+        dq          val(25)                     ; mremap syscall num
+        dq          i_pop_from_ret_stack        ; address
+        dq          i_pop_from_ret_stack        ; old size
+        dq          i_pop_from_ret_stack        ; new size
+        dq          val(1)                      ; MREMAP_MAYMOVE
+        dq          val(0)                      ; new addr filler
+        dq          val(0)
+        dq          i_push_to_ret_stack         ; new size
+        dq          i_push_to_ret_stack         ; old size
+        dq          i_push_to_ret_stack         ; address
+f_mremap: equ     $-8
+
 ; <size> -> <addr>
 ; malloc
         dq          i_return
@@ -646,6 +661,19 @@ f_munmap: equ     $-8
         dq          call(f_mmap_anon), i_add, val(8)    ; <addr> <size>
         dq          i_dup                               ; <size> <size>
 f_malloc: equ     $-8
+
+; <addr> <new size> -> <addr>
+; realloc
+        dq          i_return
+        dq          i_add, val(8)                       ; <addr>
+        dq          i_write_mem_i64                     ; <addr>
+        dq          i_rev_rot, i_dup                    ; <addr> <new size> <addr>
+        dq          call(f_log_syscall_error)           ; <addr> <new size>
+        dq          call(f_mremap),                     ; <addr> <new size>
+        dq          i_swap, i_read_mem_i64, i_dup       ; <orig addr> <old size> <new size> <new size>
+        dq          i_add, val(-8)                      ; <orig addr> <new size> <new size>
+        dq          i_swap, i_over                      ; <addr> <new size> <new size>
+f_realloc: equ     $-8
 
 ; <addr>
 ; free
@@ -1181,26 +1209,39 @@ f_check: equ     $-8
                     test_write_i64_to_buffer__atoi__roundtrip(-11)
                     test_write_i64_to_buffer__atoi__roundtrip(-9223372036854775808)
 
+        dq          i_and
+        dq              i_drop, i_pop_from_ret_stack
+        dq              call(f_free), i_pop_from_ret_stack
+        dq              i_equal
+        dq                  val(42)
+        dq                  i_read_mem_i64, i_peek_ret_stack, val(2)
+        dq                  i_drop, i_read_mem_i64, i_add, val(9000), i_peek_ret_stack, val(2)
+        dq              i_push_to_ret_stack, call(f_realloc), i_peek_ret_stack, val(1), val(10000)
+        ;dq                  i_write_mem_i64, i_add, val(9000) i_peek_ret_stack, val(1), val(42)
+        dq                  i_write_mem_i64, i_peek_ret_stack, val(1), val(42)
+        dq              i_push_to_ret_stack, call(f_malloc), val(100)
+
+
         dq          val(1)
 
         dq          call(f_print_data_stack)
         dq              val(1), val(2), val(3), val(4), val(5)
 
 
-        dq          call(f_free), i_pop_from_ret_stack
-        dq              call(f_write_byte_to_stdout), val(10)
-        dq              call(f_write_byte_to_stdout), call(f_scanner_peek), i_peek_ret_stack, val(1)
-        dq              call(f_write_byte_to_stdout), call(f_scanner_peek), i_peek_ret_stack, val(1)
-        dq              call(f_scanner_advance), i_peek_ret_stack, val(1)
-        dq              call(f_write_byte_to_stdout), call(f_scanner_peek), i_peek_ret_stack, val(1)
-        dq              call(f_write_byte_to_stdout), call(f_scanner_peek), i_peek_ret_stack, val(1)
-        dq              call(f_scanner_advance), i_peek_ret_stack, val(1)
-        dq              call(f_write_byte_to_stdout), call(f_scanner_peek), i_peek_ret_stack, val(1)
-        dq              call(f_write_byte_to_stdout), call(f_scanner_peek), i_peek_ret_stack, val(1)
-        dq              call(f_scanner_advance), i_peek_ret_stack, val(1)
-        dq              call(f_write_byte_to_stdout), call(f_scanner_peek), i_peek_ret_stack, val(1)
-        dq              call(f_write_byte_to_stdout), call(f_scanner_peek), i_peek_ret_stack, val(1)
-        dq          i_push_to_ret_stack, call(f_scanner_make)
+;        dq          call(f_free), i_pop_from_ret_stack
+;        dq              call(f_write_byte_to_stdout), val(10)
+;        dq              call(f_write_byte_to_stdout), call(f_scanner_peek), i_peek_ret_stack, val(1)
+;        dq              call(f_write_byte_to_stdout), call(f_scanner_peek), i_peek_ret_stack, val(1)
+;        dq              call(f_scanner_advance), i_peek_ret_stack, val(1)
+;        dq              call(f_write_byte_to_stdout), call(f_scanner_peek), i_peek_ret_stack, val(1)
+;        dq              call(f_write_byte_to_stdout), call(f_scanner_peek), i_peek_ret_stack, val(1)
+;        dq              call(f_scanner_advance), i_peek_ret_stack, val(1)
+;        dq              call(f_write_byte_to_stdout), call(f_scanner_peek), i_peek_ret_stack, val(1)
+;        dq              call(f_write_byte_to_stdout), call(f_scanner_peek), i_peek_ret_stack, val(1)
+;        dq              call(f_scanner_advance), i_peek_ret_stack, val(1)
+;        dq              call(f_write_byte_to_stdout), call(f_scanner_peek), i_peek_ret_stack, val(1)
+;        dq              call(f_write_byte_to_stdout), call(f_scanner_peek), i_peek_ret_stack, val(1)
+;        dq          i_push_to_ret_stack, call(f_scanner_make)
 
 ; echo number
 ;        dq          call(f_free), i_pop_from_ret_stack

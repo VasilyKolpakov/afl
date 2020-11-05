@@ -70,9 +70,9 @@
             > error
                 # bad string literals?
         - growable byte buffer
-            - realloc
+            + realloc (p 20 min, a 25)
             - rewrite byte buffer
-            - grow <n> # returns pointer to the new slice
+            -? grow <n> # returns pointer to the new slice
         + scanner # 1 byte lookahead scanner (p 20, a 13 min)
             # keep the byte on stack ?
             # interpreter state ?
