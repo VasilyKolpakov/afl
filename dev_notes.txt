@@ -69,9 +69,25 @@
                 # "2dup" word is allowed
             > error
                 # bad string literals?
-        - growable byte buffer
+        + growable byte buffer
             + realloc (p 20 min, a 25)
-            - rewrite byte buffer
+            + rewrite byte buffer (p 45 min, a 1 hour 30 min)
+                # size
+                # capacity
+                # pointer
+                + make (p 10 min, a 9 min)
+                + size  (p 5 min, a 2 min)
+                + set  (p 5 min, a 4 min)
+                --- ensure_capacity (p 10 min) 5 min + 10 min
+                    - i_bit_lshift (p 8)
+                        - no such instruction
+                    - i_bit_or (p 8)
+                    #scratch this
+                + append  (p 10 min, 23 min)
+                + pointer (p 3 min, a 3 min)
+                + destroy (p 8 min, a 4 min)
+                + test & debug    (p 8 min, a 25 min)
+                    + make fix (9 min)
             -? grow <n> # returns pointer to the new slice
         + scanner # 1 byte lookahead scanner (p 20, a 13 min)
             # keep the byte on stack ?
@@ -126,6 +142,7 @@ def не позволяет легко определить переменную
 
 идеи:
 
+- types: (number, bool)
 - test harness in 2s (instead of bash)
 - literal arrays with commas
 - recursive descent for parser and lexer?

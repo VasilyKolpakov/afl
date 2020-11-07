@@ -726,18 +726,6 @@ f_test_peek_ret_stack: equ     $-8
         dq          call(f_malloc), val(100)
 f_test_malloc_free: equ     $-8
 
-; test byte array
-        dq           i_return
-        dq           call(f_free), i_pop_from_ret_stack
-        dq              call(f_byte_array_print), i_peek_ret_stack, val(1)
-        dq              call(f_byte_array_set), i_peek_ret_stack, val(1), val(5), val(10)
-        dq              call(f_byte_array_set), i_peek_ret_stack, val(1), val(4), val(111)
-        dq              call(f_byte_array_set), i_peek_ret_stack, val(1), val(3), val(108)
-        dq              call(f_byte_array_set), i_peek_ret_stack, val(1), val(2), val(108)
-        dq              call(f_byte_array_set), i_peek_ret_stack, val(1), val(1), val(101)
-        dq              call(f_byte_array_set), i_peek_ret_stack, val(1), val(0), val(104)
-        dq           i_push_to_ret_stack, call(f_make_byte_array), val(6)
-f_test_byte_array: equ     $-8
 
 
 
@@ -756,27 +744,20 @@ f_log_syscall_error__log_error: equ     $-8
 f_log_syscall_error: equ     $-8
 
 
-; make byte array
-; <n> -> <addr>
-        dq          i_return, i_greater, val(0), i_dup
-f_make_byte_array__is_negative: equ     $-8
+; make byte vector [size, capacity, pointer]
+; -> <addr>
         dq          i_return,
-        dq          i_write_mem_i64                                         ; <addr>
-        dq          i_rev_rot, i_dup                                        ; <addr> <size> <addr>
-        dq          call(f_malloc)                                          ; <addr> <n>
-        dq          i_add, val(8), i_dup                                    ; <n + 8> <n>
-        dq          call(f_panic_if), val(f_make_byte_array__is_negative)   ; <n>
-f_make_byte_array: equ     $-8
+        dq          i_write_mem_i64, i_swap, call(f_malloc), val(1)         ; <addr>  write pointer
+        dq          i_add, val(8 * 2), i_dup                                ; <pointer addr> <addr>
+        dq          i_write_mem_i64, i_swap, val(1), i_add, val(8), i_dup   ; <cap addr> <addr>  write capacity
+        dq          i_write_mem_i64, i_swap, val(0), i_dup                  ; <size addr> <addr> write size
+        dq          call(f_malloc), val(8 * 3)                              ; <addr>
+f_make_byte_vector: equ     $-8
 
-; byte array pointer
-; <addr> -> <addr>
-        dq          i_return, i_add, val(8)
-f_byte_array_pointer: equ     $-8
-
-; byte array size
+; byte vector size
 ; <addr> -> <n>
         dq          i_return, i_read_mem_i64
-f_byte_array_size: equ     $-8
+f_byte_vector_size: equ     $-8
 
 ; byte array get byte
 ; <addr> <n> -> <value>
@@ -797,7 +778,7 @@ f_byte_array_get__is_not_in_range: equ     $-8
         dq          i_read_mem_i64, i_dup       ; <size> <addr> <n>
 f_byte_array_get: equ     $-8
 
-; byte array set byte
+; byte vector set byte
 ; <addr> <n> <value>
         dq          i_return
         dq          i_or                           ; <bool>
@@ -805,16 +786,53 @@ f_byte_array_get: equ     $-8
         dq              i_greater_or_equal          ; <bool> <n>
         dq          i_rev_rot, i_dup                ; <n> <size> <n>
         dq          i_swap                          ; <n> <size>
-f_byte_array_set__is_not_in_range: equ     $-8
+f_byte_vector_set__is_not_in_range: equ     $-8
         dq          i_return, i_write_mem_byte
-        dq          i_add, val(8)               ; <addr> <value>   skip size
-        dq          i_add                       ; <addr> <value>   add index
-        dq          call(f_panic_if), val(f_byte_array_set__is_not_in_range) ; <n> <addr> <value>
+        dq          i_add                       ; <value addr> <value>
+        dq          i_read_mem_i64              ; <array addr> <n> <value>
+        dq          i_add, val(8 * 2)           ; <pointer addr> <n> <value>
+        dq          i_swap                      ; <addr> <n> <value>
+        dq          call(f_panic_if), val(f_byte_vector_set__is_not_in_range) ; <n> <addr> <value>
         dq          i_rot                       ; <size> <n> <n> <addr> <value>
         dq          i_dup                       ; <n> <n> <size> <addr> <value>
         dq          i_rot                       ; <n> <size> <addr> <value>
         dq          i_read_mem_i64, i_dup       ; <size> <addr> <n> <value>
-f_byte_array_set: equ     $-8
+f_byte_vector_set: equ     $-8
+
+; byte vector append
+; <addr> <byte value>
+        dq          i_return
+        dq          i_write_mem_i64, i_add, val(8 * 2), i_over              ; <addr> <value>
+        dq          call(f_realloc), i_swap                                 ; <new array addr> <addr> <value>
+        dq          i_mul, val(2)                                           ; <capacity * 2> <array addr> <addr> <value>
+        dq          i_read_mem_i64, i_add, val(8), i_over                   ; <capacity> <array addr> <addr> <value>
+        dq          i_read_mem_i64, i_add, val(8 * 2), i_dup                ; <array addr> <addr> <value>
+f_byte_vector_append__double_capacity: equ     $-8
+        dq          i_return, i_equal
+f_byte_vector_append__is_equal: equ     $-8
+        dq          i_return
+        dq          i_write_mem_byte                                        ;
+        dq          i_add, i_add, val(-1)                                   ; <value addr> <value>
+        dq          i_read_mem_i64, i_add, val(8 * 2), i_swap               ; <array addr> <size> <value>
+        dq          i_read_mem_i64, i_dup                                   ; <size> <addr> <value>
+        dq          i_write_mem_i64, i_over                                 ; <addr> <value>
+        dq          i_add, val(1)                                           ; <size + 1> <addr> <value>
+        dq          i_read_mem_i64, i_dup                                   ; <size> <addr> <value>
+        dq          call(f_if), val(f_byte_vector_append__is_equal)         ; <addr> <value>
+        dq          val(f_byte_vector_append__double_capacity), val(f_id)
+        dq          i_read_mem_i64, i_add, val(8), i_over                   ; <capacity> <size> <addr> <value>
+        dq          i_read_mem_i64, i_dup                                   ; <size> <addr> <value>
+f_byte_vector_append: equ     $-8
+
+; byte vector pointer
+; <addr> -> <array addr>
+        dq          i_return
+        dq          i_read_mem_i64, i_add, val(8 * 2)
+f_byte_vector_pointer: equ     $-8
+        dq          i_return
+        dq          call(f_free), call(f_free)
+        dq          i_read_mem_i64, i_add, val(8 * 2), i_dup                ; <array pointer> <addr>
+f_byte_vector_destroy: equ     $-8
 
 ; write byte array to stdout
 ; <addr>
@@ -1155,17 +1173,6 @@ f_check: equ     $-8
         dq                  i_read_mem_byte, i_add, val(1), val(ss_hello_world)
         dq          i_and
         dq              i_equal
-        dq                  val(10)
-        dq                  i_read_mem_i64, call(f_make_byte_array), val(10)
-        dq          i_and
-        dq              call(f_free), i_pop_from_ret_stack
-        dq              i_equal
-        dq                  val(42)
-        dq                  call(f_byte_array_get), i_peek_ret_stack, val(1), val(3)
-        dq              call(f_byte_array_set), i_peek_ret_stack, val(1), val(3), val(42)
-        dq              i_push_to_ret_stack, call(f_make_byte_array), val(10)
-        dq          i_and
-        dq              i_equal
         dq                  val(-123)
         dq                  call(f_atoi), val(ss_test_atoi), val(ss_test_atoi_size)
 ; test f_i64_str_size
@@ -1221,11 +1228,52 @@ f_check: equ     $-8
         dq                  i_write_mem_i64, i_peek_ret_stack, val(1), val(42)
         dq              i_push_to_ret_stack, call(f_malloc), val(100)
 
+        dq          i_and
+        dq              call(f_free), i_pop_from_ret_stack
+        dq              i_equal
+        dq                  val(0)
+        dq                  call(f_byte_vector_size), i_peek_ret_stack, val(1)
+        dq              i_push_to_ret_stack, call(f_make_byte_vector)
+        dq          i_and
+        dq              call(f_free), i_pop_from_ret_stack
+        dq              i_equal
+        dq                  val(1)
+        dq                  call(f_byte_vector_size), i_peek_ret_stack, val(1)
+        dq                  call(f_byte_vector_append), i_peek_ret_stack, val(1), val(1)
+        dq              i_push_to_ret_stack, call(f_make_byte_vector)
+        dq          i_and
+        dq              call(f_free), i_pop_from_ret_stack
+        dq              i_equal
+        dq                  val(4)
+        dq                  call(f_byte_vector_size), i_peek_ret_stack, val(1)
+        dq                  call(f_byte_vector_append), i_peek_ret_stack, val(1), val(1)
+        dq                  call(f_byte_vector_append), i_peek_ret_stack, val(1), val(1)
+        dq                  call(f_byte_vector_append), i_peek_ret_stack, val(1), val(1)
+        dq                  call(f_byte_vector_append), i_peek_ret_stack, val(1), val(1)
+        dq              i_push_to_ret_stack, call(f_make_byte_vector)
+        dq          i_and
+        dq              call(f_free), i_pop_from_ret_stack
+        dq              i_equal
+        dq                  val(1234567890)
+        dq                  call(f_atoi)
+        dq                  call(f_byte_vector_pointer), i_peek_ret_stack, val(1)
+        dq                  call(f_byte_vector_size), i_peek_ret_stack, val(1)
+        dq                  call(f_byte_vector_append), i_peek_ret_stack, val(1), val(48)
+        dq                  call(f_byte_vector_append), i_peek_ret_stack, val(1), val(57)
+        dq                  call(f_byte_vector_append), i_peek_ret_stack, val(1), val(56)
+        dq                  call(f_byte_vector_append), i_peek_ret_stack, val(1), val(55)
+        dq                  call(f_byte_vector_append), i_peek_ret_stack, val(1), val(54)
+        dq                  call(f_byte_vector_append), i_peek_ret_stack, val(1), val(53)
+        dq                  call(f_byte_vector_append), i_peek_ret_stack, val(1), val(52)
+        dq                  call(f_byte_vector_append), i_peek_ret_stack, val(1), val(51)
+        dq                  call(f_byte_vector_append), i_peek_ret_stack, val(1), val(50)
+        dq                  call(f_byte_vector_append), i_peek_ret_stack, val(1), val(49)
+        dq              i_push_to_ret_stack, call(f_make_byte_vector)
+
 
         dq          val(1)
 
         dq          call(f_print_data_stack)
-        dq              val(1), val(2), val(3), val(4), val(5)
 
 
 ;        dq          call(f_free), i_pop_from_ret_stack
@@ -1243,21 +1291,7 @@ f_check: equ     $-8
 ;        dq              call(f_write_byte_to_stdout), call(f_scanner_peek), i_peek_ret_stack, val(1)
 ;        dq          i_push_to_ret_stack, call(f_scanner_make)
 
-; echo number
-;        dq          call(f_free), i_pop_from_ret_stack
-;        dq          call(f_print_newline),
-;        dq          call(f_print_buffer),
-;        dq              call(f_byte_array_pointer), i_peek_ret_stack, val(1)
-;        dq          call(f_write_i64_to_buffer), ; returns str size
-;        dq              i_rot
-;        dq              call(f_byte_array_pointer), i_peek_ret_stack, val(1)
-;        dq              call(f_byte_array_size), i_peek_ret_stack, val(1)
-;        dq          call(f_atoi),
-;        dq              call(f_byte_array_pointer), i_peek_ret_stack, val(1)
-;        dq          call(f_read_from_std_in), ; returns str size
-;        dq              call(f_byte_array_pointer), i_peek_ret_stack, val(1)
-;        dq              call(f_byte_array_size), i_peek_ret_stack, val(1)
-;        dq          i_push_to_ret_stack, call(f_make_byte_array), val(100)
+
 
 
         ;dq                  call(f_i64_str_size), val(101)
