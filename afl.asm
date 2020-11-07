@@ -759,6 +759,11 @@ f_make_byte_vector: equ     $-8
         dq          i_return, i_read_mem_i64
 f_byte_vector_size: equ     $-8
 
+; byte vector capacity
+; <addr> -> <n>
+        dq          i_return, i_read_mem_i64, i_add, val(8)
+f_byte_vector_capacity: equ     $-8
+
 ; byte array get byte
 ; <addr> <n> -> <value>
         dq          i_return
@@ -803,10 +808,11 @@ f_byte_vector_set: equ     $-8
 ; <addr> <byte value>
         dq          i_return
         dq          i_write_mem_i64, i_add, val(8 * 2), i_over              ; <addr> <value>
-        dq          call(f_realloc), i_swap                                 ; <new array addr> <addr> <value>
-        dq          i_mul, val(2)                                           ; <capacity * 2> <array addr> <addr> <value>
-        dq          i_read_mem_i64, i_add, val(8), i_over                   ; <capacity> <array addr> <addr> <value>
-        dq          i_read_mem_i64, i_add, val(8 * 2), i_dup                ; <array addr> <addr> <value>
+        dq          call(f_realloc)                                         ; <new array addr> <addr> <value>
+        dq          i_read_mem_i64, i_add, val(8*2), i_over                      ; <array addr> <capacity * 2> <addr> <value> write capacity
+        dq          i_write_mem_i64, i_add, val(8), i_swap, i_2dup          ; <capacity * 2> <addr> <value> write capacity
+        dq          i_mul, val(2)                                           ; <capacity * 2> <addr> <value>
+        dq          i_read_mem_i64, i_add, val(8), i_dup                    ; <capacity> <addr> <value>
 f_byte_vector_append__double_capacity: equ     $-8
         dq          i_return, i_equal
 f_byte_vector_append__is_equal: equ     $-8
@@ -1243,9 +1249,13 @@ f_check: equ     $-8
         dq              i_push_to_ret_stack, call(f_make_byte_vector)
         dq          i_and
         dq              call(f_free), i_pop_from_ret_stack
-        dq              i_equal
-        dq                  val(4)
-        dq                  call(f_byte_vector_size), i_peek_ret_stack, val(1)
+        dq              i_and
+        dq                  i_equal
+        dq                      val(4)
+        dq                      call(f_byte_vector_capacity), i_peek_ret_stack, val(1)
+        dq                  i_equal
+        dq                      val(4)
+        dq                      call(f_byte_vector_size), i_peek_ret_stack, val(1)
         dq                  call(f_byte_vector_append), i_peek_ret_stack, val(1), val(1)
         dq                  call(f_byte_vector_append), i_peek_ret_stack, val(1), val(1)
         dq                  call(f_byte_vector_append), i_peek_ret_stack, val(1), val(1)
