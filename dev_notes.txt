@@ -51,7 +51,7 @@
         + function (15 min, a 16 min)
             + print_byte
     - lexer
-        - design sketch #1 (p 20 min, a 30)
+        + design sketch #1 (p 20 min, a 30)
         # splits input into tokens (token_type - string pairs)
         # reads one token per call !!!!
         # returns token type and string
@@ -67,7 +67,7 @@
             > number literal
             > word
                 # "2dup" word is allowed
-            > error
+            > error?
                 # bad string literals?
         + growable byte buffer
             + realloc (p 20 min, a 25)
@@ -100,6 +100,25 @@
                 # returns cached value
             + scanner_advance (p 5)
                 # reads stdin
+        + next_token
+            # parses next token and returns <byte vector>
+            + next_token_number_or_word
+            + skip_whitespace (p 15 min, a 15 min)
+                # skips ' ', '\t', '\n', '\r'
+            + test / token printer (p 10 min, a 11 min)
+            + skip_comment (p 10 min, a 25 min)
+                - skip_comments_and_whitespace
+            + rewrite next_token (p 15 min, a 2 min)
+            + string literal handling in next_token (p 20 min, a 28 min)
+        - token types
+            # 0 number
+            # 1 string literal
+            # 2 word
+            # 3 {
+            # 4 }
+            # 5 ;
+    + test byte vector on large strings (p 10 min, a 10 min)
+    - fix byte vector on large strings (p 30 min)
     - parser
     - codegen
     - написать интерпретатор 2s

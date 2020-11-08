@@ -840,12 +840,14 @@ f_byte_vector_pointer: equ     $-8
         dq          i_read_mem_i64, i_add, val(8 * 2), i_dup                ; <array pointer> <addr>
 f_byte_vector_destroy: equ     $-8
 
-; write byte array to stdout
+; write byte vector to stdout
 ; <addr>
         dq          i_return
-        dq          call(f_print_buffer), i_add, val(8), i_swap
-        dq          i_read_mem_i64, i_dup       ; <size> <addr>
-f_byte_array_print: equ     $-8
+        dq          i_drop
+        dq          call(f_print_buffer)
+        dq          i_read_mem_i64, i_add, val(8*2), i_over ; <array pointer> <size> <addr>
+        dq          call(f_byte_vector_size), i_dup       ; <size> <addr>
+f_print_byte_vector: equ     $-8
 
 ; atoi, string to int
 ; <addr> <size> -> <number>
@@ -992,6 +994,103 @@ f_scanner_peek: equ     $-8
         dq          i_drop, call(f_read_from_std_in), i_swap, val(1)
 f_scanner_advance: equ     $-8
 
+; next_token number or word
+; <scanner that points to a non-whitespace byte> -> <token byte vector>
+; loop invariant: <token byte vector> <scanner>
+        dq          i_return
+        dq          i_equal, val(92) ; '\'
+        dq          call(f_scanner_peek), i_dup_n, val(3)           ; <byte> <token byte vector> <scanner>
+f_read_next_token__is_backslash: equ     $-8
+        dq          i_return
+        dq          i_equal, val(34) ; '"'
+        dq          call(f_scanner_peek), i_dup_n, val(3)           ; <byte> <token byte vector> <scanner>
+f_read_next_token__is_quote: equ     $-8
+        dq          i_return
+        dq          i_and
+        dq          i_not, i_equal, val(10), i_swap ; '\n'
+        dq          i_not, i_equal, val(34), i_dup ; '"'
+        dq          call(f_scanner_peek), i_dup_n, val(3)           ; <byte> <token byte vector> <scanner>
+f_read_next_token__is_not_quote_or_newline: equ     $-8
+        dq          i_return
+        dq          i_not, call(f_is_whitespace)
+        dq          call(f_scanner_peek), i_dup_n, val(3)           ; <byte> <token byte vector> <scanner>
+f_read_next_token__is_not_whitespace: equ     $-8
+        dq          i_return
+        dq          call(f_scanner_advance), i_dup_n, val(2)        ; <token byte vector> <scanner>
+        dq          call(f_byte_vector_append), i_dup_n, val(2)     ; <token byte vector> <scanner>
+        dq          call(f_scanner_peek), i_dup_n, val(3)           ; <byte> <token byte vector> <scanner>
+f_read_next_token__read_next_byte: equ     $-8
+        dq          i_return
+        dq          call(f_read_next_token__read_next_byte)
+        dq          call(f_if), val(f_read_next_token__is_backslash), val(f_read_next_token__read_next_byte), val(f_id)
+f_read_next_token__read_next_byte_with_escape: equ     $-8
+        dq          i_return
+        dq          call(f_while), val(f_read_next_token__is_not_whitespace), val(f_read_next_token__read_next_byte)
+f_read_next_token__read_non_string_literal: equ     $-8
+        dq          i_return
+        dq          call(f_if), val(f_read_next_token__is_quote), val(f_read_next_token__read_next_byte), val(f_id) ; if last char is '"', then put it into vector, otherwise do nothing (invalid token)
+        dq          call(f_while), val(f_read_next_token__is_not_quote_or_newline), val(f_read_next_token__read_next_byte_with_escape)
+        dq          call(f_read_next_token__read_next_byte_with_escape)
+f_read_next_token__read_string_literal: equ     $-8
+        dq          i_return
+        dq          i_drop, i_swap
+        dq          call(f_if), val(f_read_next_token__is_quote), val(f_read_next_token__read_string_literal), val(f_read_next_token__read_non_string_literal)
+        dq          call(f_make_byte_vector)                ; <token byte vector> <scanner>
+        dq          call(f_skip_comments_and_whitespace), i_dup
+f_read_next_token: equ     $-8
+
+; <byte> -> <bool>
+        dq          i_return
+        dq          i_drop, i_pop_from_ret_stack
+        dq          i_or
+        dq              i_equal, val(32), i_peek_ret_stack, val(1) ; ' '
+        dq          i_or
+        dq              i_equal, val(9), i_peek_ret_stack, val(1)  ; '\t'
+        dq          i_or
+        dq              i_equal, val(10), i_peek_ret_stack, val(1) ; '\n'
+        dq              i_equal, val(13), i_peek_ret_stack, val(1) ; '\r'
+        dq          i_push_to_ret_stack
+f_is_whitespace: equ     $-8
+
+; skip whitespace
+; loop invariant: <scanner>
+; <scanner> ->
+        dq          i_return
+        dq          call(f_is_whitespace)
+        dq          call(f_scanner_peek), i_dup           ; <byte> <scanner>
+f_skip_whitespace__is_whitespace: equ     $-8
+        dq          i_return
+        dq          call(f_scanner_advance), i_dup        ; <scanner>
+f_skip_whitespace__read_next_byte: equ     $-8
+        dq          i_return
+        dq          i_drop
+        dq          call(f_while), val(f_skip_whitespace__is_whitespace), val(f_skip_whitespace__read_next_byte)
+f_skip_whitespace: equ     $-8
+
+; skip comments and whitespace
+; loop invariant: <scanner>
+; <scanner> ->
+        dq          i_return
+        dq          i_not, i_equal, val(10)
+        dq          call(f_scanner_peek), i_dup           ; <byte> <scanner>
+f_skip_comments_and_whitespace__is_not_newline: equ     $-8
+        dq          i_return
+        dq          i_equal, val(35)
+        dq          call(f_scanner_peek), i_dup           ; <byte> <scanner>
+f_skip_comments_and_whitespace__is_hash_sign: equ     $-8
+        dq          i_return
+        dq          call(f_scanner_advance), i_dup        ; <scanner>
+f_skip_comments_and_whitespace__read_next_byte: equ     $-8
+        dq          i_return
+        dq          call(f_skip_whitespace), i_dup
+        dq          call(f_while), val(f_skip_comments_and_whitespace__is_not_newline), val(f_skip_comments_and_whitespace__read_next_byte)
+f_skip_comments_and_whitespace__loop: equ     $-8
+        dq          i_return
+        dq          i_drop
+        dq          call(f_while), val(f_skip_comments_and_whitespace__is_hash_sign), val(f_skip_comments_and_whitespace__loop)
+        dq          call(f_skip_whitespace), i_dup
+f_skip_comments_and_whitespace: equ     $-8
+
 ; panic_if function
         dq          call(f_exit_0), call(f_print_panic)
 f_panic_if__do_panic: equ     $-8
@@ -1019,12 +1118,6 @@ f_print_data_overflow: equ     $-8
         dq          i_return, f_print_buffer, i_call, val(ss_return_stack_underflow), val(ss_return_stack_underflow_size)
 f_print_stack_overflow: equ     $-8
 
-; echo
-        dq          i_return, f_print_buffer, i_call, i_swap
-        dq          f_read_from_std_in, i_call, i_swap, val(100), i_dup
-        dq          f_mmap_anon, i_call, val(100)
-f_echo: equ     $-8
-
 ; identity
         dq          i_return
 f_id: equ     $-8
@@ -1038,16 +1131,15 @@ f_do_n_times__cond: equ     $-8
         dq          i_return
         dq          i_add, val(-1)
         dq          i_pop_from_ret_stack
+        dq          i_pop_from_ret_stack
         dq          i_indirect_call,
+        dq          i_push_to_ret_stack,
         dq          i_dup
         dq          i_push_to_ret_stack,
 f_do_n_times__body: equ     $-8
         dq          i_return,
-
         dq          i_drop, i_drop,
-        dq          f_while, i_call, val(f_do_n_times__cond), val(f_do_n_times__body)
-
-
+        dq          call(f_while), val(f_do_n_times__cond), val(f_do_n_times__body)
 f_do_n_times: equ     $-8
 
 
@@ -1111,6 +1203,19 @@ f_true: equ     $-8
 ; check print and exit
         dq          call(f_exit_0), call(f_print_bool), i_equal
 f_check: equ     $-8
+
+; echo tokens
+; loop invariant: <scanner>
+        dq          i_return
+        dq          call(f_print_newline)
+        dq          call(f_byte_vector_destroy), call(f_print_byte_vector), i_dup
+        dq          call(f_read_next_token), i_dup
+f_echo_tokens_loop: equ     $-8
+        dq          i_return
+        dq          call(f_free)
+        dq          call(f_while), val(f_true), val(f_echo_tokens_loop)
+        dq          call(f_scanner_make)
+f_echo_tokens: equ     $-8
 
         
 ; interpreter's entry point
@@ -1283,7 +1388,20 @@ f_check: equ     $-8
 
         dq          val(1)
 
-        dq          call(f_print_data_stack)
+
+        dq          i_return
+        dq          call(f_print_debug)
+        dq          call(f_byte_vector_append), i_swap, val(10), i_dup ; 'a'
+        dq          call(f_byte_vector_append), i_swap, val(97), i_dup ; '\n'
+f_append_line: equ     $-8
+
+;        dq          call(f_echo_tokens)
+        dq          call(f_exit_0)
+        dq          call(f_byte_vector_destroy), i_pop_from_ret_stack
+        dq              call(f_print_byte_vector), i_peek_ret_stack, val(1)
+        dq              call(f_do_n_times), val(4091), val(f_append_line)
+        dq              i_peek_ret_stack, val(1)
+        dq          i_push_to_ret_stack, call(f_make_byte_vector)
 
 
 ;        dq          call(f_free), i_pop_from_ret_stack
