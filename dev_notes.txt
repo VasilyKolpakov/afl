@@ -117,8 +117,9 @@
             # 3 {
             # 4 }
             # 5 ;
+            - is_number_token (p 30 min)
     + test byte vector on large strings (p 10 min, a 10 min)
-    - fix byte vector on large strings (p 30 min)
+    + fix byte vector on large strings (p 30 min, a 29 min)
     - parser
     - codegen
     - написать интерпретатор 2s
