@@ -118,6 +118,7 @@
             # 4 }
             # 5 ;
             - is_number_token (p 30 min)
+                - memcmp a_addr, b_addr, n
     + test byte vector on large strings (p 10 min, a 10 min)
     + fix byte vector on large strings (p 30 min, a 29 min)
     - parser
@@ -242,8 +243,8 @@ def "atoi" {
 
 // <string>
 def "atoi-fun" {
-    fold_left {+ * 10}
-    map {- '0'}
-    take_while {and >= '0' swap <= '9' dup }
+    fold_left { + * 10 }
+    map { - '0' }
+    take_while { and >= '0' swap <= '9' dup }
     string_to_vec
 };
