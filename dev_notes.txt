@@ -117,8 +117,10 @@
             # 3 {
             # 4 }
             # 5 ;
-            - is_number_token (p 30 min)
-                - memcmp a_addr, b_addr, n (a ~30 min)
+            + is_number_token
+                + memcmp a_addr, b_addr, n (a ~30 min)
+            + cond
+            + is_string_literal_token
     + test byte vector on large strings (p 10 min, a 10 min)
     + fix byte vector on large strings (p 30 min, a 29 min)
     - parser
@@ -163,6 +165,8 @@ def не позволяет легко определить переменную
 
 идеи:
 
+- capture function (for function concatinaiton function)
+    # takes n values from stack and creates an anonymous function thap puts these values on stack
 - types: (number, bool)
 - test harness in 2s (instead of bash)
 - literal arrays with commas

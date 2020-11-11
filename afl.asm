@@ -575,6 +575,56 @@ f_return_stack_underflow_handler: equ     $-8
         dq          i_push_to_ret_stack                         ; bool f -> ret stack
 f_if: equ     $-8
 
+
+; cond_end [cond_default <func>] cond_when <bool func 1> <func 1> cond_when <bool func 2> <func 2> cond_when ... cond_start
+
+        dq          i_return,
+        dq          val(0)  ; false
+        dq          i_drop  ; drop <func>
+f_cond_when__run_branch_not_run: equ     $-8
+        dq          i_return,
+        dq          val(1)  ; true
+        dq          i_indirect_call
+f_cond_when__run_branch_run: equ     $-8
+        dq          i_return,
+        dq          call(f_if), val(f_id), val(f_cond_when__run_branch_run), val(f_cond_when__run_branch_not_run)   ; <bool>
+        dq          i_swap                  ; <bool> <func>
+        dq          i_pop_from_ret_stack    ; <func> <bool>
+        dq          i_indirect_call
+        dq          i_push_to_ret_stack     ; <bool func>
+        dq          i_swap                  ; <func> <bool func>
+        dq          i_drop                  ; <bool func> <func>
+f_cond_when__run_branch: equ     $-8
+        dq          i_return,
+        dq          i_drop
+        dq          i_drop
+        dq          i_rev_rot
+f_cond_when__drop_funcs: equ     $-8
+        dq          i_return,
+        dq          i_not, i_dup
+f_cond_when__is_false: equ     $-8
+        dq          i_return,
+        dq          call(f_if), val(f_cond_when__is_false), val(f_cond_when__run_branch), val(f_cond_when__drop_funcs) ; <branch was found bool>
+        dq          i_rot                   ; <branch was found bool> <bool func> <func>
+f_cond_when: equ     $-8
+
+        dq          i_return,
+        dq          i_not
+f_cond_default__is_false: equ     $-8
+        dq          i_return,
+        dq          val(1), ; true
+        dq          call(f_if), val(f_cond_default__is_false), i_swap, val(f_id)
+f_cond_default: equ     $-8
+
+        dq          i_return,
+        dq          val(0) ; false
+f_cond_start: equ     $-8
+
+        dq          i_return,
+        dq          i_drop ; drop bool
+f_cond_end: equ     $-8
+
+
 ; <cond function> <body function>
 ; while function
         dq          i_return,
@@ -1147,6 +1197,23 @@ f_is_number_token__drop_all_but_bool: equ     $-8
         dq          i_push_to_ret_stack             ; token
 f_is_number_token: equ     $-8
 
+; tests if token is a string literal
+; <token byte vector> -> <bool>
+        dq          i_return
+        dq          i_drop, i_pop_from_ret_stack
+        dq          i_and
+        dq              i_equal
+        dq                  val(34)
+        dq                  i_read_mem_byte
+        dq                      i_add
+        dq                          call(f_byte_vector_pointer), i_peek_ret_stack, val(1)
+        dq                          i_add, val(-1), call(f_byte_vector_size), i_peek_ret_stack, val(1)
+        dq              i_equal
+        dq                  val(34)
+        dq                  i_read_mem_byte, call(f_byte_vector_pointer), i_peek_ret_stack, val(1)
+        dq          i_push_to_ret_stack
+f_is_string_literal_token: equ     $-8
+
 ; memcmp
 ; <addr1> <addr2> <n> -> <bool>
 ; loop invariant: <previous cmp> <addr1> <addr2> <n>
@@ -1290,9 +1357,20 @@ f_check: equ     $-8
 ; echo tokens
 ; loop invariant: <scanner>
         dq          i_return
-        dq          call(f_byte_vector_destroy),
-        dq          call(f_print_bool)
         dq          call(f_is_number_token), i_dup
+f_echo_tokens__is_num: equ     $-8
+        dq          i_return
+        dq          call(f_is_string_literal_token), i_dup
+f_echo_tokens__is_string: equ     $-8
+        dq          i_return
+        dq          call(f_byte_vector_destroy),
+
+        dq          call(f_cond_end)
+        dq          call(f_cond_default), val(f_print_debug)
+        dq          call(f_cond_when), val(f_echo_tokens__is_string), val(f_print_hello_world)
+        dq          call(f_cond_when), val(f_echo_tokens__is_num), val(f_print_stack_overflow)
+        dq          call(f_cond_start)
+        
         dq          call(f_print_newline)
         dq          call(f_print_byte_vector), i_dup
         dq          call(f_read_next_token), i_dup
@@ -1499,7 +1577,9 @@ f_echo_tokens: equ     $-8
         dq          val(1)
 
 
-;        dq          call(f_echo_tokens)
+
+
+        dq          call(f_echo_tokens)
 
 ;        dq          call(f_free), i_pop_from_ret_stack
 ;        dq              call(f_write_byte_to_stdout), val(10)
