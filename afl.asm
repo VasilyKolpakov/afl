@@ -951,38 +951,38 @@ f_i64_str_size: equ     $-8
 ; loop invariant: <last digit address> <number> <string size>
         dq          i_return
         dq          i_mul, val(-1)
-f_write_i64_to_buffer__negate: equ     $-8
+f_i64_to_string__negate: equ     $-8
         dq          i_return
         dq          i_greater, val(0), i_dup
-f_write_i64_to_buffer__is_negative: equ     $-8
+f_i64_to_string__is_negative: equ     $-8
         dq          i_return
         dq          i_write_mem_byte, i_swap, val(45), i_over ; write '-'
-f_write_i64_to_buffer__if_negative_case: equ     $-8
+f_i64_to_string__if_negative_case: equ     $-8
         dq          i_return
         dq          i_write_mem_byte, i_swap, val(48), i_over ; write '0'
-f_write_i64_to_buffer__if_positive_case: equ     $-8
+f_i64_to_string__if_positive_case: equ     $-8
         dq          i_return
         dq          i_swap, i_div, i_swap, val(10), i_swap ; <last digit address> <number>
         dq          i_add, val(-1) ; <last digit address> <number>
         dq          i_write_mem_byte, i_over ; <last digit address> <number>
         dq          i_add, val(48), i_mul, val(-1), i_mod, i_swap, val(10) ; <last digit> <last digit address> <number>
         dq          i_over
-f_write_i64_to_buffer__write_digit: equ     $-8
+f_i64_to_string__write_digit: equ     $-8
         dq          i_return
         dq          i_not, i_equal, val(0)
         dq          i_over
-f_write_i64_to_buffer__number_is_not_zero: equ     $-8
+f_i64_to_string__number_is_not_zero: equ     $-8
         dq          i_return
         dq          i_greater
-f_write_i64_to_buffer__greater: equ     $-8
+f_i64_to_string__greater: equ     $-8
         dq          i_return
         dq          i_drop, i_drop
-        dq          call(f_while), val(f_write_i64_to_buffer__number_is_not_zero), val(f_write_i64_to_buffer__write_digit)
+        dq          call(f_while), val(f_i64_to_string__number_is_not_zero), val(f_i64_to_string__write_digit)
 
         dq          i_swap ; <last digit address> <number> <string size>
-        dq          call(f_if), val(f_write_i64_to_buffer__is_negative)
+        dq          call(f_if), val(f_i64_to_string__is_negative)
         dq              val(f_id)
-        dq              val(f_write_i64_to_buffer__negate)
+        dq              val(f_i64_to_string__negate)
         dq          i_swap
 
         dq          i_rev_rot, call(f_i64_str_size), i_over ; ; <last digit address> <number> <string size>
@@ -990,15 +990,15 @@ f_write_i64_to_buffer__greater: equ     $-8
         dq          i_add, i_add, val(-1) ; <last digit address> <number>
         dq          i_rot ; <buffer address> <number str size> <number>
         dq          call(f_i64_str_size), i_dup ; <number str size> <number> <buffer address>
-        dq          call(f_if), val(f_write_i64_to_buffer__is_negative) ; <number> <buffer address>
-        dq              val(f_write_i64_to_buffer__if_negative_case)
-        dq              val(f_write_i64_to_buffer__if_positive_case)
+        dq          call(f_if), val(f_i64_to_string__is_negative) ; <number> <buffer address>
+        dq              val(f_i64_to_string__if_negative_case)
+        dq              val(f_i64_to_string__if_positive_case)
         dq          i_write_mem_byte, i_swap, val(48), i_over ; <number> <buffer address>
-        dq          call(f_panic_if), val(f_write_i64_to_buffer__greater), ; <number> <buffer address>
+        dq          call(f_panic_if), val(f_i64_to_string__greater), ; <number> <buffer address>
         dq              call(f_i64_str_size)
         dq              i_over ;  <number> <buffer size> <number> <buffer address>
         dq          i_rot ; <buffer size> <number> <buffer address>
-f_write_i64_to_buffer: equ     $-8
+f_i64_to_string: equ     $-8
 
 ; -> <scanner>
 ; scanner_make
@@ -1114,6 +1114,39 @@ f_skip_comments_and_whitespace__loop: equ     $-8
         dq          call(f_skip_whitespace), i_dup
 f_skip_comments_and_whitespace: equ     $-8
 
+; tests if token is a number
+; <token byte vector> -> <bool>
+        dq          i_return
+        dq          call(f_free), i_pop_from_ret_stack              ; <bool>
+        dq          i_equal, val(0), call(f_memcmp)                 ; <bool>
+        dq              i_peek_ret_stack, val(1)                    ; <number str addr> <token addr> <number str size>
+        dq              call(f_byte_vector_pointer)                 ; <token addr> <number str size>
+        dq          i_swap                                          ; <token> <number str size>
+        dq          i_drop, call(f_i64_to_string),                  ; <number str size> <token>
+        dq              i_swap, i_peek_ret_stack, val(1)            ; <number> <temp buffer> <number str size> <number str size> <token>
+        dq              i_rot, i_dup                                ; <number> <number str size> <number str size> <token>
+        dq          i_push_to_ret_stack, call(f_malloc), i_dup      ; <number str size> <number> <token>
+        dq          i_drop                                          ; <number str size> <number> <token>
+f_is_number_token__check_string: equ     $-8
+        dq          i_return
+        dq          i_drop, i_swap                                  ; <bool>
+        dq          i_drop, i_drop, i_rev_rot                       ; <bool> <token>
+f_is_number_token__drop_all_but_bool: equ     $-8
+        dq          i_return
+        dq          i_drop, i_pop_from_ret_stack                     ; token
+        dq          call(f_if), val(f_id), val(f_is_number_token__check_string), val(f_is_number_token__drop_all_but_bool) ; <bool>
+        dq          i_dup, i_equal                                         ; <bool> <bool> <number str size> <number> <token>
+        dq              call(f_byte_vector_size), i_peek_ret_stack, val(1)
+        dq              i_dup
+        dq          i_rev_rot                                       ; <number str size> <number> <token>
+        dq          i_peek_ret_stack, val(1)                        ; <token> <number str size> <number>
+        dq          call(f_i64_str_size), i_dup                     ; <number str size> <number>
+        dq          call(f_atoi)                                    ; <number>
+        dq              call(f_byte_vector_pointer), i_peek_ret_stack, val(1)
+        dq              call(f_byte_vector_size), i_peek_ret_stack, val(1)
+        dq          i_push_to_ret_stack             ; token
+f_is_number_token: equ     $-8
+
 ; memcmp
 ; <addr1> <addr2> <n> -> <bool>
 ; loop invariant: <previous cmp> <addr1> <addr2> <n>
@@ -1206,7 +1239,7 @@ f_print_bool: equ     $-8
         dq              call(f_free), i_pop_from_ret_stack
         dq              call(f_print_buffer),
         dq                  i_peek_ret_stack, val(1)
-        dq                  call(f_write_i64_to_buffer)
+        dq                  call(f_i64_to_string)
         dq                      i_rot
         dq                      i_peek_ret_stack, val(1)
         dq                      val(20)
@@ -1257,8 +1290,11 @@ f_check: equ     $-8
 ; echo tokens
 ; loop invariant: <scanner>
         dq          i_return
+        dq          call(f_byte_vector_destroy),
+        dq          call(f_print_bool)
+        dq          call(f_is_number_token), i_dup
         dq          call(f_print_newline)
-        dq          call(f_byte_vector_destroy), call(f_print_byte_vector), i_dup
+        dq          call(f_print_byte_vector), i_dup
         dq          call(f_read_next_token), i_dup
 f_echo_tokens_loop: equ     $-8
         dq          i_return
@@ -1357,8 +1393,8 @@ f_echo_tokens: equ     $-8
         dq              i_equal
         dq                  val(19)
         dq                  call(f_i64_str_size), val(9223372036854775807)
-; test f_write_i64_to_buffer <number> <buffer address> <buffer size>
-%macro  test_write_i64_to_buffer__atoi__roundtrip 1
+; test f_i64_to_string <number> <buffer address> <buffer size>
+%macro  test_i64_to_string__atoi__roundtrip 1
         dq          i_and
         dq              call(f_free), i_pop_from_ret_stack
         dq              i_equal
@@ -1367,15 +1403,15 @@ f_echo_tokens: equ     $-8
         dq              i_and
         dq                  i_equal
         dq                      call(f_i64_str_size), val(%1)
-        dq                      call(f_write_i64_to_buffer), val(%1), i_peek_ret_stack, val(1), val(100)
+        dq                      call(f_i64_to_string), val(%1), i_peek_ret_stack, val(1), val(100)
         dq              i_push_to_ret_stack, call(f_malloc), val(100)
 %endmacro
-                    test_write_i64_to_buffer__atoi__roundtrip(0)
-                    test_write_i64_to_buffer__atoi__roundtrip(100)
-                    test_write_i64_to_buffer__atoi__roundtrip(9223372036854775807)
-                    test_write_i64_to_buffer__atoi__roundtrip(-1)
-                    test_write_i64_to_buffer__atoi__roundtrip(-11)
-                    test_write_i64_to_buffer__atoi__roundtrip(-9223372036854775808)
+                    test_i64_to_string__atoi__roundtrip(0)
+                    test_i64_to_string__atoi__roundtrip(100)
+                    test_i64_to_string__atoi__roundtrip(9223372036854775807)
+                    test_i64_to_string__atoi__roundtrip(-1)
+                    test_i64_to_string__atoi__roundtrip(-11)
+                    test_i64_to_string__atoi__roundtrip(-9223372036854775808)
 
         dq          i_and
         dq              i_drop, i_pop_from_ret_stack
@@ -1462,6 +1498,8 @@ f_echo_tokens: equ     $-8
         dq                  call(f_memcmp), val(ss_hello_world), val(ss_debug), val(ss_debug_size)
         dq          val(1)
 
+
+;        dq          call(f_echo_tokens)
 
 ;        dq          call(f_free), i_pop_from_ret_stack
 ;        dq              call(f_write_byte_to_stdout), val(10)
