@@ -1199,6 +1199,7 @@ f_is_number_token: equ     $-8
 
 ; tests if token is a string literal
 ; <token byte vector> -> <bool>
+; loop invariant: <continue bool> <n> <vector>
         dq          i_return
         dq          i_drop, i_pop_from_ret_stack
         dq          i_and
@@ -1213,6 +1214,39 @@ f_is_number_token: equ     $-8
         dq                  i_read_mem_byte, call(f_byte_vector_pointer), i_peek_ret_stack, val(1)
         dq          i_push_to_ret_stack
 f_is_string_literal_token: equ     $-8
+
+
+; decodes escape chars, returns -1 if not an escaped char
+; <escaped char code>  -> <char>
+        dq          i_return
+        dq          val(-1), i_drop
+f_string_literal_escape_char_decode__bad_char: equ     $-8
+        dq          i_return
+        dq          val('\t'), i_drop
+f_string_literal_escape_char_decode__tab: equ     $-8
+        dq          i_return
+        dq          i_equal, val('t'), i_dup
+f_string_literal_escape_char_decode__tab_check: equ     $-8
+        dq          i_return
+        dq          val('\n'), i_drop
+f_string_literal_escape_char_decode__newline: equ     $-8
+        dq          i_return
+        dq          i_equal, val('n'), i_dup
+f_string_literal_escape_char_decode__newline_check: equ     $-8
+        dq          i_return
+        dq          val('\r'), i_drop
+f_string_literal_escape_char_decode__cr: equ     $-8
+        dq          i_return
+        dq          i_equal, val('r'), i_dup
+f_string_literal_escape_char_decode__cr_check: equ     $-8
+        dq          i_return
+        dq          call(f_cond_end)
+        dq          call(f_cond_default), val(f_string_literal_escape_char_decode__bad_char)
+        dq          call(f_cond_when), val(f_string_literal_escape_char_decode__cr_check), val(f_string_literal_escape_char_decode__cr)
+        dq          call(f_cond_when), val(f_string_literal_escape_char_decode__newline_check), val(f_string_literal_escape_char_decode__newline)
+        dq          call(f_cond_when), val(f_string_literal_escape_char_decode__tab_check), val(f_string_literal_escape_char_decode__tab)
+        dq          call(f_cond_start)
+f_string_literal_escape_char_decode: equ     $-8
 
 ; memcmp
 ; <addr1> <addr2> <n> -> <bool>
@@ -1357,18 +1391,51 @@ f_check: equ     $-8
 ; echo tokens
 ; loop invariant: <scanner>
         dq          i_return
+        dq          call(f_print_newline)
+        dq          call(f_do_n_times), val(9), val(f_write_byte_to_stdout)
+        dq          val('s'), val('e'), val('m'), val('i'), val('c'), val('o'), val('l'), val('o'), val('n')
+f_echo_tokens__print_semicolon: equ     $-8
+        dq          i_return
+        dq          call(f_print_newline)
+        dq          call(f_do_n_times), val(14), val(f_write_byte_to_stdout)
+        dq          val('c'), val('l'), val('o'), val('s'), val('e'), val('d'), val(' ')
+        dq          val('b'), val('r'), val('a'), val('c'), val('k'), val('e'), val('t')
+f_echo_tokens__print_closed_bracket: equ     $-8
+        dq          i_return
+        dq          call(f_print_newline)
+        dq          call(f_do_n_times), val(12), val(f_write_byte_to_stdout)
+        dq          val('o'), val('p'), val('e'), val('n'), val(' ')
+        dq          val('b'), val('r'), val('a'), val('c'), val('k'), val('e'), val('t')
+f_echo_tokens__print_open_bracket: equ     $-8
+        dq          i_return
+        dq          call(f_print_newline)
+        dq          call(f_do_n_times), val(6), val(f_write_byte_to_stdout)
+        dq          val('n'), val('u'), val('m'), val('b'), val('e'), val('r')
+f_echo_tokens__print_number: equ     $-8
+        dq          i_return
+        dq          call(f_print_newline)
+        dq          call(f_do_n_times), val(14), val(f_write_byte_to_stdout)
+        dq          val('s'), val('t'), val('r'), val('i'), val('n'), val('g'), val(' '),
+        dq          val('l'), val('i'), val('t'), val('e'), val('r'), val('a'), val('l')
+f_echo_tokens__print_string_literal: equ     $-8
+        dq          i_return
+        dq          call(f_print_newline)
+        dq          call(f_do_n_times), val(4), val(f_write_byte_to_stdout)
+        dq          val('w'), val('o'), val('r'), val('d')
+f_echo_tokens__print_word: equ     $-8
+        dq          i_return
         dq          call(f_is_number_token), i_dup
 f_echo_tokens__is_num: equ     $-8
         dq          i_return
         dq          call(f_is_string_literal_token), i_dup
-f_echo_tokens__is_string: equ     $-8
+f_echo_tokens__is_string_literal: equ     $-8
         dq          i_return
         dq          call(f_byte_vector_destroy),
 
         dq          call(f_cond_end)
-        dq          call(f_cond_default), val(f_print_debug)
-        dq          call(f_cond_when), val(f_echo_tokens__is_string), val(f_print_hello_world)
-        dq          call(f_cond_when), val(f_echo_tokens__is_num), val(f_print_stack_overflow)
+        dq          call(f_cond_default), val(f_echo_tokens__print_word)
+        dq          call(f_cond_when), val(f_echo_tokens__is_string_literal), val(f_echo_tokens__print_string_literal)
+        dq          call(f_cond_when), val(f_echo_tokens__is_num), val(f_echo_tokens__print_number)
         dq          call(f_cond_start)
         
         dq          call(f_print_newline)
@@ -1576,10 +1643,23 @@ f_echo_tokens: equ     $-8
         dq                  call(f_memcmp), val(ss_hello_world), val(ss_debug), val(ss_debug_size)
         dq          val(1)
 
+        dq          call(f_print_bool)
+        dq          call(f_print_newline)
+        dq          call(f_print_number), val(2)
+        dq          i_and
+        dq              i_equal, val('\n'), call(f_string_literal_escape_char_decode), val('n')
+        dq          i_and
+        dq              i_equal, val('\t'), call(f_string_literal_escape_char_decode), val('t')
+        dq          i_and
+        dq              i_equal, val('\r'), call(f_string_literal_escape_char_decode), val('r')
+        dq          i_and
+        dq              i_equal, val(-1), call(f_string_literal_escape_char_decode), val('e')
+        dq          val(1)
 
 
 
-        dq          call(f_echo_tokens)
+
+;        dq          call(f_echo_tokens)
 
 ;        dq          call(f_free), i_pop_from_ret_stack
 ;        dq              call(f_write_byte_to_stdout), val(10)
