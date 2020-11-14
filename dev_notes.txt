@@ -123,6 +123,11 @@
             + is_string_literal_token
             + better token echo
             - is_string_literal_token
+            - string_literal_to_string
+            - is_open_paren_token
+            - is_close_paren_token
+            - is_semicolon_token
+            - is_bad_string_literal_token
     + test byte vector on large strings (p 10 min, a 10 min)
     + fix byte vector on large strings (p 30 min, a 29 min)
     - parser
