@@ -125,7 +125,7 @@
             + is_string_literal_token
             + string_literal_to_string
             + is_bad_string_literal_token
-            - is_semicolon_token
+            + is_semicolon_token
             - is_open_paren_token
             - is_close_paren_token
     + test byte vector on large strings (p 10 min, a 10 min)
@@ -155,6 +155,7 @@
                     # panics is name is already taken
                     # adds new record to the front of the list
             - read_compile_run_loop
+                - i_indirect_jmp
     - b-tree
         # lazy maintenance
   - conservative GC: simple and inefficient

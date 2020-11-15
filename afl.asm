@@ -308,6 +308,12 @@ i_jmp:
         mov         r11, [r11]             ; next word is the instruction pointer
         jmp iloop
 
+i_indirect_jmp:
+        drop_data_stack 1
+        mov         rax, [r12]              ; top of the data stack is the instruciton pointer
+        mov         r11, rax                ; jump to callee
+        jmp iloop
+
 ;<bool>
 i_jmp_if:
         drop_data_stack 1
@@ -1601,9 +1607,6 @@ f_byte_vector_from_bytes__append_one_byte: equ     $-8
         dq              call(f_byte_vector_make)
 f_byte_vector_from_bytes: equ     $-8
 
-        dq              i_return
-f_read_compile_run_loop: equ     $-8
-
 ; false function
         dq          i_return, val(0)
 f_false: equ     $-8
@@ -1694,6 +1697,13 @@ f_echo_tokens_loop: equ     $-8
         dq          call(f_while), val(f_true), val(f_echo_tokens_loop)
         dq          call(f_scanner_make)
 f_echo_tokens: equ     $-8
+
+; main loop
+; <dict> ->
+        dq          call(f_exit_0)
+        dq          call(f_byte_vector_make)
+f_read_compile_run_loop: equ     $-8
+
 
         
 ; interpreter's entry point
@@ -2002,9 +2012,10 @@ f_tests: equ     $-8
 
 
 
-        dq          call(f_echo_tokens)
+;        dq          call(f_echo_tokens)
 
-;        dq          f_tests, i_jmp
+;        dq          i_indirect_jmp, val(f_tests)
+        dq          i_indirect_jmp, val(f_read_compile_run_loop)
 
 
 ;        dq          call(f_free), i_pop_from_ret_stack
