@@ -122,17 +122,39 @@
             + cond
             + is_string_literal_token
             + better token echo
-            - is_string_literal_token
-            - string_literal_to_string
+            + is_string_literal_token
+            + string_literal_to_string
+            + is_bad_string_literal_token
+            - is_semicolon_token
             - is_open_paren_token
             - is_close_paren_token
-            - is_semicolon_token
-            - is_bad_string_literal_token
     + test byte vector on large strings (p 10 min, a 10 min)
     + fix byte vector on large strings (p 30 min, a 29 min)
-    - parser
-    - codegen
-    - написать интерпретатор 2s
+    - interpreter
+        - non-quote interpreter
+            # emit tail call into f_interpret
+            # emit <dictionary pointer>, i_push_to_stack
+            # read tokens, if token is a word, then find word in dict and emit <function pointer>, i_call code
+            # if token is a number, then emit <number>, i_push_to_stack code
+            # if token is a semicolon, then jump to the last emitted instruction
+            + byte_vector_append_i64
+            + dictionary
+                # <word name vector> <word code vector> <next>
+                + dictionary_make
+                    # allocates 8 bytes of memory and sets it to 0
+                + dictionary_make_record <name vector> <code vector> <next>
+                    # allocates 8*3 bytes of memory <word name vector> <word code vector> <next>
+                + dictionary_record_name <record> -> <name vector>
+                + dictionary_record_code <record> -> <code vector>
+                + dictionary_record_next <record> -> <next>
+                + byte_vector_equals <vector> <vector> -> <bool>
+                + dictionary_find_record <first record pointer> <name vector> -> <record pointer or 0>
+                    # if { = 0 dup } { drop swap } { if { vector_equals record_name 2dup } { drop swap } { dictionary_find_record dictionary_record_next } }
+                + dictionary_add <dict> <name vector> <code vector>
+                    # tries to find a record with the name
+                    # panics is name is already taken
+                    # adds new record to the front of the list
+            - read_compile_run_loop
     - b-tree
         # lazy maintenance
   - conservative GC: simple and inefficient

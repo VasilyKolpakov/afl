@@ -785,8 +785,8 @@ f_test_malloc_free: equ     $-8
 
         dq          i_return
         dq          call(f_print_debug)
-        dq          call(f_byte_vector_append), i_swap, val(10), i_dup ; 'a'
-        dq          call(f_byte_vector_append), i_swap, val(97), i_dup ; '\n'
+        dq          call(f_byte_vector_append_byte), i_swap, val(10), i_dup ; 'a'
+        dq          call(f_byte_vector_append_byte), i_swap, val(97), i_dup ; '\n'
 f_append_line: equ     $-8
         dq          i_return
         dq          call(f_echo_tokens)
@@ -875,7 +875,7 @@ f_byte_vector_set__is_not_in_range: equ     $-8
         dq          i_read_mem_i64, i_dup       ; <size> <addr> <n> <value>
 f_byte_vector_set: equ     $-8
 
-; byte vector append
+; byte vector append byte
 ; <addr> <byte value>
         dq          i_return
         dq          i_write_mem_i64, i_add, val(8 * 2), i_over              ; <addr> <value>
@@ -884,9 +884,9 @@ f_byte_vector_set: equ     $-8
         dq          i_write_mem_i64, i_add, val(8), i_swap, i_2dup          ; <capacity * 2> <addr> <value> write capacity
         dq          i_mul, val(2)                                           ; <capacity * 2> <addr> <value>
         dq          i_read_mem_i64, i_add, val(8), i_dup                    ; <capacity> <addr> <value>
-f_byte_vector_append__double_capacity: equ     $-8
+f_byte_vector_append_byte__double_capacity: equ     $-8
         dq          i_return, i_equal
-f_byte_vector_append__is_equal: equ     $-8
+f_byte_vector_append_byte__is_equal: equ     $-8
         dq          i_return
         dq          i_write_mem_byte                                        ;
         dq          i_add, i_add, val(-1)                                   ; <value addr> <value>
@@ -895,11 +895,24 @@ f_byte_vector_append__is_equal: equ     $-8
         dq          i_write_mem_i64, i_over                                 ; <addr> <value>
         dq          i_add, val(1)                                           ; <size + 1> <addr> <value>
         dq          i_read_mem_i64, i_dup                                   ; <size> <addr> <value>
-        dq          call(f_if), val(f_byte_vector_append__is_equal)         ; <addr> <value>
-        dq          val(f_byte_vector_append__double_capacity), val(f_id)
+        dq          call(f_if), val(f_byte_vector_append_byte__is_equal)         ; <addr> <value>
+        dq          val(f_byte_vector_append_byte__double_capacity), val(f_id)
         dq          i_read_mem_i64, i_add, val(8), i_over                   ; <capacity> <size> <addr> <value>
         dq          i_read_mem_i64, i_dup                                   ; <size> <addr> <value>
-f_byte_vector_append: equ     $-8
+f_byte_vector_append_byte: equ     $-8
+
+; <vector> <i64 value>
+        dq          i_return
+        dq          i_write_mem_i64
+        dq          i_add, i_add, val(-8)     ; <pointer> <size> <value>
+        dq          call(f_byte_vector_pointer), i_swap     ; <pointer> <size> <value>
+        dq          call(f_byte_vector_size), i_dup ; <size> <vector> <value>
+        dq          call(f_byte_vector_append_byte), call(f_byte_vector_append_byte), i_2dup
+        dq          call(f_byte_vector_append_byte), i_2dup, call(f_byte_vector_append_byte), i_2dup
+        dq          call(f_byte_vector_append_byte), i_2dup, call(f_byte_vector_append_byte), i_2dup
+        dq          call(f_byte_vector_append_byte), i_2dup, call(f_byte_vector_append_byte), i_2dup
+        dq          i_swap, val(0), i_dup           ; <vector> <0 byte> <vector> <value>
+f_byte_vector_append_i64: equ     $-8
 
 ; byte vector pointer
 ; <addr> -> <array addr>
@@ -1088,7 +1101,7 @@ f_read_next_token__is_not_quote_or_newline: equ     $-8
 f_read_next_token__is_not_whitespace: equ     $-8
         dq          i_return
         dq          call(f_scanner_advance), i_dup_n, val(2)        ; <token byte vector> <scanner>
-        dq          call(f_byte_vector_append), i_dup_n, val(2)     ; <token byte vector> <scanner>
+        dq          call(f_byte_vector_append_byte), i_dup_n, val(2)     ; <token byte vector> <scanner>
         dq          call(f_scanner_peek), i_dup_n, val(3)           ; <byte> <token byte vector> <scanner>
 f_read_next_token__read_next_byte: equ     $-8
         dq          i_return
@@ -1241,7 +1254,7 @@ f_string_literal_token_to_string__backslash_case_bad_escape: equ     $-8
 f_string_literal_token_to_string__backslash_case: equ     $-8
         dq          i_return
         dq          val(1)                                      ; <ok bool> <n> <token vector> <string vector>
-        dq          call(f_byte_vector_append), i_dup_n, val(4) ; <n> <token vector> <string vector>
+        dq          call(f_byte_vector_append_byte), i_dup_n, val(4) ; <n> <token vector> <string vector>
                                                                 ; <n byte> <n> <token vector> <string vector>
 f_string_literal_token_to_string__case_append_byte: equ     $-8
         dq          i_return
@@ -1327,6 +1340,18 @@ f_string_literal_escape_char_decode__cr_check: equ     $-8
         dq          call(f_cond_start)
 f_string_literal_escape_char_decode: equ     $-8
 
+; tests if the token is a semicolon
+; <token vector> -> <bool>
+        dq          i_return
+        dq          i_drop, i_pop_from_ret_stack
+        dq          i_and
+        dq              i_equal, val(';'), call(f_byte_vector_get)
+        dq                  i_peek_ret_stack, val(1)
+        dq                  val(0)
+        dq              i_equal, val(1), call(f_byte_vector_size), i_peek_ret_stack, val(1)
+        dq          i_push_to_ret_stack
+f_is_semicolon_token: equ     $-8
+
 ; memcmp
 ; <addr1> <addr2> <n> -> <bool>
 ; loop invariant: <previous cmp> <addr1> <addr2> <n>
@@ -1353,6 +1378,112 @@ f_memcmp__loop: equ     $-8
         dq          val(0)
         dq          call(f_panic_if), val(f_id), i_greater, val(0), i_dup_n, val(3)
 f_memcmp: equ     $-8
+
+; creates empty dictionary
+; -> <dict>
+        dq          i_return
+        dq          i_write_mem_i64, i_swap, val(0)
+        dq          i_dup                                       ; <pointer> <pointer>
+        dq          call(f_malloc), val(8*3)
+f_dictionary_make: equ     $-8
+
+; creates dictionary record
+; <name vector> <code vector> <next> -> <dict record>
+        dq          i_return
+        dq          i_pop_from_ret_stack
+        dq          i_write_mem_i64, i_add, val(16), i_peek_ret_stack, val(1)
+        dq          i_write_mem_i64, i_add, val(8), i_peek_ret_stack, val(1)
+        dq          i_write_mem_i64, i_peek_ret_stack, val(1)
+        dq          i_push_to_ret_stack, call(f_malloc), val(8*3)
+f_dictionary_make_record: equ     $-8
+
+; <dict record> -> <name>
+        dq          i_return
+        dq          i_read_mem_i64
+f_dictionary_record_name: equ     $-8
+
+; <dict record> -> <code>
+        dq          i_return
+        dq          i_read_mem_i64, i_add, val(8)
+f_dictionary_record_code: equ     $-8
+
+; <dict record> -> <next>
+        dq          i_return
+        dq          i_read_mem_i64, i_add, val(16)
+f_dictionary_record_next: equ     $-8
+
+; <vector> <vector> -> bool
+        dq          i_return
+        dq          i_equal
+        dq          call(f_byte_vector_size), i_swap
+        dq          call(f_byte_vector_size)
+        dq          i_2dup
+f_byte_vector_equals__size_is_equal: equ     $-8
+        dq          i_return
+        dq          val(0)
+        dq          i_drop, i_drop
+f_byte_vector_equals__case_not_equal_size: equ     $-8
+        dq          i_return
+        dq          i_equal, val(0), call(f_memcmp) ; <bool>
+        dq          call(f_byte_vector_pointer), i_swap ; <pointer> <pointer> <size>
+        dq          call(f_byte_vector_pointer)
+        dq          i_rev_rot                       ; <vector> <vector> <size>
+        dq          call(f_byte_vector_size), i_dup
+f_byte_vector_equals__case_equal_size: equ     $-8
+        dq          i_return
+        dq          call(f_if), val(f_byte_vector_equals__size_is_equal)
+        dq          val(f_byte_vector_equals__case_equal_size)
+        dq          val(f_byte_vector_equals__case_not_equal_size)
+f_byte_vector_equals: equ     $-8
+
+
+; <first record pointer> <name vector> -> <record pointer or 0>
+; if { = 0 dup } { drop swap } { if { vector_equals record_name 2dup } { drop swap } { dictionary_find_record dictionary_record_next } }
+        dq          i_return
+        dq          i_equal, val(0), i_dup
+f_dictionary_find_record__equal_zero: equ     $-8
+        dq          i_return
+        dq          i_drop, i_swap
+f_dictionary_find_record__case_zero: equ     $-8
+        dq          i_return
+        dq          call(f_if), val(f_dictionary_find_record__if_names_are_equal), val(f_dictionary_find_record__case_zero), val(f_dictionary_find_record__case_names_are_not_equal)
+f_dictionary_find_record__case_non_zero: equ     $-8
+        dq          i_return
+        dq          call(f_byte_vector_equals)
+        dq          call(f_dictionary_record_name)
+        dq          i_2dup
+f_dictionary_find_record__if_names_are_equal: equ     $-8
+        dq          i_return
+        dq          call(f_dictionary_find_record)
+        dq          call(f_dictionary_record_next)
+f_dictionary_find_record__case_names_are_not_equal: equ     $-8
+        dq          i_return
+        dq          call(f_if), val(f_dictionary_find_record__equal_zero)
+        dq          val(f_dictionary_find_record__case_zero), val(f_dictionary_find_record__case_non_zero)
+f_dictionary_find_record: equ     $-8
+
+
+; dictionary_add <dict> <name vector> <code vector>
+;                    # tries to find a record with the name
+;                    # panics if name is already taken
+;                    # adds new record to the front of the list
+        dq          i_return
+        dq          i_equal, val(0), i_dup
+f_dictionary_add__equal_zero: equ     $-8
+        dq          i_return
+        dq          i_write_mem_i64, i_pop_from_ret_stack
+        dq          call(f_dictionary_make_record) ; <record pointer>
+        dq          i_rev_rot ; <name> <code> <record pointer>
+        dq          i_read_mem_i64, i_peek_ret_stack, val(1) ; <record pointer> <name> <code>
+        dq          i_push_to_ret_stack
+        dq          i_rot ; <dict> <name> <code>
+        dq          call(f_panic_if), val(f_id), i_not, i_equal, val(0) ; <name> <code> <dict>
+        dq          call(f_dictionary_find_record)  ; <found record pointer> <name> <code> <dict>
+        dq          i_swap, i_over  ; <record pointer> <name> <name> <code> <dict>
+        dq          i_read_mem_i64, i_dup_n, val(3)         ; <record pointer> <name> <code> <dict>
+        dq          i_rev_rot   ; <name> <code> <dict>
+f_dictionary_add: equ     $-8
+
 
 ; panic_if function
         dq          call(f_exit_0), call(f_print_panic)
@@ -1456,6 +1587,23 @@ f_print_data_stack__print_number: equ     $-8
         dq              i_add, val(2), i_stack_depth ; <stack depth>
 f_print_data_stack: equ     $-8
 
+; make byte vector from bytes
+; <n> <byte 0> <byte 1> .. <byte n-1> -> <vector>
+        dq              i_return
+        dq              call(f_byte_vector_append_byte)
+        dq              i_rev_rot    ; <vector> <byte 0> <vector> 
+        dq              i_dup    ; <vector> <vector> <byte 0>
+f_byte_vector_from_bytes__append_one_byte: equ     $-8
+        dq              i_return
+        dq              call(f_do_n_times)
+        dq              i_swap, val(f_byte_vector_from_bytes__append_one_byte) ; <n> <func> <vector> <byte 0> ...
+        dq              i_swap
+        dq              call(f_byte_vector_make)
+f_byte_vector_from_bytes: equ     $-8
+
+        dq              i_return
+f_read_compile_run_loop: equ     $-8
+
 ; false function
         dq          i_return, val(0)
 f_false: equ     $-8
@@ -1524,6 +1672,9 @@ f_echo_tokens__is_string_literal: equ     $-8
         dq          call(f_is_bad_string_literal_token), i_dup
 f_echo_tokens__is_bad_string_literal: equ     $-8
         dq          i_return
+        dq          call(f_is_semicolon_token), i_dup
+f_echo_tokens__is_semicolon: equ     $-8
+        dq          i_return
         dq          call(f_byte_vector_destroy),
 
         dq          call(f_cond_end)
@@ -1531,6 +1682,7 @@ f_echo_tokens__is_bad_string_literal: equ     $-8
         dq          call(f_cond_when), val(f_echo_tokens__is_bad_string_literal), val(f_echo_tokens__print_bad_string_literal)
         dq          call(f_cond_when), val(f_echo_tokens__is_string_literal), val(f_echo_tokens__print_string_literal)
         dq          call(f_cond_when), val(f_echo_tokens__is_num), val(f_echo_tokens__print_number)
+        dq          call(f_cond_when), val(f_echo_tokens__is_semicolon), val(f_echo_tokens__print_semicolon)
         dq          call(f_cond_start)
         
         dq          call(f_print_newline)
@@ -1687,7 +1839,7 @@ f_echo_tokens: equ     $-8
         dq              i_equal
         dq                  val(1)
         dq                  call(f_byte_vector_size), i_peek_ret_stack, val(1)
-        dq                  call(f_byte_vector_append), i_peek_ret_stack, val(1), val(1)
+        dq                  call(f_byte_vector_append_byte), i_peek_ret_stack, val(1), val(1)
         dq              i_push_to_ret_stack, call(f_byte_vector_make)
         dq          i_and
         dq              call(f_free), i_pop_from_ret_stack
@@ -1698,10 +1850,10 @@ f_echo_tokens: equ     $-8
         dq                  i_equal
         dq                      val(4)
         dq                      call(f_byte_vector_size), i_peek_ret_stack, val(1)
-        dq                  call(f_byte_vector_append), i_peek_ret_stack, val(1), val(1)
-        dq                  call(f_byte_vector_append), i_peek_ret_stack, val(1), val(1)
-        dq                  call(f_byte_vector_append), i_peek_ret_stack, val(1), val(1)
-        dq                  call(f_byte_vector_append), i_peek_ret_stack, val(1), val(1)
+        dq                  call(f_byte_vector_append_byte), i_peek_ret_stack, val(1), val(1)
+        dq                  call(f_byte_vector_append_byte), i_peek_ret_stack, val(1), val(1)
+        dq                  call(f_byte_vector_append_byte), i_peek_ret_stack, val(1), val(1)
+        dq                  call(f_byte_vector_append_byte), i_peek_ret_stack, val(1), val(1)
         dq              i_push_to_ret_stack, call(f_byte_vector_make)
         dq          i_and
         dq              call(f_byte_vector_destroy), i_pop_from_ret_stack
@@ -1710,16 +1862,16 @@ f_echo_tokens: equ     $-8
         dq                  call(f_atoi)
         dq                  call(f_byte_vector_pointer), i_peek_ret_stack, val(1)
         dq                  call(f_byte_vector_size), i_peek_ret_stack, val(1)
-        dq                  call(f_byte_vector_append), i_peek_ret_stack, val(1), val(48)
-        dq                  call(f_byte_vector_append), i_peek_ret_stack, val(1), val(57)
-        dq                  call(f_byte_vector_append), i_peek_ret_stack, val(1), val(56)
-        dq                  call(f_byte_vector_append), i_peek_ret_stack, val(1), val(55)
-        dq                  call(f_byte_vector_append), i_peek_ret_stack, val(1), val(54)
-        dq                  call(f_byte_vector_append), i_peek_ret_stack, val(1), val(53)
-        dq                  call(f_byte_vector_append), i_peek_ret_stack, val(1), val(52)
-        dq                  call(f_byte_vector_append), i_peek_ret_stack, val(1), val(51)
-        dq                  call(f_byte_vector_append), i_peek_ret_stack, val(1), val(50)
-        dq                  call(f_byte_vector_append), i_peek_ret_stack, val(1), val(49)
+        dq                  call(f_byte_vector_append_byte), i_peek_ret_stack, val(1), val(48)
+        dq                  call(f_byte_vector_append_byte), i_peek_ret_stack, val(1), val(57)
+        dq                  call(f_byte_vector_append_byte), i_peek_ret_stack, val(1), val(56)
+        dq                  call(f_byte_vector_append_byte), i_peek_ret_stack, val(1), val(55)
+        dq                  call(f_byte_vector_append_byte), i_peek_ret_stack, val(1), val(54)
+        dq                  call(f_byte_vector_append_byte), i_peek_ret_stack, val(1), val(53)
+        dq                  call(f_byte_vector_append_byte), i_peek_ret_stack, val(1), val(52)
+        dq                  call(f_byte_vector_append_byte), i_peek_ret_stack, val(1), val(51)
+        dq                  call(f_byte_vector_append_byte), i_peek_ret_stack, val(1), val(50)
+        dq                  call(f_byte_vector_append_byte), i_peek_ret_stack, val(1), val(49)
         dq              i_push_to_ret_stack, call(f_byte_vector_make)
 
 
@@ -1742,11 +1894,11 @@ f_echo_tokens: equ     $-8
         dq          call(f_print_newline)
         dq          call(f_print_number), val(2)
         dq          i_and
-        dq              i_equal, val('\n'), call(f_string_literal_escape_char_decode), val('n')
+        dq              i_equal, val(10), call(f_string_literal_escape_char_decode), val('n')
         dq          i_and
-        dq              i_equal, val('\t'), call(f_string_literal_escape_char_decode), val('t')
+        dq              i_equal, val(9), call(f_string_literal_escape_char_decode), val('t')
         dq          i_and
-        dq              i_equal, val('\r'), call(f_string_literal_escape_char_decode), val('r')
+        dq              i_equal, val(13), call(f_string_literal_escape_char_decode), val('r')
         dq          i_and
         dq              i_equal, val(-1), call(f_string_literal_escape_char_decode), val('e')
         dq          val(1)
@@ -1772,31 +1924,87 @@ f_echo_tokens: equ     $-8
         dq          call(f_byte_vector_set), i_peek_ret_stack, val(1), val(1), val(11)
         dq          call(f_byte_vector_set), i_peek_ret_stack, val(1), val(0), val(10)
 
-        dq          call(f_byte_vector_append), i_peek_ret_stack, val(1), val(0)
-        dq          call(f_byte_vector_append), i_peek_ret_stack, val(1), val(0)
-        dq          call(f_byte_vector_append), i_peek_ret_stack, val(1), val(0)
-        dq          call(f_byte_vector_append), i_peek_ret_stack, val(1), val(0)
+        dq          call(f_byte_vector_append_byte), i_peek_ret_stack, val(1), val(0)
+        dq          call(f_byte_vector_append_byte), i_peek_ret_stack, val(1), val(0)
+        dq          call(f_byte_vector_append_byte), i_peek_ret_stack, val(1), val(0)
+        dq          call(f_byte_vector_append_byte), i_peek_ret_stack, val(1), val(0)
         dq          i_push_to_ret_stack, call(f_byte_vector_make)
         dq          val(1)
+
+        dq          call(f_print_bool)
+        dq          call(f_print_newline)
+        dq          call(f_print_number), val(4)
+        dq          call(f_byte_vector_destroy), i_pop_from_ret_stack
+        dq          i_and
+        dq              i_equal
+        dq                  val(16)
+        dq                  call(f_byte_vector_size)
+        dq                      i_peek_ret_stack, val(1)
+        dq          i_and
+        dq              i_equal
+        dq                  val(-2)
+        dq                  i_read_mem_i64
+        dq                  i_add, val(8), call(f_byte_vector_pointer)
+        dq                      i_peek_ret_stack, val(1)
+        dq          i_and
+        dq              i_equal
+        dq                  val(-1)
+        dq                  i_read_mem_i64
+        dq                  call(f_byte_vector_pointer)
+        dq                      i_peek_ret_stack, val(1)
+        dq          call(f_byte_vector_append_i64), i_peek_ret_stack, val(1), val(-2)
+        dq          call(f_byte_vector_append_i64), i_peek_ret_stack, val(1), val(-1)
+        dq          i_push_to_ret_stack, call(f_byte_vector_make)
+        dq          val(1)
+
+        dq          call(f_print_bool)
+        dq          call(f_print_newline)
+        dq          call(f_print_number), val(5)
+        dq          call(f_byte_vector_destroy), i_pop_from_ret_stack
+        dq          i_and
+        dq              i_equal
+        dq                  val(4)
+        dq                  call(f_byte_vector_size), i_peek_ret_stack, val(1)
+        dq          i_and
+        dq              i_equal
+        dq                  val(1234),
+        dq                  call(f_atoi)
+        dq                      call(f_byte_vector_pointer), i_peek_ret_stack, val(1)
+        dq                      call(f_byte_vector_size), i_peek_ret_stack, val(1)
+        dq          i_push_to_ret_stack, call(f_byte_vector_from_bytes), val(4), val('1'), val('2'), val('3'), val('4')
+        dq          val(1)
+
+        dq          call(f_print_bool)
+        dq          call(f_print_newline)
+        dq          call(f_print_number), val(6)
+        dq          i_and, i_equal, i_pop_from_ret_stack, i_stack_depth
+        dq          call(f_free), i_pop_from_ret_stack
+        dq          i_and
+        dq              call(f_byte_vector_equals)
+        dq                  call(f_byte_vector_from_bytes), val(4), val('1'), val('2'), val('3'), val('4')
+        dq                  call(f_dictionary_record_code)
+        dq                  call(f_dictionary_find_record)
+        dq                      i_read_mem_i64, i_peek_ret_stack, val(1)
+        dq                      call(f_byte_vector_from_bytes), val(2), val('a'), val('a')
+        dq          call(f_dictionary_add)
+        dq              i_peek_ret_stack, val(1)
+        dq              call(f_byte_vector_from_bytes), val(2), val('a'), val('b')
+        dq              call(f_byte_vector_from_bytes), val(4), val('4'), val('2'), val('3'), val('4')
+        dq          call(f_dictionary_add)
+        dq              i_peek_ret_stack, val(1)
+        dq              call(f_byte_vector_from_bytes), val(2), val('a'), val('a')
+        dq              call(f_byte_vector_from_bytes), val(4), val('1'), val('2'), val('3'), val('4')
+        dq          i_push_to_ret_stack, call(f_dictionary_make)
+        dq          i_push_to_ret_stack, i_stack_depth
+        dq          val(1)
+
 f_tests: equ     $-8
 
 
 
-        dq          call(f_exit_0)
-        dq          call(f_print_byte_vector)
-        dq          call(f_print_bool)
-        dq          call(f_string_literal_token_to_string), i_peek_ret_stack, val(1)
-        dq          call(f_print_newline)
-        dq          call(f_print_byte_vector), i_peek_ret_stack, val(1)
-        dq          call(f_byte_vector_append), i_peek_ret_stack, val(1), val('"')
-        dq          call(f_byte_vector_append), i_peek_ret_stack, val(1), val('t')
-        dq          call(f_byte_vector_append), i_peek_ret_stack, val(1), val(92)
-        dq          call(f_byte_vector_append), i_peek_ret_stack, val(1), val('"')
-        dq          i_push_to_ret_stack, call(f_byte_vector_make)
-
         dq          call(f_echo_tokens)
 
-        dq          f_tests, i_jmp
+;        dq          f_tests, i_jmp
 
 
 ;        dq          call(f_free), i_pop_from_ret_stack
