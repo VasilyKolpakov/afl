@@ -1358,6 +1358,30 @@ f_string_literal_escape_char_decode: equ     $-8
         dq          i_push_to_ret_stack
 f_is_semicolon_token: equ     $-8
 
+; tests if the token is an open paren
+; <token vector> -> <bool>
+        dq          i_return
+        dq          i_drop, i_pop_from_ret_stack
+        dq          i_and
+        dq              i_equal, val('{'), call(f_byte_vector_get)
+        dq                  i_peek_ret_stack, val(1)
+        dq                  val(0)
+        dq              i_equal, val(1), call(f_byte_vector_size), i_peek_ret_stack, val(1)
+        dq          i_push_to_ret_stack
+f_is_open_paren_token: equ     $-8
+
+; tests if the token is a close paren
+; <token vector> -> <bool>
+        dq          i_return
+        dq          i_drop, i_pop_from_ret_stack
+        dq          i_and
+        dq              i_equal, val('}'), call(f_byte_vector_get)
+        dq                  i_peek_ret_stack, val(1)
+        dq                  val(0)
+        dq              i_equal, val(1), call(f_byte_vector_size), i_peek_ret_stack, val(1)
+        dq          i_push_to_ret_stack
+f_is_close_paren_token: equ     $-8
+
 ; memcmp
 ; <addr1> <addr2> <n> -> <bool>
 ; loop invariant: <previous cmp> <addr1> <addr2> <n>
@@ -1721,6 +1745,9 @@ f_echo_tokens: equ     $-8
 ; <scanner> <dict> -> <ok bool> <code vector>
 ; loop invariant: <continue bool> <token> <scanner> <word def> <dict>
         dq          i_return
+        dq          call(f_is_open_paren_token), i_dup
+f_read_and_compile_code__is_open_paren: equ     $-8
+        dq          i_return
         dq          call(f_is_number_token), i_dup
 f_read_and_compile_code__is_num: equ     $-8
         dq          i_return
@@ -1732,6 +1759,20 @@ f_read_and_compile_code__is_num: equ     $-8
         dq          call(f_byte_vector_pointer), i_over     ; <token pointer> <token size> <token> <scanner> <code vector> <dict>
         dq          call(f_byte_vector_size), i_dup         ; <token size> <token> <scanner> <code vector> <dict>
 f_read_and_compile_code__emit_code_for_num: equ     $-8
+        dq          i_return                                    ; [ok bool] [scanner] [code vector] [dict]
+        dq          i_pop_from_ret_stack                        ; [scanner] [code vector] [dict]
+        dq          call(f_free), i_pop_from_ret_stack ; partially destroy sub vector [scanner] [code vector] [dict]
+        dq          call(f_byte_vector_append_i64), i_swap, val(i_push_to_stack), i_over ; [scanner] [code vector] [dict]
+        dq          call(f_byte_vector_append_i64), i_dup_n, val(3) ; [sub func pointer] [scanner] [code vector] [dict]
+        dq          i_add, val(-8)                              ; [sub func pointer + 8] [scanner] [code vector] [dict]
+        dq          i_add
+        dq              call(f_byte_vector_pointer), i_peek_ret_stack, val(1)
+        dq              call(f_byte_vector_size), i_peek_ret_stack, val(1)
+        dq          i_push_to_ret_stack, i_push_to_ret_stack    ; [sub ok bool] [sub code vector] [scanner] [code vector] [dict]
+        dq          call(f_read_and_compile_code__sub)          ; [scanner] [dict] [scanner] [code vector] [dict]
+        dq          i_over, i_dup_n, val(3)                     ; [scanner] [code vector] [dict]
+        dq          call(f_byte_vector_destroy)                 ; drop open paren [token] [scanner] [code vector] [dict]
+f_read_and_compile_code__emit_code_for_anon_func: equ     $-8
         dq          i_return
         dq          val(1)                          ; <ok bool> <scanner> <code vector> <dict>
         dq          call(f_byte_vector_append_i64), i_swap, val(i_call), i_over  ; <scanner> <code vector> <dict>
@@ -1767,30 +1808,71 @@ f_read_and_compile_code__no_such_word_case: equ     $-8
         dq          i_read_mem_i64                          ; <record pointer> <token> <scanner> <code vector> <dict>
         dq          i_dup_n, val(4)                         ; <dict> <token> <scanner> <code vector> <dict>
 f_read_and_compile_code__emit_code_for_word: equ     $-8
-        dq          i_return 
-        dq          i_and                                           ; <bool> <ok bool> <token> <scanner> <code vector> <dict>
-        dq              i_over                                      ; <ok bool> <is not semicolon> <ok bool> <token> <scanner> <code vector> <dict>
-        dq              i_not, call(f_is_semicolon_token), i_over   ; <is not semicolon> <ok bool> <token> <scanner> <code vector> <dict>
-f_read_and_compile_code__is_not_semicolon_and_continue: equ     $-8
+        dq          i_return
+        dq          call(f_print_newline)
+        dq          call(f_byte_vector_destroy), call(f_print_byte_vector), i_dup, call(f_byte_vector_from_bytes)
+        dq          val(9), val('b'), val('a'), val('d'), val(' '), val('p'), val('a'), val('r'), val('e'), val('n')
+f_read_and_compile_code__print_unmatched_paren: equ     $-8
+        dq          i_return                                        ; [bool] [ok bool] [token] [scanner] [code vector] [dict]
+        dq          i_and                                           ; [ok bool] [is not semicolon] [ok bool] [token] [scanner] [code vector] [dict]
+        dq              i_over                                      ; [is not semicolon] [ok bool] [token] [scanner] [code vector] [dict]
+        dq              i_not, call(f_is_semicolon_token), i_over   ; [ok bool] [token] [scanner] [code vector] [dict]
+        dq          i_and                                           ; [is not bad paren] [ok bool] [token] [scanner] [code vector] [dict]
+        dq          call(f_if), val(f_id), val(f_id), val(f_read_and_compile_code__print_unmatched_paren), i_dup  ; [is not bad paren] [ok bool] [token] [scanner] [code vector] [dict]
+        dq          i_not, call(f_is_close_paren_token), i_over     ; [ok bool] [token] [scanner] [code vector] [dict]
+f_read_and_compile_code__is_not_semicolon_and_fail_on_close_paren: equ     $-8
         dq          i_return
         dq          i_swap, call(f_read_next_token)
         dq          i_over
         dq          call(f_cond_end) ; <continue bool> <scanner> <code vector> <dict>
         dq          call(f_cond_default), val(f_read_and_compile_code__emit_code_for_word)
         dq          call(f_cond_when), val(f_read_and_compile_code__is_num), val(f_read_and_compile_code__emit_code_for_num)
+        dq          call(f_cond_when), val(f_read_and_compile_code__is_open_paren), val(f_read_and_compile_code__emit_code_for_anon_func)
         dq          call(f_cond_start)
-        dq          i_drop ; drop ok bool
+        dq          i_drop ; drop ok bool [ok bool] [token] [scanner] [code vector] [dict]
 f_read_and_compile_code__emit_code_for_next_token: equ     $-8
-        dq          i_return
-        dq          i_drop, i_rot ; <ok bool> <code vector>
-        dq          i_drop, i_swap ; <ok bool> <code vector> <dict>
-        dq          call(f_byte_vector_destroy), i_swap ; <ok bool> <scanner> <code vector> <dict>
+        dq          i_return        ; [ok bool] [code vector]
+        dq          i_drop, i_rot   ; [ok bool] [code vector] [dict]
+        dq          i_drop, i_swap  ; [ok bool] [scanner] [code vector] [dict]
+        dq          i_drop ; [scanner] [ok bool] [scanner] [code vector] [dict]
+        dq          call(f_if), val(f_id), val(f_id), val(f_read_and_compile_code_skip_to_semicolon) ; [is semicolon] [scanner] [ok bool] [scanner] [code vector] [dict]
+        dq          i_swap, i_dup_n, val(3)         ; [is semicolon] [ok bool] [scanner] [code vector] [dict]
+        dq          call(f_byte_vector_destroy), i_swap     ; [is semicolon] [token] [ok bool] [scanner] [code vector] [dict]
+        dq          call(f_is_semicolon_token), i_dup, i_swap   ; [ok bool] [token] [scanner] [code vector] [dict]
         dq          call(f_while)  ; <ok bool> <token> <scanner> <code vector> <dict>
-        dq          val(f_read_and_compile_code__is_not_semicolon_and_continue), val(f_read_and_compile_code__emit_code_for_next_token)
+        dq          val(f_read_and_compile_code__is_not_semicolon_and_fail_on_close_paren), val(f_read_and_compile_code__emit_code_for_next_token)
         dq          val(1)                                  ; <ok bool> <token> <scanner> <code vector> <dict>
         dq          call(f_read_next_token), i_dup, i_swap  ; <token> <scanner> <code vector> <dict>
         dq          call(f_byte_vector_append_i64), i_swap, val(i_return), i_dup
         dq          call(f_byte_vector_make)                ; <code vector> <scanner> <dict> 
+f_read_and_compile_code__main: equ     $-8
+        dq          i_return                                        ; [bool] [ok bool] [token] [scanner] [code vector] [dict]
+        dq          i_and                                           ; [ok bool] [is not close paren] [ok bool] [token] [scanner] [code vector] [dict]
+        dq              i_over                                      ; [is not close paren] [ok bool] [token] [scanner] [code vector] [dict]
+        dq              i_not, call(f_is_close_paren_token), i_over ; [ok bool] [token] [scanner] [code vector] [dict]
+        dq          i_and                                           ; [is semicolon] [ok bool] [token] [scanner] [code vector] [dict]
+        dq          call(f_if), val(f_id), val(f_id), val(f_read_and_compile_code__print_unmatched_paren), i_dup ; [is semicolon] [ok bool] [token] [scanner] [code vector] [dict]
+        dq          i_not, call(f_is_semicolon_token), i_over       ; [ok bool] [token] [scanner] [code vector] [dict]
+f_read_and_compile_code__check_not_close_paren_and_fail_on_semicolon: equ     $-8
+        dq          i_return        ; [ok bool] [code vector]
+        dq          i_drop, i_rot   ; [ok bool] [code vector] [dict]
+        dq          i_drop, i_swap  ; [ok bool] [scanner] [code vector] [dict]
+        dq          call(f_byte_vector_destroy), i_swap     ; [ok bool] [token] [scanner] [code vector] [dict]
+        dq          call(f_while)                           ; <ok bool> <token> <scanner> <code vector> <dict>
+        dq          val(f_read_and_compile_code__check_not_close_paren_and_fail_on_semicolon), val(f_read_and_compile_code__emit_code_for_next_token)
+        dq          val(1)                                  ; <ok bool> <token> <scanner> <code vector> <dict>
+        dq          call(f_read_next_token), i_dup, i_swap  ; <token> <scanner> <code vector> <dict>
+        dq          call(f_byte_vector_append_i64), i_swap, val(i_return), i_dup
+        dq          call(f_byte_vector_make)                ; <code vector> <scanner> <dict> 
+f_read_and_compile_code__sub: equ     $-8
+        dq          i_return
+        dq          call(f_if), val(f_id), val(f_id), val(f_read_and_compile_code_skip_to_semicolon)  ; [is semicolon] [scanner]
+        dq          call(f_byte_vector_destroy), i_swap     ; [is semicolon] [token] [scanner]
+        dq          call(f_is_semicolon_token), i_dup       ; [token] [scanner]
+        dq          call(f_read_next_token), i_dup          ; [scanner]
+f_read_and_compile_code_skip_to_semicolon: equ     $-8
+        dq          i_return
+        dq          call(f_read_and_compile_code__main)
 f_read_and_compile_code: equ     $-8
 
 
@@ -2148,6 +2230,14 @@ f_tests: equ     $-8
         dq              i_peek_ret_stack, val(1)
         dq              call(f_byte_vector_from_bytes), val(1), val('+')
         dq              call(f_word_def_make), val(i_add), val(0)
+        dq          call(f_dictionary_add)
+        dq              i_peek_ret_stack, val(1)
+        dq              call(f_byte_vector_from_bytes), val(1), val('i')
+        dq              call(f_word_def_make), val(i_indirect_call), val(0)
+        dq          call(f_dictionary_add)
+        dq              i_peek_ret_stack, val(1)
+        dq              call(f_byte_vector_from_bytes), val(2), val('i'), val('f')
+        dq              call(f_word_def_make), val(f_if), val(1)
         dq          i_push_to_ret_stack, call(f_dictionary_make)
 
 
