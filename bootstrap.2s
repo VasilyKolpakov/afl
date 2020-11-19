@@ -1,0 +1,31 @@
+r "r" "rename_word" ;
+
+rename_word "d" "def" ;
+
+rename_word "w" "while" ;
+rename_word "cs" "cond_start" ;
+rename_word "ce" "cond_end" ;
+rename_word "cw" "cond_when" ;
+rename_word "cd" "cond_default" ;
+rename_word "t" "true" ;
+rename_word "f" "false" ;
+
+rename_word "nl" "print_newline" ;
+rename_word "p" "print_string" ;
+rename_word ".b" "print_bool" ;
+
+
+rename_word "du" "dup" ;
+rename_word "dn" "dup_n" ;
+rename_word "2d" "2dup" ;
+rename_word "s" "swap" ;
+rename_word "ro" "rot" ;
+rename_word "rr" "-rot" ;
+rename_word "dr" "drop" ;
+rename_word "o" "over" ;
+
+rename_word "rp" "r_peek" ;
+
+rename_word "sc" "syscall" ;
+
+

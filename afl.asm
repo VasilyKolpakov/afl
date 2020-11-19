@@ -527,8 +527,8 @@ _start:
 %1_size: equ $-%1
 %endmacro
 
-def_nl_terminated_static_string ss_true, "true"
-def_nl_terminated_static_string ss_false, "false"
+def_static_string ss_true, "true"
+def_static_string ss_false, "false"
 
 def_nl_terminated_static_string ss_newline, ""
 
@@ -1432,6 +1432,11 @@ f_dictionary_make_record: equ     $-8
         dq          i_read_mem_i64
 f_dictionary_record_name: equ     $-8
 
+; <dict record> <name> ->
+        dq          i_return
+        dq          i_write_mem_i64
+f_dictionary_record_set_name: equ     $-8
+
 ; <dict record> -> <word def>
         dq          i_return
         dq          i_read_mem_i64, i_add, val(8)
@@ -1741,9 +1746,55 @@ f_echo_tokens_loop: equ     $-8
         dq          call(f_scanner_make)
 f_echo_tokens: equ     $-8
 
+; <value> -> <value func>
+        dq          i_return
+        dq          i_add, val(16), i_pop_from_ret_stack
+        dq          i_write_mem_i64, i_add, val(0), i_peek_ret_stack, val(1), val(i_return)
+        dq          i_write_mem_i64, i_add, val(8), i_peek_ret_stack, val(1)
+        dq          i_write_mem_i64, i_add, val(16), i_peek_ret_stack, val(1), val(i_push_to_stack)
+        dq          i_push_to_ret_stack, call(f_malloc), val(24)
+f_capture: equ     $-8
+
+; <func 1> <func 2> -> <func>
+        dq          i_return
+        dq          i_add, val(8*4), i_pop_from_ret_stack
+        dq          i_write_mem_i64, i_add, val(8*0), i_peek_ret_stack, val(1), val(i_return)
+        dq          i_write_mem_i64, i_add, val(8*1), i_peek_ret_stack, val(1)
+        dq          i_write_mem_i64, i_add, val(8*2), i_peek_ret_stack, val(1), val(i_call)
+        dq          i_write_mem_i64, i_add, val(8*3), i_peek_ret_stack, val(1)
+        dq          i_write_mem_i64, i_add, val(8*4), i_peek_ret_stack, val(1), val(i_call)
+        dq          i_push_to_ret_stack, call(f_malloc), val(8*5)
+        dq          i_swap
+f_func_concat: equ     $-8
+
 ; reads and compiles code
 ; <scanner> <dict> -> <ok bool> <code vector>
-; loop invariant: <continue bool> <token> <scanner> <word def> <dict>
+; loop invariant: <ok bool> <token> <scanner> <word def> <dict>
+        dq          i_return                                ; [ok bool] [scanner] [code vector] [dict]
+        dq          val(1)                                  ; [scanner] [code vector] [dict]
+        dq          call(f_byte_vector_append_i64), i_swap, val(i_push_to_stack), i_over ; [scanner] [code vector] [dict]
+        dq          call(f_byte_vector_append_i64), i_dup_n, val(3)         ; [string] [scanner] [code vector] [dict]
+        dq          call(f_byte_vector_destroy), i_swap                     ; [string] [token] [scanner] [code vector] [dict]
+        dq          i_drop, call(f_string_literal_token_to_string), i_dup   ; [token] [scanner] [code vector] [dict]
+f_read_and_compile_code__emit_code_for_string_literal: equ     $-8
+        dq          i_return
+        dq          i_equal
+        dq              val('"')                                        ; [first byte] [token]
+        dq              call(f_byte_vector_get), i_swap, val(0), i_dup  ; [token]
+f_read_and_compile_code__is_string_literal: equ     $-8
+        dq          i_return
+        dq          val(0)                              ; [ok bool] [scanner] [code vector] [dict]
+        dq          call(f_print_newline)
+        dq          call(f_byte_vector_destroy)         ; [token] [scanner] [code vector] [dict]
+        dq          call(f_print_byte_vector), i_dup    ; [token] [scanner] [code vector] [dict]
+        dq          call(f_print_newline)
+        dq          call(f_byte_vector_destroy), call(f_print_byte_vector), i_dup, call(f_byte_vector_from_bytes)
+        dq          val(19), val('b'), val('a'), val('d'), val(' '), val('s'), val('t'), val('r'), val('i'), val('n'), val('g')  ; [token] [scanner] [code vector] [dict]
+        dq          val(' '), val('l'), val('i'), val('t'), val('e'), val('r'), val('a'), val('l'), val(':')  ; [token] [scanner] [code vector] [dict]
+f_read_and_compile_code__print_bad_string_literal: equ     $-8
+        dq          i_return
+        dq          call(f_is_bad_string_literal_token), i_dup
+f_read_and_compile_code__is_bad_string_literal: equ     $-8
         dq          i_return
         dq          call(f_is_open_paren_token), i_dup
 f_read_and_compile_code__is_open_paren: equ     $-8
@@ -1828,6 +1879,8 @@ f_read_and_compile_code__is_not_semicolon_and_fail_on_close_paren: equ     $-8
         dq          call(f_cond_default), val(f_read_and_compile_code__emit_code_for_word)
         dq          call(f_cond_when), val(f_read_and_compile_code__is_num), val(f_read_and_compile_code__emit_code_for_num)
         dq          call(f_cond_when), val(f_read_and_compile_code__is_open_paren), val(f_read_and_compile_code__emit_code_for_anon_func)
+        dq          call(f_cond_when), val(f_read_and_compile_code__is_string_literal), val(f_read_and_compile_code__emit_code_for_string_literal)
+        dq          call(f_cond_when), val(f_read_and_compile_code__is_bad_string_literal), val(f_read_and_compile_code__print_bad_string_literal)
         dq          call(f_cond_start)
         dq          i_drop ; drop ok bool [ok bool] [token] [scanner] [code vector] [dict]
 f_read_and_compile_code__emit_code_for_next_token: equ     $-8
@@ -1892,19 +1945,37 @@ f_read_and_compile_code: equ     $-8
         dq          i_push_to_ret_stack
         dq          i_push_to_ret_stack
         dq          i_push_to_ret_stack
-        
-        dq          call(f_byte_vector_destroy), call(f_print_byte_vector), i_dup, call(f_byte_vector_from_bytes)   ; <code vector> <scanner> <dict>
-        dq          val(4), val('o'), val('k'), val('.'), val(10)
 f_f_read_compile_run_loop__run: equ     $-8
         dq          i_return
+        dq          call(f_byte_vector_destroy), call(f_print_byte_vector), i_dup, call(f_byte_vector_from_bytes)
+        dq          val(6), val('e'), val('r'), val('r'), val('o'), val('r'), val(10)
+f_f_read_compile_run_loop__print_error: equ     $-8
+        dq          i_return
         dq          call(f_byte_vector_destroy)     ; <scanner> <dict> TODO: destroy sub-functions
-        dq          call(f_if), val(f_id), val(f_f_read_compile_run_loop__run), val(f_id)
+        dq          call(f_if), val(f_id), val(f_f_read_compile_run_loop__run), val(f_f_read_compile_run_loop__print_error)
         dq          call(f_read_and_compile_code)   ; <ok bool> <code vector> <scanner> <dict>
         dq          i_2dup
 f_f_read_compile_run_loop__loop: equ     $-8
         dq          i_return
         dq          call(f_while), val(f_true), val(f_f_read_compile_run_loop__loop)
 f_read_compile_run_loop: equ     $-8
+
+; <dict> <old name> <new name> ->
+        dq          i_return
+        dq          call(f_dictionary_record_set_name) ; [the record] [new name]
+        dq          call(f_byte_vector_destroy), call(f_dictionary_record_name), i_dup ; destroy old name [the record] [new name]
+        dq          call(f_panic_if), val(f_id), i_equal, val(0), i_dup ; [the record] [new name]
+        dq          call(f_dictionary_find_record)  ; [record] [old name] [new name]
+        dq          i_read_mem_i64  ; [dict] [old name] [new name]
+f_rename_word: equ     $-8
+        
+; <dict> <name> <func> ->
+        dq          i_return
+        dq          call(f_dictionary_add)                  ; [dict] [name] [word_def]
+        dq          i_rev_rot                               ; [word_def] [dict] [name]
+        dq          call(f_word_def_make), i_swap, val(1)   ; [func] [dict] [name]
+        dq          i_rot                                   ; [dict] [name] [func]
+f_define_word: equ     $-8
         
 ; interpreter's entry point
         dq          call(f_exit_0)
@@ -2220,25 +2291,104 @@ f_tests: equ     $-8
         dq          i_pop_from_ret_stack
         dq          call(f_dictionary_add)
         dq              i_peek_ret_stack, val(1)
-        dq              call(f_byte_vector_from_bytes), val(2), val('.'), val('d')
-        dq              call(f_word_def_make), val(f_print_debug), val(1)
+        dq              call(f_byte_vector_from_bytes), val(1), val('r')
+        dq              call(f_word_def_make)
+        dq                  call(f_func_concat), val(f_rename_word), call(f_capture), i_peek_ret_stack, val(1)
+        dq                  val(1)
         dq          call(f_dictionary_add)
         dq              i_peek_ret_stack, val(1)
-        dq              call(f_byte_vector_from_bytes), val(2), val('.'), val('s')
-        dq              call(f_word_def_make), val(f_print_data_stack), val(1)
-        dq          call(f_dictionary_add)
+        dq              call(f_byte_vector_from_bytes), val(1), val('d')
+        dq              call(f_word_def_make)
+        dq                  call(f_func_concat), val(f_define_word), call(f_capture), i_peek_ret_stack, val(1)
+        dq                  val(1)
+
+%macro  def_instruction_word 2
+        dq          call(f_dictionary_add),
         dq              i_peek_ret_stack, val(1)
-        dq              call(f_byte_vector_from_bytes), val(1), val('+')
-        dq              call(f_word_def_make), val(i_add), val(0)
-        dq          call(f_dictionary_add)
+        dq              call(f_byte_vector_from_bytes), val(1), val(%1)
+        dq              call(f_word_def_make), val(%2), val(0)
+%endmacro
+%macro  def_instruction_word_2 3
+        dq          call(f_dictionary_add),
         dq              i_peek_ret_stack, val(1)
-        dq              call(f_byte_vector_from_bytes), val(1), val('i')
-        dq              call(f_word_def_make), val(i_indirect_call), val(0)
-        dq          call(f_dictionary_add)
+        dq              call(f_byte_vector_from_bytes), val(2), val(%1), val(%2)
+        dq              call(f_word_def_make), val(%3), val(0)
+%endmacro
+
+%macro  def_function_word 2
+        dq          call(f_dictionary_add),
         dq              i_peek_ret_stack, val(1)
-        dq              call(f_byte_vector_from_bytes), val(2), val('i'), val('f')
-        dq              call(f_word_def_make), val(f_if), val(1)
+        dq              call(f_byte_vector_from_bytes), val(1), val(%1)
+        dq              call(f_word_def_make), val(%2), val(1)
+%endmacro
+
+%macro  def_function_word_2 3
+        dq          call(f_dictionary_add),
+        dq              i_peek_ret_stack, val(1)
+        dq              call(f_byte_vector_from_bytes), val(2), val(%1), val(%2)
+        dq              call(f_word_def_make), val(%3), val(1)
+%endmacro
+
+
+                    def_instruction_word '+', i_add
+                    def_instruction_word '*', i_mul
+                    def_instruction_word '-', i_sub
+                    def_instruction_word '/', i_div
+                    def_instruction_word '%', i_mod
+
+                    
+                    def_instruction_word '=', i_equal
+                    def_instruction_word '>', i_greater
+                    def_instruction_word_2 '>', '=', i_greater_or_equal
+                    def_instruction_word '<', i_less
+                    def_instruction_word_2 '<', '=', i_less_or_equal
+
+
+                    def_instruction_word_2 'd', 'r', i_drop
+                    def_instruction_word 'o', i_over
+                    def_instruction_word_2 'd', 'u', i_dup
+                    def_instruction_word_2 '2', 'd', i_2dup
+                    def_instruction_word_2 'd', 'n', i_dup_n
+                    def_instruction_word 's', i_swap
+                    def_instruction_word_2 'r', 'o', i_rot
+                    def_instruction_word_2 'r', 'r', i_rev_rot
+                    
+                    def_instruction_word_2 'r', '>', i_pop_from_ret_stack
+                    def_instruction_word_2 '>', 'r', i_push_to_ret_stack
+                    def_instruction_word_2 'r', 'p', i_peek_ret_stack
+                    
+                    def_instruction_word_2 's', 'c', i_syscall
+
+                 
+                    def_instruction_word 'i', i_indirect_call
+
+                    def_function_word_2 '.','s', f_print_data_stack
+                    def_function_word_2 '.','b', f_print_bool
+                    def_function_word '.', f_print_number
+                    def_function_word_2 'n', 'l', f_print_newline
+
+
+                    def_function_word 'p', f_print_byte_vector
+                    
+                    def_function_word_2 'i','f', f_if
+                    def_function_word_2 'c','s', f_cond_start
+                    def_function_word_2 'c','e', f_cond_end
+                    def_function_word_2 'c','w', f_cond_when
+                    def_function_word_2 'c','d', f_cond_default
+                    def_function_word 'w', f_while
+                    
+                    def_function_word 't', f_true
+                    def_function_word 'f', f_false
+
         dq          i_push_to_ret_stack, call(f_dictionary_make)
+
+
+
+
+;        dq          i_indirect_call
+;        dq          call(f_func_concat), val(f_print_debug), val(f_print_hello_world)
+
+
 
 
 

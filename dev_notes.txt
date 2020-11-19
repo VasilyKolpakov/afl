@@ -130,8 +130,8 @@
             - is_close_paren_token
     + test byte vector on large strings (p 10 min, a 10 min)
     + fix byte vector on large strings (p 30 min, a 29 min)
-    - interpreter
-        - non-quote interpreter
+    + interpreter
+        + non-quote interpreter
             # emit tail call into f_interpret
             # emit <dictionary pointer>, i_push_to_stack
             # ??? emit <current function>, i_push_to_stack
@@ -159,10 +159,7 @@
                 - i_indirect_jmp
     - b-tree
         # lazy maintenance
-  - conservative GC: simple and inefficient
-    - интерпретатор генерирует код, который делает tail-call в него
-  - conservative GC
-    - cuckoo hashing
+    - conservative GC
   - статическая проверка операций с return стеком
   - статическая проверка типов, вывод stack effect
     - optional args

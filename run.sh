@@ -1,1 +1,1 @@
-nasm -felf64 -g afl.asm && ld -o afl afl.o && ./afl
+cat bootstrap.2s - | ./run_boot.sh
