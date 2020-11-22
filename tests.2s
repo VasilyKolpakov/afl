@@ -51,4 +51,21 @@ run_test "bit or" {
         true
 } ;
 
+run_test "round_up_to_power_of_two" {
+    and = 
+        4
+        round_up_to_power_of_two 3
+    and = 
+        0
+        round_up_to_power_of_two 0
+    and = 
+        1
+        round_up_to_power_of_two 1
+    and = 
+        128
+        round_up_to_power_of_two 100
+
+        true
+} ;
+
 exit 0 ;

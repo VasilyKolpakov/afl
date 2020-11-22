@@ -51,3 +51,16 @@ rename_word "ca" "func_capture" ; # <value> -> <func that puts value on the stac
 
 
 def "exit" { syscall 60 r> 1 2 3 4 5 >r } ;
+
+# <number> -> <number>
+def "round_up_to_power_of_two" {
+   + 1
+   bit_or bit_rshift swap 32 dup
+   bit_or bit_rshift swap 16 dup
+   bit_or bit_rshift swap 8 dup
+   bit_or bit_rshift swap 4 dup
+   bit_or bit_rshift swap 2 dup
+   bit_or bit_rshift swap 1 dup
+   - swap 1
+} ;
+

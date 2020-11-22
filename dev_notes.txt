@@ -155,10 +155,10 @@
     + vim custom highlighting
     + constant
     - allocator
-        - round_up_power_of_two
+        + round_up_to_power_of_two
             + i_bit_rshift_i64
             + i_bit_or_64
-            - tests in 2s
+            + tests in 2s
         # O(1) power-of-twos
         - malloc
         - free
