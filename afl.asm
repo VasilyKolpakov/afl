@@ -153,6 +153,26 @@ i_sub:
         mov         [r12 - 8], rax
         jmp iloop
 
+; <a> <b> -> <a << b>
+i_bit_or_64:
+        drop_data_stack 2
+        mov         rax,  [r12 + 8*1]       ; a
+        mov         rdi,  [r12 + 8*0]       ; b
+        add         r12, 8
+        or          rax, rdi
+        mov         [r12 - 8], rax
+        jmp iloop
+
+; <a> <b> -> <a << b>
+i_bit_rshift_i64:
+        drop_data_stack 2
+        mov         rax,  [r12 + 8*1]       ; a
+        mov         rcx,  [r12 + 8*0]       ; b
+        add         r12, 8
+        sar         rax, cl
+        mov         [r12 - 8], rax
+        jmp iloop
+
 ; <true> -> <false>
 ; <false> -> <true>
 i_not:
@@ -2336,6 +2356,12 @@ f_tests: equ     $-8
                     def_instruction_word '/', i_div
                     def_instruction_word '%', i_mod
 
+                    def_instruction_word_2 'b','&', i_and
+                    def_instruction_word_2 'b','|', i_or
+                    def_instruction_word_2 'b','!', i_not
+
+                    def_instruction_word_2 '>', '>', i_bit_rshift_i64
+                    def_instruction_word '|', i_bit_or_64
                     
                     def_instruction_word '=', i_equal
                     def_instruction_word '>', i_greater
@@ -2357,6 +2383,11 @@ f_tests: equ     $-8
                     def_instruction_word_2 '>', 'r', i_push_to_ret_stack
                     def_instruction_word_2 'r', 'p', i_peek_ret_stack
                     
+                    def_instruction_word_2 'w', 'b', i_write_mem_byte
+                    def_instruction_word_2 'r', 'b', i_read_mem_byte
+                    def_instruction_word_2 'w', 'i', i_write_mem_i64
+                    def_instruction_word_2 'r', 'i', i_read_mem_i64
+                    
                     def_instruction_word_2 's', 'c', i_syscall
 
                  
@@ -2366,6 +2397,7 @@ f_tests: equ     $-8
                     def_function_word_2 '.','b', f_print_bool
                     def_function_word '.', f_print_number
                     def_function_word_2 'n', 'l', f_print_newline
+                    def_function_word_2 '.', 'c', f_write_byte_to_stdout
 
 
                     def_function_word 'p', f_print_byte_vector
@@ -2379,6 +2411,13 @@ f_tests: equ     $-8
                     
                     def_function_word 't', f_true
                     def_function_word 'f', f_false
+
+                    def_function_word_2 'm','m', f_mmap_anon
+                    def_function_word_2 'u','m', f_munmap
+                    def_function_word_2 'r','m', f_mremap
+
+                    def_function_word_2 'f','c', f_func_concat
+                    def_function_word_2 'c','a', f_capture
 
         dq          i_push_to_ret_stack, call(f_dictionary_make)
 

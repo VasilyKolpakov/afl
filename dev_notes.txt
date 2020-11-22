@@ -79,9 +79,6 @@
                 + size  (p 5 min, a 2 min)
                 + set  (p 5 min, a 4 min)
                 --- ensure_capacity (p 10 min) 5 min + 10 min
-                    - i_bit_lshift (p 8)
-                        - no such instruction
-                    - i_bit_or (p 8)
                     #scratch this
                 + append  (p 10 min, 23 min)
                 + pointer (p 3 min, a 3 min)
@@ -155,10 +152,22 @@
                     # tries to find a record with the name
                     # panics is name is already taken
                     # adds new record to the front of the list
-            - read_compile_run_loop
-                - i_indirect_jmp
+    + vim custom highlighting
+    + constant
+    - allocator
+        - round_up_power_of_two
+            + i_bit_rshift_i64
+            + i_bit_or_64
+            - tests in 2s
+        # O(1) power-of-twos
+        - malloc
+        - free
+        - realloc
+            - memcopy
+        - test
     - b-tree
         # lazy maintenance
+        - block allocator
     - conservative GC
   - статическая проверка операций с return стеком
   - статическая проверка типов, вывод stack effect
@@ -275,7 +284,7 @@ def "atoi" {
             str_char dup-n 2 dup-n 3
         } { + 1 } { }
 
-};
+} ;
 
 // <string>
 def "atoi-fun" {
@@ -283,4 +292,4 @@ def "atoi-fun" {
     map { - '0' }
     take_while { and >= '0' swap <= '9' dup }
     string_to_vec
-};
+} ;

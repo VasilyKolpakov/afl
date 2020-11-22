@@ -10,9 +10,17 @@ rename_word "cd" "cond_default" ;
 rename_word "t" "true" ;
 rename_word "f" "false" ;
 
+rename_word "b&" "and" ;
+rename_word "b|" "or" ;
+rename_word "b!" "not" ;
+
+rename_word ">>" "bit_rshift";
+rename_word "|" "bit_or";
+
 rename_word "nl" "print_newline" ;
 rename_word "p" "print_string" ;
 rename_word ".b" "print_bool" ;
+rename_word ".c" "write_byte_to_stdout" ;
 
 
 rename_word "du" "dup" ;
@@ -26,6 +34,20 @@ rename_word "o" "over" ;
 
 rename_word "rp" "r_peek" ;
 
+rename_word "wb" "write_mem_byte" ;
+rename_word "rb" "read_mem_byte" ;
+rename_word "wi" "write_mem_i64" ;
+rename_word "ri" "read_mem_i64" ;
+
 rename_word "sc" "syscall" ;
 
 
+rename_word "mm" "syscall_mmap_anon" ; # <size> -> <address>
+rename_word "um" "syscall_munmap" ; # <address> <size>
+rename_word "rm" "syscall_remap" ; # <address> <old size> <new size>
+
+rename_word "fc" "func_compose" ; # <func1> <func2> -> <func that calls func2 first, then call func1>
+rename_word "ca" "func_capture" ; # <value> -> <func that puts value on the stack>
+
+
+def "exit" { syscall 60 r> 1 2 3 4 5 >r } ;

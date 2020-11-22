@@ -1,0 +1,54 @@
+# <string>
+def "print_bash_escape_seq" {
+    print_string
+    write_byte_to_stdout 27
+} ;
+
+# <string>
+def "print_green_string" {
+    print_bash_escape_seq "[0m"
+    print_string
+    print_bash_escape_seq "[0;32m"
+} ;
+
+# <string>
+def "print_red_string" {
+    print_bash_escape_seq "[0m"
+    print_string
+    print_bash_escape_seq "[0;31m"
+} ;
+
+# <test name> <test body>
+def "run_test" {
+   if { i } { print_green_string "OK\n" } { print_red_string "FAIL\n" }
+   print_string ": "
+   print_string
+} ;
+
+
+run_test "bit rshift" {
+    and = 
+        1
+        bit_rshift 2 1
+    and = 
+        8
+        bit_rshift 16 1
+    and = 
+        + 4 8
+        bit_rshift + 16 32 2
+
+        true
+} ;
+
+run_test "bit or" {
+    and = 
+        3
+        bit_or 2 1
+    and = 
+        3
+        bit_or 3 1
+
+        true
+} ;
+
+exit 0 ;
