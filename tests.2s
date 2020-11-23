@@ -54,6 +54,17 @@ run_test "bit lshift" {
         true
 } ;
 
+run_test "bit xor" {
+    and = 
+        3
+        bit_xor 2 1
+    and = 
+        0
+        bit_xor 3 3
+
+        true
+} ;
+
 run_test "bit or" {
     and = 
         3
@@ -92,5 +103,80 @@ run_test "round_up_to_power_of_two" {
 
         true
 } ;
+
+# <size> -> <byte size>
+def "bitset_size" { if { not = 0 dup } { + 1 / swap 8 + -1 } { 0 drop } } ;
+
+run_test "bitset size" {
+    and = 
+        0
+        bitset_size 0
+    and =
+        1
+        bitset_size 4
+    and =
+        10
+        bitset_size 75
+    true
+} ;
+
+# <address> <n> -> <bit n> <byte address>
+def "bitset_bit_address" {
+   % swap 8 swap    # <bit n> <byte address>
+   +                # <byte address> <n>
+   / swap 8 over    # <address> <n> 
+} ;
+
+# <address> <n> ->
+def "bitset_add" {
+    write_mem_byte      # <byte address> <updated byte>
+    swap bit_or         # <byte with bit> <old byte> <byte address>
+    bit_lshift 1    # <bit n> <old byte> <byte address>
+    swap                # <byte> <bit n> <byte address>
+    read_mem_byte over  # <bit n> <byte address>
+    bitset_bit_address
+} ;
+
+# <address> <n> ->
+def "bitset_remove" {
+    write_mem_byte      # <byte address> <updated byte>
+    swap bit_and         # <byte with bitmask> <old byte> <byte address>
+    bit_xor -1 bit_lshift 1    # <bit n> <old byte> <byte address>
+    swap                # <byte> <bit n> <byte address>
+    read_mem_byte over  # <bit n> <byte address>
+    bitset_bit_address
+} ;
+
+# <address> <n> -> <bool>
+def "bitset_contains" {
+    = bit_and over swap   # <bit byte> <byte>
+    bit_lshift 1 swap   # <byte> <bit n>
+    read_mem_byte swap  # <bit n> <byte address>
+    bitset_bit_address
+} ;
+
+run_test "bitset operations" {
+    drop syscall_munmap r> 4096
+        and
+            not bitset_contains r_peek 1 0
+            bitset_remove r_peek 1 0
+            bitset_add r_peek 1 0
+        and
+            bitset_contains r_peek 1 10
+            bitset_add r_peek 1 10
+        and
+            bitset_contains r_peek 1 8
+            bitset_add r_peek 1 8
+            bitset_remove r_peek 1 0
+        and
+            bitset_contains r_peek 1 0
+            bitset_add r_peek 1 0
+        and
+            not bitset_contains r_peek 1 100
+        true
+    >r syscall_mmap_anon 4096
+} ;
+
+.s ;
 
 exit 0 ;

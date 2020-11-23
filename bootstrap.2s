@@ -16,6 +16,7 @@ rename_word "b!" "not" ;
 
 rename_word ">>" "bit_rshift";
 rename_word "<<" "bit_lshift";
+rename_word "^" "bit_xor";
 rename_word "|" "bit_or";
 rename_word "&" "bit_and";
 
@@ -45,7 +46,7 @@ rename_word "sc" "syscall" ;
 
 
 rename_word "mm" "syscall_mmap_anon" ; # <size> -> <address>
-rename_word "um" "syscall_munmap" ; # <address> <size>
+rename_word "um" "syscall_munmap" ; # <address> <size> -> <error code>
 rename_word "rm" "syscall_remap" ; # <address> <old size> <new size>
 
 rename_word "fc" "func_compose" ; # <func1> <func2> -> <func that calls func2 first, then call func1>

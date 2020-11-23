@@ -173,12 +173,15 @@
             + i_bit_rshift_i64
             + i_bit_or_64
             + tests in 2s
-        - bitset ( planning 9 min, p 1 hour 5 min)
+        + bitset ( planning 9 min, p 1 hour 5 min, 1 hour 30 min)
             + bit_lshift_i64 ( p 15 min, a 12 min )
-            - bitset_make <size> (p 15)
-            - bitset_put <n> (p 15)
-            - bitset_contains <n> -> <bool> (p20 min)
-                - bit_and_64
+            + bitset_size <size> -> <byte size> (p 15, bad planning\design, 5 m redesign, 23 min)
+            + bitset_add <address> <n> (p 15, a 28 min)
+            + bitset_remove <address> <n> (p 15 min, a 10 min)
+                + bit_xor_64
+            + bitset_contains <address> <n> -> <bool> (p20 min, a 6 min)
+                + bit_and_64
+            + test
         - malloc
         - free
         - realloc
