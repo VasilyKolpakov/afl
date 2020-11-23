@@ -15,7 +15,9 @@ rename_word "b|" "or" ;
 rename_word "b!" "not" ;
 
 rename_word ">>" "bit_rshift";
+rename_word "<<" "bit_lshift";
 rename_word "|" "bit_or";
+rename_word "&" "bit_and";
 
 rename_word "nl" "print_newline" ;
 rename_word "p" "print_string" ;

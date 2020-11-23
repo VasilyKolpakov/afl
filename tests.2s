@@ -40,6 +40,20 @@ run_test "bit rshift" {
         true
 } ;
 
+run_test "bit lshift" {
+    and = 
+        4
+        bit_lshift 2 1
+    and = 
+        32
+        bit_lshift 16 1
+    and = 
+        + 16 32
+        bit_lshift + 4 8 2
+
+        true
+} ;
+
 run_test "bit or" {
     and = 
         3
@@ -47,6 +61,17 @@ run_test "bit or" {
     and = 
         3
         bit_or 3 1
+
+        true
+} ;
+
+run_test "bit and" {
+    and = 
+        4
+        bit_and 7 4
+    and = 
+        1
+        bit_and 3 1
 
         true
 } ;

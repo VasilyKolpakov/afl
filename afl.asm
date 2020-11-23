@@ -164,12 +164,32 @@ i_bit_or_64:
         jmp iloop
 
 ; <a> <b> -> <a << b>
+i_bit_and_64:
+        drop_data_stack 2
+        mov         rax,  [r12 + 8*1]       ; a
+        mov         rdi,  [r12 + 8*0]       ; b
+        add         r12, 8
+        and         rax, rdi
+        mov         [r12 - 8], rax
+        jmp iloop
+
+; <a> <b> -> <a << b>
 i_bit_rshift_i64:
         drop_data_stack 2
         mov         rax,  [r12 + 8*1]       ; a
         mov         rcx,  [r12 + 8*0]       ; b
         add         r12, 8
         sar         rax, cl
+        mov         [r12 - 8], rax
+        jmp iloop
+
+; <a> <b> -> <a << b>
+i_bit_lshift_i64:
+        drop_data_stack 2
+        mov         rax,  [r12 + 8*1]       ; a
+        mov         rcx,  [r12 + 8*0]       ; b
+        add         r12, 8
+        sal         rax, cl
         mov         [r12 - 8], rax
         jmp iloop
 
@@ -2360,8 +2380,10 @@ f_tests: equ     $-8
                     def_instruction_word_2 'b','|', i_or
                     def_instruction_word_2 'b','!', i_not
 
+                    def_instruction_word_2 '<', '<', i_bit_lshift_i64
                     def_instruction_word_2 '>', '>', i_bit_rshift_i64
                     def_instruction_word '|', i_bit_or_64
+                    def_instruction_word '&', i_bit_and_64
                     
                     def_instruction_word '=', i_equal
                     def_instruction_word '>', i_greater

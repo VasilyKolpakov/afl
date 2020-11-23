@@ -155,11 +155,30 @@
     + vim custom highlighting
     + constant
     - allocator
+        # O(1) power-of-twos
+        # 9 fixed size block allocators for req_size < page_size / 2 - 8, full page allocations for the rest
+        # block size is equal to the closest power of 2 if requested size is less or equal to 128,
+        # minimal block size is 8 bytes
+        # block size is equal to round_to_power_of_two(req_size) - 8 if req_size > 128 to avoid overhead 
+        # malloc and realloc return actual size and pointer to the block
+
+        # block allocator pages 
+            # page header: block_size: i32, used_block_count: i32
+            # page header: allocation bitset (to prevent double free)
+            # free block header: next_block_pointer: i64
+        # non-block allocations have a 8-byte headers that contain allocation size
+        # block allocators array
+            # allocator: pointer_to_freelist: i64, pointer_to_last_page: i64, uninit_blocks_count: i64
         + round_up_to_power_of_two
             + i_bit_rshift_i64
             + i_bit_or_64
             + tests in 2s
-        # O(1) power-of-twos
+        - bitset ( planning 9 min, p 1 hour 5 min)
+            + bit_lshift_i64 ( p 15 min, a 12 min )
+            - bitset_make <size> (p 15)
+            - bitset_put <n> (p 15)
+            - bitset_contains <n> -> <bool> (p20 min)
+                - bit_and_64
         - malloc
         - free
         - realloc
