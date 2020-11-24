@@ -163,12 +163,12 @@
         # malloc and realloc return actual size and pointer to the block
 
         # block allocator pages 
-            # page header: block_size: i32, used_block_count: i32
+            # page header: allocator_pointer i64
             # page header: allocation bitset (to prevent double free)
             # free block header: next_block_pointer: i64
         # non-block allocations have a 8-byte headers that contain allocation size
         # block allocators array
-            # allocator: pointer_to_freelist: i64, pointer_to_last_page: i64, next_unalloc_space: i64
+            # allocator: block_size:i64, pointer_to_freelist: i64, pointer_to_last_page: i64, next_unalloc_space: i64
         # free block header: next_block: i64
         + round_up_to_power_of_two
             + i_bit_rshift_i64
@@ -183,20 +183,22 @@
             + bitset_contains <address> <n> -> <bool> (p20 min, a 6 min)
                 + bit_and_64
             + test
-        - block allocator (planning 55 min, p 1 hour 35 min)
-            - block_allocator_init_page <address> <block size> -> (p 20 min)
-                # set block_size, set used_block_count to 0
-                # memzero the bitset
+        - block allocator (planning 55 min, p 1 hour 35 min, 3 hour 10 min without debugging)
+            + block_allocator_page_init <page> <allocator> -> (p 20 min, a 34 min)
+                #i planning failure - no need for page_header.used_block_count
+                # set block_size
+                # memzero the bitset - no need
                 + memzero (p 15 min, a 20 min)
-            - block_allocator_init <address> # takes 24 bytes (p 30 min)
+            + block_allocator_init <address> <block size> # takes 24 bytes (p 30 min, a 1 hour 5 min)
                 # allocate new page, init page, init page pointers --- block_allocator_alloc_new_page
                 # set pointer_to_freelist to 0
-                - block_allocator_alloc_new_page <allocator address> (p 25 min)
+                + block_allocator_alloc_new_page <allocator address> (p 25 min, a 55 min)
                     # allocate fresh page
+                    # init page
                     # set pointer_to_last_page
-                    # set next_unalloc_space to 16 + align(bitset_size)
-                    - align_mem_size <size in bytes> -> <aligned size in bytes>
-            - block_allocator_allocate <allocator address> -> <block address> (p 30 min)
+                    # set next_unalloc_space to 8 + align(bitset_size)
+                    + align_mem_size <size in bytes> -> <aligned size in bytes>
+            + block_allocator_allocate <allocator address> -> <block address> (p 30 min, a 1 hour)
                 # check pointer_to_freelist, if it is not 0, then pop one block from the list 
                 # if the pointer is not 0, then set it to free_block.next_block and return the first pointer
                 # if the pointer is 0, then check next_unalloc_space + block_size <= page_pointer + page_size
@@ -205,7 +207,8 @@
                 # update the bitset
                 - block_allocator_update_bitset <block address> <bool> (p 10 min)
                 - block_allocator_alloc_next_fresh_block <allocator address> -> <block pointer> (p 10 min)
-            - block_allocator_free <allocator address> <block address> -> <success bool (not double free)> (p 15 min)
+            + block_allocator_free <block address> -> <success bool (not double free)> (p 15 min, a 30 min)
+                # get allocator pointer from page header
                 # check bitset, if not allocated return false
                 # set next_block to pointer_to_freelist, set pointer_to_freelist to the block
                 # update the bitset
@@ -220,6 +223,7 @@
         # lazy maintenance
         - block allocator
     - conservative GC
+    - rewrite def function in 2s for better error logging
   - статическая проверка операций с return стеком
   - статическая проверка типов, вывод stack effect
     - optional args
@@ -253,6 +257,7 @@ def не позволяет легко определить переменную
 
 идеи:
 
+- struct macro: def_struct [ "first_field" , "second_field" ... ]
 - indent-dependent syntax based on stack depth, i.e. same depth => same indent
 - cond functions are possible in static typing (cond1, cond2, cond3 ...)
 - named type args
