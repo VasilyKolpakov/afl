@@ -34,6 +34,7 @@ rename_word "ro" "rot" ;
 rename_word "rr" "-rot" ;
 rename_word "dr" "drop" ;
 rename_word "o" "over" ;
+def "2drop" { drop drop } ;
 
 rename_word "rp" "r_peek" ;
 

@@ -168,7 +168,8 @@
             # free block header: next_block_pointer: i64
         # non-block allocations have a 8-byte headers that contain allocation size
         # block allocators array
-            # allocator: pointer_to_freelist: i64, pointer_to_last_page: i64, uninit_blocks_count: i64
+            # allocator: pointer_to_freelist: i64, pointer_to_last_page: i64, next_unalloc_space: i64
+        # free block header: next_block: i64
         + round_up_to_power_of_two
             + i_bit_rshift_i64
             + i_bit_or_64
@@ -182,6 +183,34 @@
             + bitset_contains <address> <n> -> <bool> (p20 min, a 6 min)
                 + bit_and_64
             + test
+        - block allocator (planning 55 min, p 1 hour 35 min)
+            - block_allocator_init_page <address> <block size> -> (p 20 min)
+                # set block_size, set used_block_count to 0
+                # memzero the bitset
+                + memzero (p 15 min, a 20 min)
+            - block_allocator_init <address> # takes 24 bytes (p 30 min)
+                # allocate new page, init page, init page pointers --- block_allocator_alloc_new_page
+                # set pointer_to_freelist to 0
+                - block_allocator_alloc_new_page <allocator address> (p 25 min)
+                    # allocate fresh page
+                    # set pointer_to_last_page
+                    # set next_unalloc_space to 16 + align(bitset_size)
+                    - align_mem_size <size in bytes> -> <aligned size in bytes>
+            - block_allocator_allocate <allocator address> -> <block address> (p 30 min)
+                # check pointer_to_freelist, if it is not 0, then pop one block from the list 
+                # if the pointer is not 0, then set it to free_block.next_block and return the first pointer
+                # if the pointer is 0, then check next_unalloc_space + block_size <= page_pointer + page_size
+                # if true, then return next_unalloc_space and increment next_unalloc_space by block_size
+                # if false, then allocate new page, init it, update pointer_to_last_page and next_unalloc_space and do the true branch
+                # update the bitset
+                - block_allocator_update_bitset <block address> <bool> (p 10 min)
+                - block_allocator_alloc_next_fresh_block <allocator address> -> <block pointer> (p 10 min)
+            - block_allocator_free <allocator address> <block address> -> <success bool (not double free)> (p 15 min)
+                # check bitset, if not allocated return false
+                # set next_block to pointer_to_freelist, set pointer_to_freelist to the block
+                # update the bitset
+                # return true
+            
         - malloc
         - free
         - realloc
