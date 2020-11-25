@@ -409,12 +409,22 @@ i_value_if__false_branch:
 
 ; peeks n-th value from return stack
 ; <number>
+i_peek_ret_stack_first:
+        bump_data_stack 1
+        drop_return_stack 1
+        mov         rax, [r13]              ; read value from return stack
+        mov         [r12 - 8*1], rax        ; write value to data stack
+        add         r13, 8                  ; restore stack pointer
+        jmp iloop
+
+; peeks n-th value from return stack
+; <number>
 i_peek_ret_stack:
         drop_data_stack 1
         mov         rax,  [r12 + 8*0]       ; read number, TODO: check for non-positive
-        check_return_stack_underflow
         imul        rax, 8                  ; mul by word length
         sub         r13, rax                ; move stack pointer
+        check_return_stack_underflow
         mov         rdi, [r13]              ; read value from return stack
         add         r13, rax                ; restore stack pointer
         mov         [r12], rdi              ; write value to data stack
@@ -2415,6 +2425,7 @@ f_tests: equ     $-8
                     def_instruction_word_2 'r', '>', i_pop_from_ret_stack
                     def_instruction_word_2 '>', 'r', i_push_to_ret_stack
                     def_instruction_word_2 'r', 'p', i_peek_ret_stack
+                    def_instruction_word_2 'r', '@', i_peek_ret_stack_first
                     
                     def_instruction_word_2 'w', 'b', i_write_mem_byte
                     def_instruction_word_2 'r', 'b', i_read_mem_byte
@@ -2453,74 +2464,6 @@ f_tests: equ     $-8
                     def_function_word_2 'c','a', f_capture
 
         dq          i_push_to_ret_stack, call(f_dictionary_make)
-
-
-
-
-;        dq          i_indirect_call
-;        dq          call(f_func_concat), val(f_print_debug), val(f_print_hello_world)
-
-
-
-
-
-;        dq          call(f_free), i_pop_from_ret_stack
-;        dq              call(f_write_byte_to_stdout), val(10)
-;        dq              call(f_write_byte_to_stdout), call(f_scanner_peek), i_peek_ret_stack, val(1)
-;        dq              call(f_write_byte_to_stdout), call(f_scanner_peek), i_peek_ret_stack, val(1)
-;        dq              call(f_scanner_advance), i_peek_ret_stack, val(1)
-;        dq              call(f_write_byte_to_stdout), call(f_scanner_peek), i_peek_ret_stack, val(1)
-;        dq              call(f_write_byte_to_stdout), call(f_scanner_peek), i_peek_ret_stack, val(1)
-;        dq              call(f_scanner_advance), i_peek_ret_stack, val(1)
-;        dq              call(f_write_byte_to_stdout), call(f_scanner_peek), i_peek_ret_stack, val(1)
-;        dq              call(f_write_byte_to_stdout), call(f_scanner_peek), i_peek_ret_stack, val(1)
-;        dq              call(f_scanner_advance), i_peek_ret_stack, val(1)
-;        dq              call(f_write_byte_to_stdout), call(f_scanner_peek), i_peek_ret_stack, val(1)
-;        dq              call(f_write_byte_to_stdout), call(f_scanner_peek), i_peek_ret_stack, val(1)
-;        dq          i_push_to_ret_stack, call(f_scanner_make)
-
-
-
-
-        ;dq                  call(f_i64_str_size), val(101)
-        ;dq          call(f_test_byte_array)
-        ;dq          call(f_print_buffer),call(f_print_buffer), i_2dup, val(ss_hello_world), val(13)
-
-        ;dq          jmp_test, i_jmp_if, val(0)
-        ;dq          f_do_n_times, i_call, val(3), val(f_print_data_overflow)
-        ;dq          call(f_echo)
-
-
-;        dq          f_exit_0, i_jmp, val(1)
-
-
-
-;        dq          f_print_bool, i_call,
-;        dq              i_and, val(1), val(0)
-;        dq          f_print_bool, i_call,
-;        dq              i_and, val(0), val(1)
-;        dq          f_print_bool, i_call,
-;        dq              i_and, val(0), val(0)
-;        dq          f_print_bool, i_call,
-;        dq              i_and, val(1), val(1)
-;        dq          f_print_bool, i_call,
-;        dq              i_not, val(1)
-;        dq          f_print_bool, i_call,
-;        dq              i_not, val(0)
-
-;        dq          i_indirect_call, i_read_mem_i64, val(heap_pointer)
-;        dq          i_write_mem_i64, val(heap_pointer), val(f_print_hello_world)
-
-;        dq          f_print_buffer, i_call, i_indirect_call, i_value_if, val(f_print_bool_true), val(f_print_bool_false), val(0)
-;        dq          f_if, i_call, val(f_false), val(f_print_hello_world), val(f_print_data_overflow),
-;        dq          f_if, i_call, val(f_true), val(f_print_hello_world), val(f_print_data_overflow),
-;        dq          f_dstack_overflow, i_call
-;        dq          f_rstack_overflow, i_call
-
-;        dq          call(f_exit_0)
-;        dq          i_indirect_call, i_indirect_call, i_indirect_call, 
-;        dq          i_over
-;        dq          val(f_print_hello_world), val(f_print_data_overflow)
 f_start: equ     $-8
 
         section   .bss

@@ -213,6 +213,19 @@
                 # set next_block to pointer_to_freelist, set pointer_to_freelist to the block
                 # update the bitset
                 # return true
+            - tests
+                # basic test
+                    # allocate array of N cells (8 bytes), zero all cells
+                    # iterate
+                        # generate a random number R between 0 and N-1
+                        # if array[R] is 0 then allocate a block and write R to every cell in the block
+                        # if array[R] is not 0 then free array[R]
+                        # after each iteration check all blocks
+                # free space test
+                - basic test (planning 40 min, p 1 hour)
+                    + r@ (10 min)
+                    + vim syntax (20 min)
+                    + RNG (p 30 min, a 29 min)
             
         - malloc
         - free
@@ -251,12 +264,11 @@ not unrgent, maybe important:
 
 Разное
 
-
-def не позволяет легко определить переменную (значение), нужен def-val?
 'if' function is terrible
 
 идеи:
 
+- implement isatty for terminal support
 - struct macro: def_struct [ "first_field" , "second_field" ... ]
 - indent-dependent syntax based on stack depth, i.e. same depth => same indent
 - cond functions are possible in static typing (cond1, cond2, cond3 ...)

@@ -408,6 +408,35 @@ def "block_allocator_free" {
     block_allocator_check_bitset dup
 }
 
+# <seed> -> <scrambled seed>
+def "random_initial_scramble" {
+    bit_and
+        - bit_lshift 1 48 1
+        bit_xor 25214903917
+} ;
+
+# <seed> -> <next seed>
+def "random_next_seed" {
+    bit_and
+        - bit_lshift 1 48 1
+        + 11 * 25214903917
+} ;
+
+# <address> <seed> ->
+def "random_init" {
+    write_mem_i64 swap random_initial_scramble swap
+} ;
+
+# <address> -> <number>
+def "random_next_int" {
+    bit_and
+        - bit_lshift 1 33 1
+    bit_rshift swap 16
+    write_mem_i64 # <address> <next seed> <next seed>
+    rot dup random_next_seed # <seed> <address>
+    read_mem_i64 dup
+} ;
+
 .s ;
 
 exit 0 ;
