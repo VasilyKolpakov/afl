@@ -4,12 +4,17 @@ endif
 
 
 " Keywords
-syn keyword twosKeyword def while
+syn keyword twosKeyword def constant if while and or not r_peek
+syn keyword twosKeyword drop swap dup 2dup 2drop rot -rot over
+syn match   twosKeyword '\v\>r'
+syn match   twosKeyword '\vr\>'
+syn match   twosKeyword '\vr\@'
+syn keyword twosBoolean true false
 
-syn match twosNumber '[a-zA-Z-_]\w*'
+syn match twosIdentifier '\d*[a-zA-Z-_]\w*' contains=twosKeyword
 
-syn match twosNumber '\d\+'
-syn match twosNumber '[-+]\d\+'
+syn match twosNumber '\d\+\([a-zA-Z]\)\@!'
+syn match twosNumber '[-+]\d\+\([a-zA-Z]\)\@!'
 
 syn region twosCodeBlock start="{" end="}" fold transparent
 
@@ -20,9 +25,10 @@ syn match  twosComment      "#.*"
 let b:current_syntax = "twos"
 
 
-highlight link twosIdentifier Function
 highlight link twosKeyword Keyword
-highlight link twosNumber Constant
+highlight link twosIdentifier Normal
+highlight link twosNumber Number
+highlight link twosBoolean Boolean
 highlight link twosString String
 highlight link twosCodeBlock Statement
 highlight link twosComment Comment
