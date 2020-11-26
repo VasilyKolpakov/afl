@@ -1,0 +1,122 @@
+# <number> -> <number>
+def "round_up_to_power_of_two" {
+   + 1
+   bit_or bit_rshift swap 32 dup
+   bit_or bit_rshift swap 16 dup
+   bit_or bit_rshift swap 8 dup
+   bit_or bit_rshift swap 4 dup
+   bit_or bit_rshift swap 2 dup
+   bit_or bit_rshift swap 1 dup
+   - swap 1
+} ;
+
+# <string> ->
+def "debug" {
+    print_newline
+    .s
+    print_newline
+    print_string
+    print_newline
+} ;
+
+# <size> -> <byte size>
+def "bitset_size" { if { not = 0 dup } { + 1 / swap 8 + -1 } { 0 drop } } ;
+
+# <address> <n> -> <bit n> <byte address>
+def "bitset_bit_address" {
+   % swap 8 swap    # <bit n> <byte address>
+   +                # <byte address> <n>
+   / swap 8 over    # <address> <n> 
+} ;
+
+# <address> <n> ->
+def "bitset_add" {
+    write_mem_byte      # <byte address> <updated byte>
+    swap bit_or         # <byte with bit> <old byte> <byte address>
+    bit_lshift 1    # <bit n> <old byte> <byte address>
+    swap                # <byte> <bit n> <byte address>
+    read_mem_byte over  # <bit n> <byte address>
+    bitset_bit_address
+} ;
+
+# <address> <n> ->
+def "bitset_remove" {
+    write_mem_byte      # <byte address> <updated byte>
+    swap bit_and         # <byte with bitmask> <old byte> <byte address>
+    bit_xor -1 bit_lshift 1    # <bit n> <old byte> <byte address>
+    swap                # <byte> <bit n> <byte address>
+    read_mem_byte over  # <bit n> <byte address>
+    bitset_bit_address
+} ;
+
+# <address> <n> -> <bool>
+def "bitset_contains" {
+    = bit_and over swap   # <bit byte> <byte>
+    bit_lshift 1 swap   # <byte> <bit n>
+    read_mem_byte swap  # <bit n> <byte address>
+    bitset_bit_address
+} ;
+
+# <address> <n> ->
+def "memzero" {
+    2drop
+    while { not = 0 over } {
+        + 1
+        swap + -1 swap
+        write_mem_byte swap 0 dup
+    }
+} ;
+
+# <byte mem size> -> <8-byte aligned byte size>
+def "align_mem_size" {
+    * 8 / swap 8 + 7
+} ;
+
+# <n> <function>
+def "do_n_times" {
+    2drop
+    while { < 0 dup } {
+        r> r> call >r dup >r + -1 
+    }
+} ;
+
+# <address> <byte value> <count>
+def "memset" {
+    2drop
+    do_n_times swap {
+        + 1 # <address> <byte value>
+        write_mem_byte 2dup # <address> <byte value>
+    }
+    rot
+} ;
+
+# <seed> -> <scrambled seed>
+def "random_initial_scramble" {
+    bit_and
+        - bit_lshift 1 48 1
+        bit_xor 25214903917
+} ;
+
+# <seed> -> <next seed>
+def "random_next_seed" {
+    bit_and
+        - bit_lshift 1 48 1
+        + 11 * 25214903917
+} ;
+
+# <address> <seed> ->
+def "random_init" {
+    write_mem_i64 swap random_initial_scramble swap
+} ;
+
+# <address> -> <number>
+def "random_next_int" {
+    bit_and
+        - bit_lshift 1 33 1
+    bit_rshift swap 16
+    write_mem_i64 # <address> <next seed> <next seed>
+    rot dup random_next_seed # <seed> <address>
+    read_mem_i64 dup
+} ;
+
+

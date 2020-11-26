@@ -28,7 +28,7 @@ rename_word ".c" "write_byte_to_stdout" ;
 
 
 rename_word "du" "dup" ;
-rename_word "dn" "dup_n" ;
+rename_word "dn" "pick" ;
 rename_word "2d" "2dup" ;
 rename_word "s" "swap" ;
 rename_word "ro" "rot" ;
@@ -61,16 +61,3 @@ def "constant" {
 } ;
 
 def "exit" { syscall 60 r> 1 2 3 4 5 >r } ;
-
-# <number> -> <number>
-def "round_up_to_power_of_two" {
-   + 1
-   bit_or bit_rshift swap 32 dup
-   bit_or bit_rshift swap 16 dup
-   bit_or bit_rshift swap 8 dup
-   bit_or bit_rshift swap 4 dup
-   bit_or bit_rshift swap 2 dup
-   bit_or bit_rshift swap 1 dup
-   - swap 1
-} ;
-

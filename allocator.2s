@@ -1,0 +1,254 @@
+# import lib.2s
+# <free block> -> <next free block>
+def "block_allocator_block_get_next_block" {
+    read_mem_i64
+} ;
+
+# <free block> <next free block> ->
+def "block_allocator_block_set_next_block" {
+    write_mem_i64
+} ;
+
+# <page pointer> <allocator pointer> ->
+def "block_allocator_page_init" {
+    write_mem_i64
+} ;
+
+# <allocator pointer> -> <page pointer>
+def "block_allocator_get_pointer_to_last_page" {
+    read_mem_i64 + 16
+} ;
+
+# <allocator pointer> <page pointer> ->
+def "block_allocator_set_pointer_to_last_page" {
+    write_mem_i64 + 16
+} ;
+
+# <allocator pointer> -> <value>
+def "block_allocator_get_next_unalloc_space" {
+    read_mem_i64 + 24
+} ;
+
+# <allocator pointer> <value> ->
+def "block_allocator_set_next_unalloc_space" {
+    write_mem_i64 + 24
+} ;
+
+# <allocator pointer> -> <value>
+def "block_allocator_get_block_size" {
+    read_mem_i64
+} ;
+
+# <allocator pointer> <value> ->
+def "block_allocator_set_block_size" {
+    write_mem_i64
+} ;
+
+# <allocator pointer> -> <value>
+def "block_allocator_get_pointer_to_freelist" {
+    read_mem_i64 + 8
+} ;
+
+# <allocator pointer> <value> ->
+def "block_allocator_set_pointer_to_freelist" {
+    write_mem_i64 + 8
+} ;
+
+# <allocator> -> <bitset size>
+def "block_allocator_bitset_size" {
+    + 1 / swap 8 / 4096 block_allocator_get_block_size
+} ;
+
+# <allocator> -> <page header size>
+def "block_allocator_page_header_size" {
+    + 8 align_mem_size block_allocator_bitset_size
+} ;
+
+# <allocator pointer> -> # allocator.block_size must be initialized
+def "block_allocator_alloc_new_page" {
+   block_allocator_set_next_unalloc_space swap + rot # <page header size> <allocator> <page>
+   block_allocator_page_header_size dup # <allocator> <page>
+   block_allocator_set_pointer_to_last_page 2dup swap # <page> <allocator>
+   block_allocator_page_init 2dup # init page <page> <allocator>
+   syscall_mmap_anon 4096 
+} ;
+
+# <allocator> <block size>
+def "block_allocator_init" {
+    block_allocator_alloc_new_page # <allocator>
+    block_allocator_set_pointer_to_freelist swap 0 dup # <allocator>
+    block_allocator_set_block_size -rot dup
+} ;
+
+# <block> -> <page>
+def "block_allocator_get_block_page" {
+    - swap % swap 4096 dup
+} ;
+
+# <block> -> <allocator>
+def "block_allocator_get_allocator_for_block" {
+    read_mem_i64 block_allocator_get_block_page
+} ;
+
+# <block> -> <bitset>
+def "block_allocator_get_block_page_index" {
+    drop r>
+    / swap block_allocator_get_block_size r@ # <block offset>
+    - swap  # <page header size> <block page offset>
+        block_allocator_page_header_size r@ # <block page offset>
+    - swap block_allocator_get_block_page dup # <block>
+    >r # <allocator> <block>
+    block_allocator_get_allocator_for_block dup
+} ;
+
+# <block> <bool> ->
+def "block_allocator_update_bitset" {
+    drop r>
+    if { } { bitset_add } { bitset_remove } # <bool> <bitset> <n>
+    rot # <bitset> <n> <bool>
+    + 8 block_allocator_get_block_page swap # <n> <block> <bool>
+    block_allocator_get_block_page_index dup # <block> <bool>
+    >r # <allocator> <block> <bool>
+    read_mem_i64 block_allocator_get_block_page dup
+} ; 
+
+# <block> -> <bool>
+def "block_allocator_check_bitset" {
+    drop r>
+    bitset_contains
+        + 8 block_allocator_get_block_page r_peek 1
+        block_allocator_get_block_page_index r_peek 1
+    >r
+} ;
+
+# <allocator> -> <block>
+def "block_allocator_allocate" {
+    block_allocator_update_bitset swap true dup
+    if { not = 0 dup } {
+        block_allocator_set_pointer_to_freelist rot # <next free block> <free block> <allocator>
+        block_allocator_block_get_next_block dup # <free block> <allocator>
+    } {
+        r>
+        block_allocator_set_next_unalloc_space swap # <next nus> <allocator>
+        + block_allocator_get_block_size over # <nus> <allocator>
+        >r dup # <nus> <allocator>
+        block_allocator_get_next_unalloc_space dup # <allocator>
+        if {
+            swap r>
+            <=
+                +
+                    block_allocator_get_block_size r_peek 1
+                    block_allocator_get_next_unalloc_space r_peek 1
+                +
+                    block_allocator_get_pointer_to_last_page r_peek 1
+                    4096
+            >r # <allocator>
+        } { } {
+            block_allocator_alloc_new_page dup
+        }
+        drop # <null pointer> <allocator>
+    }
+    block_allocator_get_pointer_to_freelist dup 
+} ;
+
+# <block> -> <bool>
+def "block_allocator_free" {
+    if { dup } {
+        block_allocator_update_bitset swap false
+        block_allocator_set_pointer_to_freelist swap r> dup # <block> <bool>
+        block_allocator_block_set_next_block swap
+            block_allocator_get_pointer_to_freelist r@ # <block> <block> <bool>
+        dup # <block> <bool>
+        >r block_allocator_get_allocator_for_block dup swap # <bool> <block>
+    } { }
+    block_allocator_check_bitset dup
+}
+
+constant "rng_instance" syscall_mmap_anon 4096 ;
+random_init rng_instance 0 ;
+
+def "rng_int32" {
+    random_next_int rng_instance
+} ;
+
+constant "block_size" 1024 ;
+
+constant "test_block_allocator"
+    block_allocator_init swap block_size dup
+    syscall_mmap_anon 4096
+;
+
+constant "block_array" syscall_mmap_anon 4096 ;
+constant "temp_array" syscall_mmap_anon 4096 ;
+
+constant "num_blocks" 100 ;
+def "run_test_iteration" {
+    if { = 0 dup } {
+        write_mem_i64 + block_array * 8 swap
+        memset -rot block_size 2dup # <block> <R>
+        block_allocator_allocate test_block_allocator # <R>
+        drop # <null pointer> <R>
+    } {
+        block_allocator_free test_block_allocator
+        read_mem_i64 + block_array * 8 # <R>
+    }
+    # <block or 0> <R>
+    drop swap
+    read_mem_i64 dup + block_array * 8 dup # <R>
+    % rng_int32 num_blocks
+} ;
+
+# <block address> <byte value> -> 
+def "check_block" {
+    2drop
+    do_n_times block_size {
+        swap + 1 swap
+        if { not = 2dup } {
+            exit 2
+            . dup
+            print_string ", actual: "
+            . over
+            print_string "expected: "
+            print_string "bad block: "
+        } { drop } # <byte> <byte value> <address>
+        read_mem_byte over # <byte value> <address>
+    }
+    swap # <block> <byte value>
+} ;
+def "check_block_array" {
+    drop
+    do_n_times num_blocks {
+        + 1
+        if { = 0 dup } {
+            drop # <block> <array index>
+        } {
+            check_block swap over 
+        } # <block> <array index>
+        read_mem_i64 + block_array * 8 dup # <array index>
+    }
+    0
+} ;
+
+def "run_allocator_test" {
+    do_n_times 1000 {
+        check_block_array run_test_iteration
+    }
+} ;
+
+print_string "======================\n" ;
+print_newline . test_block_allocator print_string "allocator pointer: " ;
+print_string "======================\n" ;
+print_newline . block_array print_string "block array pointer: " ;
+run_allocator_test ;
+
+constant "num_iterations" 100 ;
+do_n_times num_iterations {
+    block_allocator_allocate test_block_allocator
+} ;
+
+do_n_times num_iterations {
+    if { } { print_string "ok\n" } { exit 1 print_string "test failed" }
+    block_allocator_free
+} ;
+
+exit 0 ;
