@@ -66,6 +66,7 @@ def "block_allocator_page_header_size" {
 
 # <allocator pointer> -> # allocator.block_size must be initialized
 def "block_allocator_alloc_new_page" {
+   print_string "new page\n"
    block_allocator_set_next_unalloc_space swap + rot # <page header size> <allocator> <page>
    block_allocator_page_header_size dup # <allocator> <page>
    block_allocator_set_pointer_to_last_page 2dup swap # <page> <allocator>
@@ -155,17 +156,16 @@ def "block_allocator_allocate" {
 def "block_allocator_free" {
     if { dup } {
         block_allocator_update_bitset swap false
-        block_allocator_set_pointer_to_freelist swap r> dup # <block> <bool>
+        block_allocator_set_pointer_to_freelist r> dup # <block> <bool>
         block_allocator_block_set_next_block swap
-            block_allocator_get_pointer_to_freelist r@ # <block> <block> <bool>
-        dup # <block> <bool>
+            block_allocator_get_pointer_to_freelist r@ dup # <block> <bool>
         >r block_allocator_get_allocator_for_block dup swap # <bool> <block>
     } { }
     block_allocator_check_bitset dup
 }
 
 constant "rng_instance" syscall_mmap_anon 4096 ;
-random_init rng_instance 0 ;
+random_init rng_instance 123 ;
 
 def "rng_int32" {
     random_next_int rng_instance
@@ -185,16 +185,26 @@ constant "num_blocks" 100 ;
 def "run_test_iteration" {
     if { = 0 dup } {
         write_mem_i64 + block_array * 8 swap
+#debug "after memset" 
+    if { not = read_mem_byte + 16 2dup } { exit 1 print_string "memset fail" } { }
         memset -rot block_size 2dup # <block> <R>
+#debug "after allocate" 
         block_allocator_allocate test_block_allocator # <R>
+#debug "before allocate" 
         drop # <null pointer> <R>
+        #print_newline . over print_string "allocating block "
     } {
-        block_allocator_free test_block_allocator
-        read_mem_i64 + block_array * 8 # <R>
+#debug "after free" 
+        write_mem_i64 swap 0 + block_array * 8
+        if { not } { exit 1 print_string "free fail" } { } block_allocator_free # <block pointer> <R>
+        #print_newline . over print_string "freeing block "
+#debug "before free" 
     }
     # <block or 0> <R>
     drop swap
+#debug "test iteration begin" 
     read_mem_i64 dup + block_array * 8 dup # <R>
+    if { > 0 dup } { exit 1 print_string "fail" } { }
     % rng_int32 num_blocks
 } ;
 
@@ -204,7 +214,12 @@ def "check_block" {
     do_n_times block_size {
         swap + 1 swap
         if { not = 2dup } {
-            exit 2
+            exit 1
+
+            . pick 4
+            print_string ", array index: "
+            . % swap 4096 dup rot
+            print_string ", address page offset: "
             . dup
             print_string ", actual: "
             . over
@@ -235,11 +250,22 @@ def "run_allocator_test" {
     }
 } ;
 
+# <allocator> -> <freelist size>
+def "block_allocator_freelist_size" {
+    drop swap
+    while { not = 0 over } {
+        + 1
+        swap block_allocator_block_get_next_block swap
+    } # <n> <block>
+    0
+    block_allocator_get_pointer_to_freelist
+} ;
+
 print_string "======================\n" ;
 print_newline . test_block_allocator print_string "allocator pointer: " ;
 print_string "======================\n" ;
 print_newline . block_array print_string "block array pointer: " ;
-run_allocator_test ;
+#run_allocator_test ;
 
 constant "num_iterations" 100 ;
 do_n_times num_iterations {
@@ -251,4 +277,7 @@ do_n_times num_iterations {
     block_allocator_free
 } ;
 
+
+print_newline . block_allocator_get_pointer_to_freelist test_block_allocator ;
+print_newline . block_allocator_freelist_size test_block_allocator ;
 exit 0 ;
