@@ -20,7 +20,7 @@ def "print_red_string" {
 
 # <test name> <test body>
 def "run_test" {
-   if { i } { print_green_string "OK\n" } { print_red_string "FAIL\n" }
+   if { call } { print_green_string "OK\n" } { print_red_string "FAIL\n" }
    print_string ": "
    print_string
 } ;
@@ -435,6 +435,103 @@ def "random_next_int" {
     write_mem_i64 # <address> <next seed> <next seed>
     rot dup random_next_seed # <seed> <address>
     read_mem_i64 dup
+} ;
+
+# <n> <function>
+def "do_n_times" {
+    2drop
+    while { < 0 dup } {
+        r> r> call >r dup >r + -1 
+    }
+} ;
+
+run_test "block allocator" {
+    true
+} ;
+
+
+constant "rng_instance" syscall_mmap_anon 4096 ;
+random_init rng_instance 0 ;
+
+def "rng_int32" {
+    random_next_int rng_instance
+} ;
+
+constant "block_size" 1024 ;
+
+constant "test_block_allocator"
+    block_allocator_init swap block_size dup
+    debug "alloc"
+    syscall_mmap_anon 4096
+;
+
+constant "test_array" syscall_mmap_anon 4096 ;
+
+constant "num_blocks" 100 ;
+
+# <address> <byte value> <count>
+def "memset" {
+    2drop
+    do_n_times swap {
+        + 1 # <address> <byte value>
+        write_mem_byte 2dup # <address> <byte value>
+    }
+    rot
+} ;
+
+run_test "memset" {
+    drop syscall_munmap r> 4096
+    and =
+        42
+        read_mem_byte + 99 r@
+    and =
+        0
+        read_mem_byte + 100 r@
+    and =
+        42
+        read_mem_byte r@
+    true
+    memset r@ 42 100
+    >r syscall_mmap_anon 4096
+} ;
+
+def "run_test_iteration" {
+    if { = 0 } {
+        write_mem_i64 + test_array * 8 swap
+        memset -rot block_size 2dup # <block> <R>
+        block_allocator_allocate test_block_allocator # <R>
+    } {
+        block_allocator_free test_block_allocator
+        read_mem_i64 + test_array * 8 # <R>
+    }
+    # <block or 0> <R>
+    read_mem_i64 + test_array * 8 dup # <R>
+    % rng_int32 num_blocks
+} ;
+
+def "check_test_array" {
+    do_n_times num_blocks {
+        if { = 0 dup } {
+            drop
+        } {
+            do_n_times block_size {
+                + 1
+                if { not = over } {
+                    exit 1
+                    print_string "bad block"
+                } { } # <byte> <array index> <address>
+                read_mem_byte over # <array index> <address>
+            }
+            swap
+        } # <block> <array index>
+        read_mem_i64 + test_array * 8 dup # <array index>
+    }
+    0
+} ;
+
+print_string "===================================\n" ;
+do_n_times 10 {
+    check_test_array run_test_iteration
 } ;
 
 .s ;

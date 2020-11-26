@@ -232,6 +232,7 @@
         - realloc
             - memcopy
         - test
+    + memset tests
     - b-tree
         # lazy maintenance
         - block allocator
