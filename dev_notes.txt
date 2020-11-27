@@ -237,6 +237,7 @@
     - b-tree
         # lazy maintenance
         - block allocator
+    - factor combinators
     - conservative GC
     - rewrite def function in 2s for better error logging
   - статическая проверка операций с return стеком
@@ -267,6 +268,10 @@ not unrgent, maybe important:
 Разное
 
 'if' function is terrible
+
+Problems:
+
+- "/", "%", "-" arg order, often needs a swap
 
 идеи:
 

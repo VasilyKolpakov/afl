@@ -1,0 +1,129 @@
+# import block_allocator.2s
+# import lib.2s
+
+constant "rng_instance" syscall_mmap_anon 4096 ;
+random_init rng_instance 123 ;
+
+def "rng_int32" {
+    random_next_int rng_instance
+} ;
+
+constant "block_size" 1024 ;
+
+constant "test_block_allocator"
+    block_allocator_init swap block_size dup
+    syscall_mmap_anon 4096
+;
+
+constant "block_array" syscall_mmap_anon 4096 ;
+constant "temp_array" syscall_mmap_anon 4096 ;
+
+constant "num_blocks" 100 ;
+def "run_test_iteration" {
+    if { = 0 dup } {
+        write_mem_i64 + block_array * 8 swap
+#debug "after memset" 
+    if { not = read_mem_byte + 16 2dup } { exit 1 print_string "memset fail" } { }
+        memset -rot block_size 2dup # <block> <R>
+#debug "after allocate" 
+        block_allocator_allocate test_block_allocator # <R>
+#debug "before allocate" 
+        drop # <null pointer> <R>
+        #print_newline . over print_string "allocating block "
+    } {
+#debug "after free" 
+        write_mem_i64 swap 0 + block_array * 8
+        if { not } { exit 1 print_string "free fail" } { } block_allocator_free # <block pointer> <R>
+        #print_newline . over print_string "freeing block "
+#debug "before free" 
+    }
+    # <block or 0> <R>
+    drop swap
+#debug "test iteration begin" 
+    read_mem_i64 dup + block_array * 8 dup # <R>
+    if { > 0 dup } { exit 1 print_string "fail" } { }
+    % rng_int32 num_blocks
+} ;
+
+# <block address> <byte value> -> 
+def "check_block" {
+    2drop
+    do_n_times block_size {
+        swap + 1 swap
+        if { not = 2dup } {
+            exit 1
+
+            . pick 4
+            print_string ", array index: "
+            . % swap 4096 dup rot
+            print_string ", address page offset: "
+            . dup
+            print_string ", actual: "
+            . over
+            print_string "expected: "
+            print_string "bad block: "
+        } { drop } # <byte> <byte value> <address>
+        read_mem_byte over # <byte value> <address>
+    }
+    swap # <block> <byte value>
+} ;
+def "check_block_array" {
+    drop
+    do_n_times num_blocks {
+        + 1
+        if { = 0 dup } {
+            drop # <block> <array index>
+        } {
+            check_block swap over 
+        } # <block> <array index>
+        read_mem_i64 + block_array * 8 dup # <array index>
+    }
+    0
+} ;
+
+def "run_allocator_test" {
+    do_n_times 1000 {
+        check_block_array run_test_iteration
+    }
+} ;
+
+# <allocator> -> <freelist size>
+def "block_allocator_freelist_size" {
+    drop swap
+    while { not = 0 over } {
+        + 1
+        swap block_allocator_block_get_next_block swap
+    } # <n> <block>
+    0
+    block_allocator_get_pointer_to_freelist
+} ;
+
+print_string "======================\n" ;
+print_newline . test_block_allocator print_string "allocator pointer: " ;
+print_string "======================\n" ;
+print_newline . block_array print_string "block array pointer: " ;
+run_allocator_test ;
+
+constant "num_iterations" 100 ;
+do_n_times num_iterations {
+    block_allocator_allocate test_block_allocator
+} ;
+
+do_n_times num_iterations {
+    if { } { } { exit 1 print_string "test failed" }
+    block_allocator_free
+} ;
+
+do_n_times num_iterations {
+    block_allocator_allocate test_block_allocator
+} ;
+
+do_n_times num_iterations {
+    if { } { } { exit 1 print_string "test failed" }
+    block_allocator_free
+} ;
+
+print_newline . block_allocator_get_pointer_to_freelist test_block_allocator ;
+print_newline . block_allocator_freelist_size test_block_allocator ;
+print_string "OK\n";
+exit 0 ;
