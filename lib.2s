@@ -12,11 +12,7 @@ def "round_up_to_power_of_two" {
 
 # <string> ->
 def "debug" {
-    print_newline
-    .s
-    print_newline
-    print_string
-    print_newline
+    print_newline .s print_newline print_string print_newline
 } ;
 
 # <size> -> <byte size>

@@ -1,0 +1,33 @@
+# import allocator.2s
+
+constant "rng_instance" syscall_mmap_anon 4096 ;
+random_init rng_instance 120 ;
+
+def "rng_int32" {
+    random_next_int rng_instance
+} ;
+
+constant "num_iterations" 1000 ;
+
+do_n_times num_iterations {
+    #debug "malloc result"
+    if {
+        and
+            > * 2 + 16 -rot
+            <= # <random size> <actual size> <random size> <actual size> <addr> 
+        2dup 
+        2dup 
+        rot 
+    } { 2drop } { exit 1 print_string "bad actual size" print_newline . print_newline . } # <actual size> <addr> <random size>
+    malloc dup # <random size>
+    #debug "malloc args"
+    + 8 % swap 10000 rng_int32
+} ;
+;
+do_n_times num_iterations {
+    if { } { } { exit 1 print_string "test failed" }
+    free
+} ;
+
+print_string "OK\n" ;
+exit 0 ;

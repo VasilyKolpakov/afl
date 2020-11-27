@@ -227,17 +227,20 @@
                     + vim syntax (20 min)
                     + RNG (p 30 min, a 29 min)
             
-        - malloc
-        - free
+        + malloc
+        + free
         - realloc
             - memcopy
         - test
     + primitive import system in bash (a 1 hour)
     + memset tests
+    - fail-fast on bad words
     - b-tree
         # lazy maintenance
         - block allocator
     - factor combinators
+    - decompiler
+    - debugger
     - conservative GC
     - rewrite def function in 2s for better error logging
   - статическая проверка операций с return стеком

@@ -1,0 +1,98 @@
+# import lib.2s
+# import block_allocator.2s
+
+constant "allocator_array" syscall_mmap_anon 4096 ;
+
+block_allocator_set_block_size swap -1
++ block_allocator_instance_size
+block_allocator_init over - 2048 8
++ block_allocator_instance_size
+block_allocator_init over - 1024 8
++ block_allocator_instance_size
+block_allocator_init over - 512 8
++ block_allocator_instance_size
+block_allocator_init over - 256 8
++ block_allocator_instance_size
+block_allocator_init over 128
++ block_allocator_instance_size
+block_allocator_init over 64
++ block_allocator_instance_size
+block_allocator_init over 32
++ block_allocator_instance_size
+block_allocator_init over 16
++ block_allocator_instance_size
+block_allocator_init over 8
+allocator_array ;
+
+# <size> -> <aligned size>
+def "allocator_align_to_page_size" {
+    * 4096 + 1 / swap 4096 + -1
+} ;
+
+# <min size> -> <actual size> <addr>
+def "allocator_alloc_large_block" {
+    #debug "large block alloc return"
+    + -16 swap
+    + 16
+    write_mem_i64 + 8 2dup # <addr> <aligned size> save size
+    write_mem_i64 swap -1 dup # <addr> <aligned size> mark page header to make it distinguishable from block_allocator's blocks
+    #debug "large block alloc after mmap"
+    syscall_mmap_anon dup # <aligned size>
+    allocator_align_to_page_size + 16
+    #debug "large block start"
+} ;
+
+# <addr> -> <bool>
+def "allocator_free_large_block" {
+    if { = 16 % swap 4096 dup } {
+        if { = -1 read_mem_i64 dup } {
+            = 0 # syscall error code
+            syscall_munmap swap # <size> <addr (header)>
+            read_mem_i64 + 8 dup # <addr (header)>
+        } {
+            false drop # bad page header
+        }
+        + -16
+    } {
+        false drop # bad page offset
+    }
+} ;
+
+# <min size> -> <actual size> <addr>
+def "malloc" {
+    if { not = -1  block_allocator_get_block_size dup } {
+        block_allocator_get_block_size swap # <block> <allocator>
+        block_allocator_allocate dup # <allocator>
+        drop swap
+    } {
+        allocator_alloc_large_block drop # <null allocator> <min size>
+    }
+    while { 
+        and 
+            not = -1 block_allocator_get_block_size over
+            <= block_allocator_get_block_size 2dup
+    } {
+        + block_allocator_instance_size
+    } # <allocator array> <min size>
+    allocator_array 
+} ;
+
+# <addr> -> <bool>
+def "free" {
+    if { = -1 dup } {
+        allocator_free_large_block drop # <-1> <addr>
+    } {
+        if {
+            and
+                <= allocator_array swap # <bool> <allocator> <addr>
+                >= + * 8 block_allocator_instance_size allocator_array dup # <allocator> <addr> 
+        } {
+            #debug "free after block_allocator_free"
+            block_allocator_free
+            #debug "free before block_allocator_free"
+        } { false 2drop } # bad allocator address
+    } # <allocator> <addr>
+    #debug "free after get_allocator"
+    block_allocator_get_allocator_for_block dup
+} ;
+

@@ -1,4 +1,7 @@
 # import lib.2s
+
+constant "block_allocator_instance_size" * 4 8 ;
+
 # <free block> -> <next free block>
 def "block_allocator_block_get_next_block" {
     read_mem_i64
