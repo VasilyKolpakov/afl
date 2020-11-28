@@ -19,7 +19,7 @@ do_n_times num_iterations {
         2dup 
         rot 
     } { 2drop } { exit 1 print_string "bad actual size" print_newline . print_newline . } # <actual size> <addr> <random size>
-    malloc dup # <random size>
+    malloc_actual_size dup # <random size>
     #debug "malloc args"
     + 8 % swap 10000 rng_int32
 } ;

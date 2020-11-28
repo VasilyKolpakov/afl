@@ -758,7 +758,7 @@ f_mmap_anon: equ     $-8
         dq          i_push_to_ret_stack         ; address
 f_munmap: equ     $-8
 
-; <addr> <old size> <new size>
+; <addr> <old size> <new size> -> <new addr>
 ; remap virtual memory pages
         dq          i_return, i_syscall,
         dq          val(25)                     ; mremap syscall num
@@ -2007,12 +2007,13 @@ f_read_and_compile_code: equ     $-8
         dq          i_push_to_ret_stack
 f_f_read_compile_run_loop__run: equ     $-8
         dq          i_return
+        dq          call(f_exit_0)
         dq          call(f_byte_vector_destroy), call(f_print_byte_vector), i_dup, call(f_byte_vector_from_bytes)
         dq          val(6), val('e'), val('r'), val('r'), val('o'), val('r'), val(10)
-f_f_read_compile_run_loop__print_error: equ     $-8
+f_f_read_compile_run_loop__error: equ     $-8
         dq          i_return
         dq          call(f_byte_vector_destroy)     ; <scanner> <dict> TODO: destroy sub-functions
-        dq          call(f_if), val(f_id), val(f_f_read_compile_run_loop__run), val(f_f_read_compile_run_loop__print_error)
+        dq          call(f_if), val(f_id), val(f_f_read_compile_run_loop__run), val(f_f_read_compile_run_loop__error)
         dq          call(f_read_and_compile_code)   ; <ok bool> <code vector> <scanner> <dict>
         dq          i_2dup
 f_f_read_compile_run_loop__loop: equ     $-8

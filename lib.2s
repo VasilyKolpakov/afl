@@ -1,3 +1,21 @@
+# <n> <function>
+def "do_n_times" {
+    2drop
+    while { < 0 dup } {
+        r> r> call >r dup >r + -1 
+    }
+} ;
+
+# <n1> <n2> -> <n>
+def "min" {
+    drop if { < 2dup } { swap } { }
+} ;
+
+# <n1> <n2> -> <n>
+def "max" {
+    drop if { > 2dup } { swap } { }
+} ;
+
 # <number> -> <number>
 def "round_up_to_power_of_two" {
    + 1
@@ -63,19 +81,6 @@ def "memzero" {
     }
 } ;
 
-# <byte mem size> -> <8-byte aligned byte size>
-def "align_mem_size" {
-    * 8 / swap 8 + 7
-} ;
-
-# <n> <function>
-def "do_n_times" {
-    2drop
-    while { < 0 dup } {
-        r> r> call >r dup >r + -1 
-    }
-} ;
-
 # <address> <byte value> <count>
 def "memset" {
     2drop
@@ -84,6 +89,24 @@ def "memset" {
         write_mem_byte 2dup # <address> <byte value>
     }
     rot
+} ;
+
+# <src address> <dest address> <count>
+def "memcopy" {
+    drop 2drop
+    do_n_times swap {
+        swap + 1 swap
+        + 1 # <src address> <dest address>
+        write_mem_byte swap # <byte> <dest address> <src address> <dest address>
+        read_mem_byte
+        2dup
+    }
+    rot
+} ;
+
+# <byte mem size> -> <8-byte aligned byte size>
+def "align_mem_size" {
+    * 8 / swap 8 + 7
 } ;
 
 # <seed> -> <scrambled seed>
