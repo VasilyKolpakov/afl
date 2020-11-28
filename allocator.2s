@@ -62,8 +62,9 @@ def "allocator_free_large_block" {
 def "allocator_realloc_large_block" {
     if { = 16 % swap 4096 dup } {
         if { = -1 read_mem_i64 dup } {
-            > 0 over # <actual size> <addr> syscall error code check
-            allocator_align_to_page_size swap # <new addr> <new size>
+            < 0 over # <actual size> <addr> syscall error code check
+            swap + 16 swap
+            + -16 allocator_align_to_page_size swap # <new addr> <new size>
             syscall_remap swap # <old size> <addr (header)> <new size> <new size>
             read_mem_i64 + 8 dup # <addr (header)> <new size> <new size>
         } {
@@ -73,7 +74,7 @@ def "allocator_realloc_large_block" {
     } {
         false drop # bad page offset
     }
-    swap dup swap
+    rot dup + 16 swap
 } ;
 
 # <min size> -> <actual size> <addr>
@@ -98,9 +99,8 @@ def "malloc_actual_size" {
 # <size> -> <addr>
 def "malloc" { drop malloc_actual_size } ;
 
-# <addr> ->
-def "free" {
-    if { not } { exit 1 print_string "unable to free memory" } { }
+# <addr> -> <bool>
+def "free_checked" {
     if { = -1 dup } {
         allocator_free_large_block drop # <-1> <addr>
     } {
@@ -118,47 +118,33 @@ def "free" {
     block_allocator_get_allocator_for_block dup
 } ;
 
+# <addr> ->
+def "free" {
+    if { not } { exit 1 print_string "unable to free memory" } { }
+    free_checked
+} ;
+
 # <addr> <new size> -> <actual size> <addr>
 def "realloc_actual_size" {
-    debug "realloc end"
+    #debug "realloc end"
     if { not } { exit 1 print_string "unable to realloc memory" } { }
     if { = -1 dup } {
         allocator_realloc_large_block drop # <-1> <addr> <new size>
     } {
-        block_allocator_free r> # <new actual size>
-        .s
-        memcopy r@ dup r> # <min size> <new actual size>
+        #debug "after_block_alloc_free"
+        rot swap -rot # <bool> <new addr> <new actual size>
+        block_allocator_free r> # <new addr> <new actual size>
+        memcopy r@ over swap r> # <min size> <new actual size>
         min over swap # <new actual size> <old size>
-        .s
         >r swap # <new actual size> <new addr> <old size>
-        .s
         malloc_actual_size swap # <old size> <new size> 
         >r swap # <old size> <addr> <new size>
-        .s
         block_allocator_get_block_size
     } # <allocator> <addr> <new size>
-    debug "realloc after get_allocator"
+    #debug "realloc after get_allocator"
     block_allocator_get_allocator_for_block dup
 } ;
 
 # <addr> <new size> -> <addr>
 def "realloc" { drop realloc_actual_size } ;
 
-
-
-    print_bool
-    free r>
-    and =
-        42
-        read_mem_byte + 99 r@
-    and =
-        0
-        read_mem_byte + 100 r@
-    and =
-        42
-        read_mem_byte r@
-    >r realloc swap 500 r>
-    memset r@ 42 100
-    >r malloc 100
-    true
-    ;

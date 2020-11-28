@@ -154,7 +154,7 @@
                     # adds new record to the front of the list
     + vim custom highlighting
     + constant
-    - allocator
+    + allocator
         # O(1) power-of-twos
         # 9 fixed size block allocators for req_size < page_size / 2 - 8, full page allocations for the rest
         # block size is equal to the closest power of 2 if requested size is less or equal to 128,
@@ -229,12 +229,15 @@
             
         + malloc
         + free
-        - realloc
-            - memcopy
-        - test
+        + realloc
+            + memcopy
+        + test
     + primitive import system in bash (a 1 hour)
     + memset tests
-    - fail-fast on bad words
+    + fail-fast on bad words
+    - guard pages
+    - signal handler
+        - stacktrace
     - b-tree
         # lazy maintenance
         - block allocator

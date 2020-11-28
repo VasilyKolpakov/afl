@@ -60,4 +60,3 @@ def "constant" {
     def swap func_capture swap
 } ;
 
-def "exit" { syscall 60 r> 1 2 3 4 5 >r } ;

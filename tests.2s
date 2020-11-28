@@ -213,6 +213,34 @@ run_test "realloc" {
     >r realloc swap 500 r>
     memset r@ 42 100
     >r malloc 100
+
+    free r>
+    and =
+        42
+        read_mem_byte + 99 r@
+    and =
+        0
+        read_mem_byte + 100 r@
+    and =
+        42
+        read_mem_byte r@
+    >r realloc swap 5000 r>
+    memset r@ 42 100
+    >r malloc 10000
+
+    free r>
+    and =
+        42
+        read_mem_byte + 99 r@
+    and =
+        0
+        read_mem_byte + 100 r@
+    and =
+        42
+        read_mem_byte r@
+    >r realloc swap 15000 r>
+    memset r@ 42 100
+    >r malloc 5000
     true
 } ;
 

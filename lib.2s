@@ -1,3 +1,4 @@
+# import syscalls.2s
 # <n> <function>
 def "do_n_times" {
     2drop
@@ -81,7 +82,7 @@ def "memzero" {
     }
 } ;
 
-# <address> <byte value> <count>
+# <address> <byte value> <count> ->
 def "memset" {
     2drop
     do_n_times swap {
@@ -91,9 +92,9 @@ def "memset" {
     rot
 } ;
 
-# <src address> <dest address> <count>
+# <src address> <dest address> <count> ->
 def "memcopy" {
-    drop 2drop
+    2drop
     do_n_times swap {
         swap + 1 swap
         + 1 # <src address> <dest address>
