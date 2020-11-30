@@ -281,6 +281,8 @@ Problems:
 
 идеи:
 
+- "exec" and "test by" headers
+- dynamic type-checking "mode", recompile all dictionary entries to ph
 - implement isatty for terminal support
 - struct macro: def_struct [ "first_field" , "second_field" ... ]
 - indent-dependent syntax based on stack depth, i.e. same depth => same indent

@@ -2457,10 +2457,6 @@ f_tests: equ     $-8
                     def_function_word 't', f_true
                     def_function_word 'f', f_false
 
-                    def_function_word_2 'm','m', f_mmap_anon
-                    def_function_word_2 'u','m', f_munmap
-                    def_function_word_2 'r','m', f_mremap
-
                     def_function_word_2 'f','c', f_func_concat
                     def_function_word_2 'c','a', f_capture
 
