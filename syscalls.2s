@@ -1,1 +1,27 @@
 def "exit" { syscall 60 r> 1 2 3 4 5 >r } ;
+
+constant "syscall_mmap_PROT_READ" 1 ;
+constant "syscall_mmap_PROT_WRITE" 2 ;
+constant "syscall_mmap_PROT_NONE" 0 ;
+constant "syscall_mmap_MAP_ANONYMOUS" 32 ;
+constant "syscall_mmap_MAP_PRIVATE" 2 ;
+
+constant "syscall_mremap_MREMAP_MAYMOVE" 1 ;
+
+def "syscall_mmap_anon_prot_none" {
+    syscall 9 0 r>  
+        syscall_mmap_PROT_NONE
+        bit_or syscall_mmap_MAP_ANONYMOUS syscall_mmap_MAP_PRIVATE
+        -1
+        0
+        >r
+} ;
+
+# <addr> <old size> <new size> -> <new addr>
+def "syscall_mremap_maymove" {
+    syscall 25 r> r> r>
+        syscall_mremap_MREMAP_MAYMOVE
+        0
+        0
+        >r >r >r
+} ;
