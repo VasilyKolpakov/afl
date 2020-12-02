@@ -8,6 +8,16 @@ constant "syscall_mmap_MAP_PRIVATE" 2 ;
 
 constant "syscall_mremap_MREMAP_MAYMOVE" 1 ;
 
+# <syscall ret value> -> <syscall ret value>
+def "panic_on_syscall_error" {
+    if {
+        drop r> and
+            < -4096 r@
+            > 0 r@
+        >r dup
+    } { exit 1 print_newline . * -1 print_string "syscall error: " } { } 
+} ;
+
 def "syscall_mmap_anon" {
     syscall 9 0 r>  
         bit_or syscall_mmap_PROT_READ syscall_mmap_PROT_WRITE
@@ -32,3 +42,11 @@ def "syscall_munmap" {
         1 2 3 4
         >r >r
 } ;
+
+# <addr> <size> <flags> -> <error code>
+def "syscall_mprotect" {
+    syscall 10 r> r> r>
+        1 2 3
+        >r >r >r
+} ;
+

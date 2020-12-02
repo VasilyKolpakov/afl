@@ -37,6 +37,8 @@ rename_word "dr" "drop" ;
 rename_word "o" "over" ;
 def "2drop" { drop drop } ;
 
+rename_word "rd" "return_stack_depth" ;
+
 rename_word "rp" "r_pick" ;
 
 rename_word "wb" "write_mem_byte" ;
@@ -46,6 +48,7 @@ rename_word "ri" "read_mem_i64" ;
 
 rename_word "sc" "syscall" ;
 
+rename_word "di" "the_dictionary" ;
 
 rename_word "fc" "func_compose" ; # <func1> <func2> -> <func that calls func2 first, then call func1>
 rename_word "ca" "func_capture" ; # <value> -> <func that puts value on the stack>
@@ -56,3 +59,4 @@ def "constant" {
     def swap func_capture swap
 } ;
 
+constant "return_instruction_code" read_mem_i64 { } ;

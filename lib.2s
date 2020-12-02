@@ -139,4 +139,14 @@ def "random_next_int" {
     read_mem_i64 dup
 } ;
 
+# <func f> <func g> <value a> -> ...
+# remove args from stack, push a, apply g, push a, apply f
+def "bi" {
+    drop r>
+    drop r>
+    drop r>
+    call r_pick 3 r@
+    call r_pick 2 r@
+    >r >r >r
+} ;
 

@@ -479,6 +479,17 @@ i_stack_depth:
         mov         [r12 - 8*1], rax    ; rax is the quotient
         jmp iloop
 
+i_ret_stack_depth:
+        mov         rax, r13
+        sub         rax, return_stack
+        cqo                             ; mov sign-extend of rax to rdx
+        mov         r9, 8
+        idiv        r9                  ; divide rdx:rax by 8
+
+        bump_data_stack 1
+        mov         [r12 - 8*1], rax    ; rax is the quotient
+        jmp iloop
+
 i_dup:
         drop_data_stack 1
         mov         rax,  [r12 + 8*0]
@@ -2362,6 +2373,12 @@ f_tests: equ     $-8
         dq              call(f_word_def_make)
         dq                  call(f_func_concat), val(f_define_word), call(f_capture), i_peek_ret_stack, val(1)
         dq                  val(1)
+        dq          call(f_dictionary_add)
+        dq              i_peek_ret_stack, val(1)
+        dq              call(f_byte_vector_from_bytes), val(2), val('d'), val('i')
+        dq              call(f_word_def_make)
+        dq                  call(f_capture), i_peek_ret_stack, val(1)
+        dq                  val(1)
 
 %macro  def_instruction_word 2
         dq          call(f_dictionary_add),
@@ -2427,6 +2444,8 @@ f_tests: equ     $-8
                     def_instruction_word_2 '>', 'r', i_push_to_ret_stack
                     def_instruction_word_2 'r', 'p', i_peek_ret_stack
                     def_instruction_word_2 'r', '@', i_peek_ret_stack_first
+
+                    def_instruction_word_2 'r', 'd', i_ret_stack_depth
                     
                     def_instruction_word_2 'w', 'b', i_write_mem_byte
                     def_instruction_word_2 'r', 'b', i_read_mem_byte

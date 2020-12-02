@@ -183,7 +183,7 @@
             + bitset_contains <address> <n> -> <bool> (p20 min, a 6 min)
                 + bit_and_64
             + test
-        - block allocator (planning 55 min, p 1 hour 35 min, 3 hour 10 min without debugging)
+        + block allocator (planning 55 min, p 1 hour 35 min, 3 hour 10 min without debugging)
             + block_allocator_page_init <page> <allocator> -> (p 20 min, a 34 min)
                 #i planning failure - no need for page_header.used_block_count
                 # set block_size
@@ -213,7 +213,7 @@
                 # set next_block to pointer_to_freelist, set pointer_to_freelist to the block
                 # update the bitset
                 # return true
-            - tests
+            + tests
                 # basic test
                     # allocate array of N cells (8 bytes), zero all cells
                     # iterate
@@ -235,14 +235,20 @@
     + primitive import system in bash (a 1 hour)
     + memset tests
     + fail-fast on bad words
-    - guard pages
     - signal handler
-        - stacktrace
+        + stacktrace (p 35 min, a 2 hours 30 min)
+            + list all function names (p 5 min, a 8 min)
+            + list names, addresses and lengths (p 15 min, a 30 min)
+            + find_func_name_by_i_pointer (p 10 min, a 57 min)
+            + ret_stack_depth (p 5 min)
+            + stacktrace (p 10 min, a 35 min)
+    - guard pages
     - b-tree
         # lazy maintenance
         - block allocator
     - factor combinators
     - decompiler
+        - anon functions in dictionary
     - debugger
     - conservative GC
     - rewrite def function in 2s for better error logging
@@ -277,10 +283,11 @@ not unrgent, maybe important:
 
 Problems:
 
-- "/", "%", "-" arg order, often needs a swap
+- "/", "%", "-" arg order, often needs a swap (debugging: + 7 min)
 
 идеи:
 
+- gap buffer for console editor
 - "exec" and "test by" headers
 - dynamic type-checking "mode", recompile all dictionary entries to ph
 - implement isatty for terminal support

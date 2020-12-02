@@ -1,0 +1,97 @@
+# import syscalls.2s
+# import lib.2s
+constant "def_list" read_mem_i64 the_dictionary ;
+
+# <record> -> <name>
+def "stacktrace_dict_record_name" {
+    read_mem_i64
+} ;
+
+# <record> -> <word_def>
+def "stacktrace_dict_record_word_def" {
+    read_mem_i64 + 8
+} ;
+
+# <record> -> <next>
+def "stacktrace_dict_record_next" {
+    read_mem_i64 + 16
+} ;
+
+# <word def> -> <address>
+def "stacktrace_word_def_address" {
+    read_mem_i64
+} ;
+
+# <word def> -> <is function>
+def "stacktrace_word_def_is_function" {
+    read_mem_i64 + 8
+} ;
+
+# <func> -> <length>
+def "stacktrace_get_func_instruction_count" {
+    + 1
+    drop
+    while { not = return_instruction_code read_mem_i64 dup } {
+        swap + 1 swap
+        + -8
+    } # <func> <count>
+    swap
+    0
+} ;
+
+# <func> -> <first (ret) func addr>
+def "stacktrace_get_func_first_pointer" {
+    - swap * 8 stacktrace_get_func_instruction_count dup
+} ;
+
+# <i pointer> -> <func name or "#?#">
+def "stacktrace_find_func_name_by_instruction_pointer" {
+    if { not = 0 dup } {
+        stacktrace_dict_record_name
+    } { "#?#" drop }
+    drop swap
+    while {
+        cond_end
+        cond_default { false }
+        cond_when { > stacktrace_get_func_first_pointer stacktrace_word_def_address stacktrace_dict_record_word_def 2dup } { true } # first func addr > i pointer
+        cond_when { < stacktrace_word_def_address stacktrace_dict_record_word_def 2dup } { true } # func < i pointer
+        cond_when { not stacktrace_word_def_is_function stacktrace_dict_record_word_def dup } { true }
+        cond_when { = 0 dup } { false }
+        cond_start
+    } {
+        stacktrace_dict_record_next
+    } # <record> <i pointer>
+    def_list
+} ;
+
+def "print_all_function_names_and_addresses" {
+    while { not = 0 dup } {
+        stacktrace_dict_record_next
+        if {
+            stacktrace_word_def_is_function stacktrace_dict_record_word_def dup
+        } {
+            print_newline
+            . stacktrace_get_func_instruction_count stacktrace_word_def_address stacktrace_dict_record_word_def dup
+            print_string ", length: "
+            . stacktrace_word_def_address stacktrace_dict_record_word_def dup
+            print_string ", address: "
+            print_string stacktrace_dict_record_name dup
+            print_string "name: "
+        } { }
+    }
+    def_list
+} ;
+
+
+print_newline . return_instruction_code ;
+print_newline ;
+print_all_function_names_and_addresses ;
+print_newline ;
+print_string "====================\n" ;
+
+drop
+do_n_times return_stack_depth {
+    print_newline print_string stacktrace_find_func_name_by_instruction_pointer r_pick dup
+    + 1
+} 0 ;
+exit 0 ;
