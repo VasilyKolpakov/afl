@@ -1,17 +1,5 @@
         global    _start
 
-%macro  push_registers 0
-        push        r11
-        push        r12
-        push        r13
-%endmacro
-
-%macro  pop_registers 0
-        pop         r13
-        pop         r12
-        pop         r11
-%endmacro
-
 %macro  bump_data_stack 1
         add         r12, 8 * %1
         check_data_stack_overflow
@@ -58,9 +46,9 @@
         mov         rdi, 1
         mov         rsi, ss_debug            
         mov         rdx, ss_debug_size               
-        push        r11
+        push        r14
         syscall
-        pop         r11
+        pop         r14
 %endmacro
 
 
@@ -69,36 +57,36 @@ return_stack_size:      equ    10240
 
         section   .text
 
-; r11 - instruction pointer, points to the next instruction
+; r14 - instruction pointer, points to the next instruction
 ; r12 - data stack pointer, points to the next slot
 ; r13 - return stack pointer, points to the next slot
 
 iloop:  
-        sub         r11, 8
-        jmp         [r11 + 8]
+        sub         r14, 8
+        jmp         [r14 + 8]
 
 data_stack_overflow_handler:
         mov         r12, data_stack
         mov         r13, return_stack
-        mov         r11, f_data_stack_overflow_handler
+        mov         r14, f_data_stack_overflow_handler
         jmp iloop
         
 data_stack_underflow_handler:
         mov         r12, data_stack
         mov         r13, return_stack
-        mov         r11, f_data_stack_underflow_handler
+        mov         r14, f_data_stack_underflow_handler
         jmp iloop
 
 return_stack_overflow_handler:
         mov         r12, data_stack
         mov         r13, return_stack
-        mov         r11, f_return_stack_overflow_handler
+        mov         r14, f_return_stack_overflow_handler
         jmp iloop
 
 return_stack_underflow_handler:
         mov         r12, data_stack
         mov         r13, return_stack
-        mov         r11, f_return_stack_underflow_handler
+        mov         r14, f_return_stack_underflow_handler
         jmp iloop
 
 ; <number> <number> -> <number>
@@ -355,40 +343,40 @@ i_read_mem_byte:
         jmp iloop
 
 i_jmp:
-        mov         r11, [r11]             ; next word is the instruction pointer
+        mov         r14, [r14]             ; next word is the instruction pointer
         jmp iloop
 
 i_indirect_jmp:
         drop_data_stack 1
         mov         rax, [r12]              ; top of the data stack is the instruciton pointer
-        mov         r11, rax                ; jump to callee
+        mov         r14, rax                ; jump to callee
         jmp iloop
 
 ;<bool>
 i_jmp_if:
         drop_data_stack 1
-        sub         r11, 8                  ; move instruction pointer to the next instruction
+        sub         r14, 8                  ; move instruction pointer to the next instruction
         mov         rax, [r12]              ; top of the data stack is the boolean
         cmp         rax, 0
         je          i_jmp_if__false_branch
-        mov         r11, [r11 + 8]          ; next word is the instruction pointer
+        mov         r14, [r14 + 8]          ; next word is the instruction pointer
 i_jmp_if__false_branch:
         jmp iloop
 
 i_call:
         bump_return_stack 1
-        mov         rax, [r11]              ; next word is the instruciton pointer
-        sub         r11, 8                  ; move instruction pointer to the next instruction
-        mov         [r13 - 8], r11          ; save return pointer
-        mov         r11, rax                ; jump to callee
+        mov         rax, [r14]              ; next word is the instruciton pointer
+        sub         r14, 8                  ; move instruction pointer to the next instruction
+        mov         [r13 - 8], r14          ; save return pointer
+        mov         r14, rax                ; jump to callee
         jmp iloop
 
 i_indirect_call:
         drop_data_stack 1
         mov         rax, [r12]              ; top of the data stack is the instruciton pointer
         bump_return_stack 1
-        mov         [r13 - 8], r11          ; save return pointer
-        mov         r11, rax                ; jump to callee
+        mov         [r13 - 8], r14          ; save return pointer
+        mov         r14, rax                ; jump to callee
         jmp iloop
 
 ; <a> <b> <true> -> <a>
@@ -447,7 +435,7 @@ i_pop_from_ret_stack:
 
 i_return:
         drop_return_stack 1
-        mov         r11, [r13]              ; restore return pointer
+        mov         r14, [r13]              ; restore return pointer
         jmp iloop
 
 ; linux syscall args [ %rdi, %rsi, %rdx, %r10, %r8, %r9 ]        
@@ -461,9 +449,7 @@ i_syscall:
         mov         r10, [r12 + 8*2]
         mov         r8,  [r12 + 8*1]
         mov         r9,  [r12 + 8*0]
-        push_registers
         syscall
-        pop_registers
         mov         [r12], rax
         bump_data_stack 1
         jmp iloop
@@ -571,14 +557,14 @@ i_drop:
                 
 i_push_to_stack:
         bump_data_stack 1
-        mov         rax, [r11]              ; next word is value
+        mov         rax, [r14]              ; next word is value
         mov         [r12 - 8], rax          ; write to stack
-        sub         r11, 8                  ; move instruction pointer to the next instruction
+        sub         r14, 8                  ; move instruction pointer to the next instruction
         jmp iloop
 
 
 _start: 
-        mov         r11, f_start
+        mov         r14, f_start
         mov         r12, data_stack
         mov         r13, return_stack
         jmp         iloop        
