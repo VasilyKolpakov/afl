@@ -1,4 +1,5 @@
 # import syscalls.2s
+# import stacktrace.2s
 # <n> <function>
 def "do_n_times" {
     2drop

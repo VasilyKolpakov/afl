@@ -1,5 +1,17 @@
         global    _start
 
+%macro  print_bin_num 1
+        mov         rax, %1
+        push rax
+        mov         rax, 1
+        mov         rdi, 1
+        mov         rsi, rsp
+        ;add         rsi, 8
+        mov         rdx, 8
+        syscall
+        pop rax
+%endmacro
+
 %macro  bump_data_stack 1
         add         r12, 8 * %1
         check_data_stack_overflow
@@ -57,13 +69,29 @@ return_stack_size:      equ    10240
 
         section   .text
 
-; r14 - instruction pointer, points to the next instruction
 ; r12 - data stack pointer, points to the next slot
 ; r13 - return stack pointer, points to the next slot
+; r14 - instruction pointer, points to the next instruction
 
 iloop:  
         sub         r14, 8
         jmp         [r14 + 8]
+
+; noop handler, all logic is in the restorer
+sigsegv_handler:
+        push   rbp
+        mov    rbp,rsp
+        leave
+        ret
+sigsegv_restorer:
+        ; ucontext_t.uc_mcontext.__ctx = 40 bytes offset
+        mov         [rdx + 40 + 4 * 8], r12
+        mov         [rdx + 40 + 5 * 8], r13
+        mov         [rdx + 40 + 6 * 8], r14
+        bump_data_stack 1
+        mov         [r12 - 8], r14 ; push instruction pointer to the data stack
+        mov         r14, [sigsegv_handler_pointer]
+        jmp iloop
 
 data_stack_overflow_handler:
         mov         r12, data_stack
@@ -564,6 +592,15 @@ i_push_to_stack:
 
 
 _start: 
+        mov         rax, f_default_sigsegv_handler
+        mov         QWORD [sigsegv_handler_pointer], rax
+        ; init segfault handler
+        mov         rax, 13 ; sigaction syscall
+        mov         rdi, 11 ; sigsegv signal
+        mov         rsi, sigaction ; sigaction struct
+        mov         rdx, 0 ; old sigaction struct
+        mov         r10, 8 ; sigmask size
+        syscall
         mov         r14, f_start
         mov         r12, data_stack
         mov         r13, return_stack
@@ -603,6 +640,7 @@ def_nl_terminated_static_string ss_data_stack_underflow, "Data stack underflow"
 def_nl_terminated_static_string ss_return_stack_overflow, "Return stack overflow"
 def_nl_terminated_static_string ss_return_stack_underflow, "Return stack underflow"
 
+def_nl_terminated_static_string ss_sigsegv_handler_msg, "Segmentation fault, to set sigsegv handler use sigsegv_handler_pointer constant"
 
 %define val(value) value, i_push_to_stack
 %define call(value) value, i_call
@@ -623,6 +661,9 @@ f_return_stack_overflow_handler: equ     $-8
 ; return stack underflow handler
         dq          f_exit_0, i_call, f_print_buffer, i_call, val(ss_return_stack_underflow), val(ss_return_stack_underflow_size)
 f_return_stack_underflow_handler: equ     $-8
+
+        dq          call(f_exit), val(139), call(f_print_buffer), val(ss_sigsegv_handler_msg), val(ss_sigsegv_handler_msg_size)
+f_default_sigsegv_handler: equ     $-8
 
 ; <bool function> <true function> <false function>
 ; if function
@@ -804,6 +845,14 @@ f_realloc: equ     $-8
         dq          i_add, val(-8)                      ; <addr>
 f_free: equ     $-8
 
+
+; exit
+        dq          i_return, i_syscall, 
+        dq          val(60)                     ; syscall num
+        dq          i_pop_from_ret_stack                      ; exit code
+        dq          val(1), val(1), val(1), val(1), val(1) ; filler
+        dq          i_push_to_ret_stack
+f_exit: equ     $-8
 
 ; exit_0
         dq          i_return, i_syscall, 
@@ -2393,6 +2442,13 @@ f_tests: equ     $-8
         dq              call(f_word_def_make), val(%3), val(1)
 %endmacro
 
+%macro  def_constant_word_2 3
+        dq          call(f_dictionary_add),
+        dq              i_peek_ret_stack, val(1)
+        dq              call(f_byte_vector_from_bytes), val(2), val(%1), val(%2)
+        dq              call(f_word_def_make), call(f_capture), val(%3), val(1)
+%endmacro
+
 
                     def_instruction_word '+', i_add
                     def_instruction_word '*', i_mul
@@ -2464,11 +2520,20 @@ f_tests: equ     $-8
 
                     def_function_word_2 'f','c', f_func_concat
                     def_function_word_2 'c','a', f_capture
+                    
+                    def_constant_word_2 'h','p', sigsegv_handler_pointer    
 
         dq          i_push_to_ret_stack, call(f_dictionary_make)
 f_start: equ     $-8
 
+sigaction:
+        dq          sigsegv_handler,
+        dq          67108868, ; flags SA_SIGINFO | SA_RESTORER
+        dq          sigsegv_restorer,
+        dq          0, ; sig mask
+
         section   .bss
 data_stack:         resb    data_stack_size
 return_stack:       resb    return_stack_size
-heap_pointer:       resq    1
+sigsegv_handler_pointer:
+                    resq    1

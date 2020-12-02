@@ -1,6 +1,7 @@
 # import syscalls.2s
-# import lib.2s
-constant "def_list" read_mem_i64 the_dictionary ;
+def "def_list" { 
+    read_mem_i64 the_dictionary
+} ;
 
 # <record> -> <name>
 def "stacktrace_dict_record_name" {
@@ -83,15 +84,19 @@ def "print_all_function_names_and_addresses" {
 } ;
 
 
-print_newline . return_instruction_code ;
-print_newline ;
-print_all_function_names_and_addresses ;
-print_newline ;
-print_string "====================\n" ;
+def "stacktrace.print_return_stack" {
+    drop
+    while { > + -11 return_stack_depth dup } {
+        + 1
+        print_newline print_string stacktrace_find_func_name_by_instruction_pointer r_pick dup
+    } 5
+} ;
 
-drop
-do_n_times return_stack_depth {
-    print_newline print_string stacktrace_find_func_name_by_instruction_pointer r_pick dup
-    + 1
-} 0 ;
-exit 0 ;
+write_mem_i64 sigsegv_handler_pointer {
+    exit 1
+    stacktrace.print_return_stack
+    print_newline print_string stacktrace_find_func_name_by_instruction_pointer # instruction pointer value at the moment of sigsegv is saven on top of the data stack
+    print_string "Stacktrace:\n"
+    print_string "\nSegmentation fault\n"
+} ;
+

@@ -1,0 +1,17 @@
+# import stacktrace.2s
+def "stacktrace.test" {
+    stacktrace.print
+} ;
+
+def "stacktrace.test_wrapper" {
+    stacktrace.test
+} ;
+
+def "stacktrace.test_wrapper_wrapper" {
+    stacktrace.test_wrapper
+} ;
+
+
+stacktrace.test_wrapper_wrapper ;
+
+exit 0 ;
