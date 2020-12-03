@@ -46,11 +46,10 @@ def "stacktrace_get_func_first_pointer" {
 } ;
 
 # <i pointer> -> <func name or "#?#">
-def "stacktrace_find_func_name_by_instruction_pointer" {
+def "stacktrace_print_func_name_by_instruction_pointer" {
     if { not = 0 dup } {
-        stacktrace_dict_record_name
-    } { "#?#" drop }
-    drop swap
+        . print_string ": " print_string stacktrace_dict_record_name # <record> <i pointer>
+    } {  . print_string "?: " drop }
     while {
         cond_end
         cond_default { false }
@@ -84,19 +83,20 @@ def "print_all_function_names_and_addresses" {
 } ;
 
 
-def "stacktrace.print_return_stack" {
+# <skip return stack slots> ->
+def "stacktrace.print_return_stack_except_n_slots" {
     drop
     while { > + -11 return_stack_depth dup } {
         + 1
-        print_newline print_string stacktrace_find_func_name_by_instruction_pointer r_pick dup
-    } 5
+        print_newline stacktrace_print_func_name_by_instruction_pointer r_pick dup
+    } + 5
 } ;
 
 write_mem_i64 sigsegv_handler_pointer {
     exit 1
-    stacktrace.print_return_stack
-    print_newline print_string stacktrace_find_func_name_by_instruction_pointer # instruction pointer value at the moment of sigsegv is saven on top of the data stack
+    stacktrace.print_return_stack_except_n_slots 1
+    print_newline stacktrace_print_func_name_by_instruction_pointer # instruction pointer value at the moment of sigsegv is saven on top of the data stack
     print_string "Stacktrace:\n"
-    print_string "\nSegmentation fault\n"
+    print_string "\n=========== Segmentation fault\n"
 } ;
 

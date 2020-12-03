@@ -1,6 +1,6 @@
 # import stacktrace.2s
 def "stacktrace.test" {
-    stacktrace.print
+    stacktrace.print_return_stack_except_n_slots 0
 } ;
 
 def "stacktrace.test_wrapper" {

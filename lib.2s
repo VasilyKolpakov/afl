@@ -30,11 +30,6 @@ def "round_up_to_power_of_two" {
    - swap 1
 } ;
 
-# <string> ->
-def "debug" {
-    print_newline .s print_newline print_string print_newline
-} ;
-
 # <size> -> <byte size>
 def "bitset_size" { if { not = 0 dup } { + 1 / swap 8 + -1 } { 0 drop } } ;
 

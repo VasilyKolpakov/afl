@@ -74,10 +74,8 @@ def "block_allocator_alloc_new_page" {
     block_allocator_page_header_size dup # <allocator> <page>
     block_allocator_set_pointer_to_last_page 2dup swap # <page> <allocator>
     block_allocator_page_init 2dup # init page <page> <allocator>
-    syscall_mmap_anon 4096
-    #+ 4096
-    #panic_on_syscall_error syscall_mprotect rot 4095 syscall_mmap_PROT_NONE dup # guard page
-    #panic_on_syscall_error syscall_mmap_anon 2 * 4096 
+    drop panic_on_syscall_error syscall_mprotect rot 4096 syscall_mmap_PROT_NONE + 4096 dup # guard page
+    panic_on_syscall_error syscall_mmap_anon * 2 4096 
 } ;
 
 # <allocator> <block size>

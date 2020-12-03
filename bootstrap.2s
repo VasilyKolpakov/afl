@@ -61,3 +61,9 @@ def "constant" {
 } ;
 
 constant "return_instruction_code" read_mem_i64 { } ;
+
+# <string> ->
+def "debug" {
+    print_newline .s print_newline print_string print_newline
+} ;
+
