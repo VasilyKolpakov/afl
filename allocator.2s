@@ -37,7 +37,8 @@ def "allocator_alloc_large_block" {
     write_mem_i64 + 8 2dup # <addr> <aligned size> save size
     write_mem_i64 swap -1 dup # <addr> <aligned size> mark page header to make it distinguishable from block_allocator's blocks
     #debug "large block alloc after mmap"
-    syscall_mmap_anon dup # <aligned size>
+    drop panic_on_syscall_error syscall_mprotect rot 4096 syscall_mmap_PROT_NONE + 2dup # init guard page <new mem pointer> <aligned size> 
+    panic_on_syscall_error syscall_mmap_anon + 4096 dup # alloc requested size + guard page <aligned size>
     allocator_align_to_page_size + 16
     #debug "large block start"
 } ;
