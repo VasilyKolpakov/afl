@@ -235,20 +235,23 @@
     + primitive import system in bash (a 1 hour)
     + memset tests
     + fail-fast on bad words
-    - signal handler
+    + signal handler
         + stacktrace (p 35 min, a 2 hours 30 min)
             + list all function names (p 5 min, a 8 min)
             + list names, addresses and lengths (p 15 min, a 30 min)
             + find_func_name_by_i_pointer (p 10 min, a 57 min)
             + ret_stack_depth (p 5 min)
             + stacktrace (p 10 min, a 35 min)
-    - guard pages
+    + guard pages
+    - fix guard pages
+        - free in large block allocator
+        - realloc in large block allocator
     - b-tree
         # lazy maintenance
-        - block allocator
     - factor combinators
     - decompiler
-        - anon functions in dictionary
+        # anon functions in dictionary
+        # function size suffix
     - debugger
     - conservative GC
     - rewrite def function in 2s for better error logging
@@ -287,6 +290,7 @@ Problems:
 
 идеи:
 
+- jit-optimize every n-th run instruction
 - gap buffer for console editor
 - "exec" and "test by" headers
 - dynamic type-checking "mode", recompile all dictionary entries to ph

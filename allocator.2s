@@ -66,6 +66,8 @@ def "allocator_realloc_large_block" {
             < 0 over # <actual size> <addr> syscall error code check
             swap + 16 swap
             + -16 allocator_align_to_page_size swap # <new addr> <new size>
+            write_mem_i64 + 8 2dup # save new size <new addr> <new size>
+            panic_on_syscall_error
             syscall_mremap_maymove swap # <old size> <addr (header)> <new size> <new size>
             read_mem_i64 + 8 dup # <addr (header)> <new size> <new size>
         } {

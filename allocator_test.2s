@@ -29,5 +29,10 @@ do_n_times num_iterations {
     free_checked
 } ;
 
+malloc 8000 ;
+do_n_times num_iterations {
+    realloc swap
+        + 8 % swap 10000 rng_int32
+} ;
 print_string "OK\n" ;
 exit 0 ;
