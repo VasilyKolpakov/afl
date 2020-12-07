@@ -37,6 +37,7 @@ def "allocator_alloc_large_block" {
     write_mem_i64 + 8 2dup # <addr> <aligned size> save size
     write_mem_i64 swap -1 dup # <addr> <aligned size> mark page header to make it distinguishable from block_allocator's blocks
     #debug "large block alloc after mmap"
+    # guard page goes after data pages
     drop panic_on_syscall_error syscall_mprotect rot 4096 syscall_mmap_PROT_NONE + 2dup # init guard page <new mem pointer> <aligned size> 
     panic_on_syscall_error syscall_mmap_anon + 4096 dup # alloc requested size + guard page <aligned size>
     allocator_align_to_page_size + 16
@@ -48,7 +49,7 @@ def "allocator_free_large_block" {
     if { = 16 % swap 4096 dup } {
         if { = -1 read_mem_i64 dup } {
             = 0 # syscall error code
-            syscall_munmap swap # <size> <addr (header)>
+            syscall_munmap swap + 4096 # unmap data and the guard page <size> <addr (header)>
             read_mem_i64 + 8 dup # <addr (header)>
         } {
             false drop # bad page header
@@ -67,9 +68,13 @@ def "allocator_realloc_large_block" {
             swap + 16 swap
             + -16 allocator_align_to_page_size swap # <new addr> <new size>
             write_mem_i64 + 8 2dup # save new size <new addr> <new size>
+            drop panic_on_syscall_error syscall_mprotect rot 4096 syscall_mmap_PROT_NONE + 2dup # <new addr> <new size>
             panic_on_syscall_error
-            syscall_mremap_maymove swap # <old size> <addr (header)> <new size> <new size>
+            syscall_mremap_maymove swap # <old size> <addr (header)> <new size + guard page size> <new size>
+            -rot + 4096 rot # <old size> <addr (header)> <new size> <new size>
+            drop panic_on_syscall_error syscall_munmap swap 4096 + 2dup # unmap guard page <old size> <addr (header)> <new size> <new size>
             read_mem_i64 + 8 dup # <addr (header)> <new size> <new size>
+            if { not = 0 % swap 4096 dup } { exit 1 print_string "bad address" } { }
         } {
             false drop # bad page header
         }
@@ -77,7 +82,7 @@ def "allocator_realloc_large_block" {
     } {
         false drop # bad page offset
     }
-    rot dup + 16 swap
+    rot dup allocator_align_to_page_size + 16 swap
 } ;
 
 # <min size> -> <actual size> <addr>
@@ -129,7 +134,6 @@ def "free" {
 
 # <addr> <new size> -> <actual size> <addr>
 def "realloc_actual_size" {
-    #debug "realloc end"
     if { not } { exit 1 print_string "unable to realloc memory" } { }
     if { = -1 dup } {
         allocator_realloc_large_block drop # <-1> <addr> <new size>
@@ -144,7 +148,6 @@ def "realloc_actual_size" {
         >r swap # <old size> <addr> <new size>
         block_allocator_get_block_size
     } # <allocator> <addr> <new size>
-    #debug "realloc after get_allocator"
     block_allocator_get_allocator_for_block dup
 } ;
 

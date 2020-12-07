@@ -243,9 +243,10 @@
             + ret_stack_depth (p 5 min)
             + stacktrace (p 10 min, a 35 min)
     + guard pages
-    - fix guard pages
-        - free in large block allocator
-        - realloc in large block allocator
+    + fix guard pages
+        + free in large block allocator
+        + realloc in large block allocator
+    + realloc test with mem checks
     - b-tree
         # lazy maintenance
     - factor combinators
@@ -290,6 +291,8 @@ Problems:
 
 идеи:
 
+- pretty-printing code: optimized SSA; arg and return value names (define words with names?)
+- siginfo contains address that caused segfault
 - jit-optimize every n-th run instruction
 - gap buffer for console editor
 - "exec" and "test by" headers

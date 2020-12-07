@@ -29,10 +29,118 @@ do_n_times num_iterations {
     free_checked
 } ;
 
-malloc 8000 ;
+malloc 4096 ;
 do_n_times num_iterations {
     realloc swap
         + 8 % swap 10000 rng_int32
 } ;
+free ;
+
+# this test allocates N buffers and reallocates them to random sizes
+# every buffer is initialised with it's index in every byte
+# test iteration does the following:
+#   - choose random number R from 0 to N-1
+#   - reallocate R-th buffer to a size from 0 to 10000
+#   - init the buffer with R in every byte
+#   - check all buffers
+
+constant "N" 100 ;
+constant "buffer_array" malloc * 16 N ;
+# <buffer> <size> <index>
+def "put_buffer_to_array" {
+    write_mem_i64 swap # <buffer> <buffer cell>
+    dip { write_mem_i64 + 8 swap } # <buffer> <size> <buffer cell> <buffer cell>
+    2dip { dup + buffer_array * 16 } 
+} ;
+
+def "keep" {
+    dip swap over # <func> <value>
+} ;
+
+def "random_buffer_size" {
+    + 8
+    % swap 4000 rng_int32
+} ;
+def "init_buffer_array" {
+    drop 
+    while { > N dup } {
+        + 1
+        memset dip { swap }
+        put_buffer_to_array 3dup # <buffer> <actual size> <index> <index>
+        swap malloc_actual_size random_buffer_size # <index> <index>
+        dup
+    } 0
+} ;
+
+
+# <buffer> <buffer size> <byte value> -> 
+def "check_buffer" {
+    2drop
+    do_n_times swap {
+        swap + 1 swap
+        if { not = 2dup } {
+            exit 1
+            print_newline
+            .
+            print_string ", bad buffer: "
+            .
+            print_string ", expected: "
+            .
+            print_string "actual: "
+        } { drop } # <byte> <byte value> <address>
+        read_mem_byte over # <byte value> <address>
+    }
+    # <buffer size> <byte value> <buffer>
+    -rot
+    #debug "check_buffer start"
+} ;
+
+# <index> -> <buffer>
+def "buffer_array_get_buffer" {
+    read_mem_i64 + buffer_array * 16
+} ;
+
+# <index> -> <buffer size>
+def "buffer_array_get_size" {
+    read_mem_i64 + 8 + buffer_array * 16
+} ;
+
+# <index> ->
+def "check_nth_buffer" {
+    check_buffer
+        bi
+            { buffer_array_get_buffer }
+            { buffer_array_get_size }
+        dup
+} ;
+
+def "check_all_buffers" {
+    drop 
+    while { > N dup } {
+        + 1
+        check_nth_buffer dup
+    } 0
+} ;
+
+# <index> ->
+def "realloc_nth_buffer" {
+    memset dip { swap }
+    put_buffer_to_array 3dup # <new buffer> <size> <index>
+    check_buffer dip { min } # <new buffer> <size> <old size> <index> <new buffer> <size> <index>
+    2dip { buffer_array_get_size dup } 3dup # <new buffer> <size> <index>
+    realloc rot dup random_buffer_size # <old buffer> <index>
+    buffer_array_get_buffer dup
+} ;
+
+init_buffer_array ;
+check_all_buffers ;
+
+do_n_times 100 {
+    .s
+    check_all_buffers
+    realloc_nth_buffer % rng_int32 N
+} ;
+
 print_string "OK\n" ;
+
 exit 0 ;

@@ -37,6 +37,20 @@ rename_word "dr" "drop" ;
 rename_word "o" "over" ;
 def "2drop" { drop drop } ;
 
+def "3dup" { 
+    pick 3
+    pick 3
+    pick 3
+} ;
+
+def "4dup" { 
+    pick 4
+    pick 4
+    pick 4
+    pick 4
+} ;
+
+
 rename_word "rd" "return_stack_depth" ;
 
 rename_word "rp" "r_pick" ;
@@ -67,3 +81,4 @@ def "debug" {
     print_newline .s print_newline print_string print_newline
 } ;
 
+def "exit" { syscall 60 r> 1 2 3 4 5 >r } ;

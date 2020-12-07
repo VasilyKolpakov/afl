@@ -146,3 +146,25 @@ def "bi" {
     >r >r >r
 } ;
 
+def "dip" {
+    r>
+    call
+    >r swap # <func> <value to keep>
+} ;
+
+def "2dip" {
+    r> r>
+    call
+    >r swap >r swap # <func> <value to keep 1> <value to keep 2>
+} ;
+
+# <syscall ret value> -> <syscall ret value>
+def "panic_on_syscall_error" {
+    if {
+        drop r> and
+            < -4096 r@
+            > 0 r@
+        >r dup
+    } { exit 1 stacktrace.print_return_stack_except_n_slots 2 print_newline . * -1 print_string "syscall error: " } { }
+} ;
+
