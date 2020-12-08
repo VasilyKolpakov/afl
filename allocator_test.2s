@@ -53,10 +53,6 @@ def "put_buffer_to_array" {
     2dip { dup + buffer_array * 16 } 
 } ;
 
-def "keep" {
-    dip swap over # <func> <value>
-} ;
-
 def "random_buffer_size" {
     + 8
     % swap 4000 rng_int32

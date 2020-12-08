@@ -1,0 +1,112 @@
+# import allocator.2s
+
+# i64 -> i64 b+tree
+# Tree node layout:
+# [is_leaf bool][size][key_0][val_0][key_1][val_1]...
+#
+# struct layout
+# [size][empty cells count][pointer to the root node]
+
+constant "btree_node_max_size" 7 ; 
+constant "btree_node_byte_size" 128 ; 
+
+# <node> <size> ->
+def "btree_node_is_leaf" {
+    read_mem_i64
+} ;
+
+# <node> <size> ->
+def "btree_node_set_size" {
+    write_mem_i64 + 8
+} ;
+
+# <node> -> <size>
+def "btree_node_size" {
+    read_mem_i64 + 8
+} ;
+
+# <node> <index> -> <value>
+def "btree_node_value" {
+    read_mem_i64
+    + 8
+    + 16
+    + * 16 swap
+} ;
+
+# <node> <index> -> <key>
+def "btree_node_key" {
+    read_mem_i64
+    + 16
+    + * 16 swap
+} ;
+
+def "print_btree_node" {
+    print_string "]"
+    2drop
+    while { > btree_node_max_size dup } {
+        + 1 
+        if { = btree_node_max_size + 1 dup } {
+            print_string ")"
+        } {
+            print_string "), "
+        }
+        . btree_node_value swap 2dup
+        print_string ", "
+        . btree_node_key swap 2dup
+        print_string "("
+    } # <index> <node>
+    0
+    print_string ", cells: ["
+    . btree_node_size dup 
+    print_string ", size: "
+    print_bool btree_node_is_leaf dup
+    print_string "is_leaf: "
+} ;
+
+# <is_leaf bool> -> <node>
+def "btree_node_create" {
+    keep { write_mem_i64 } # <buffer> <bool>
+    malloc btree_node_byte_size
+} ;
+
+# <node> ->
+def "btree_node_increment_size" {
+    btree_node_set_size swap + 1 btree_node_size dup
+} ;
+# <node> <key> <value> ->
+def "btree_node_insert" {
+    write_mem_i64 + 8 # <addr> <value>
+    keep { write_mem_i64 } # <hole key addr> <key> <value>
+    + 16 + * 16 # <hole index> <node> <key> <value>
+    while { 
+        and
+        < 0 over # check end of node
+        # <bool> <index> <node> <key> <value>
+        > # <last key> <key> ... # check that more swaps needed
+        btree_node_key swap + -1 3dup
+    } {
+        + -1
+        drop # <value addr (now it's the hole)> <index> ...
+        write_mem_i64 + 16 over read_mem_i64 dup + 8 # <key addr (first before the hole)> ...
+        write_mem_i64 + 16 over read_mem_i64 dup # <key addr (first before the hole)> ...
+        + * 16 2dup # <index> <node> <key> <value>
+    } # <size> <node> <key> <value>
+    btree_node_increment_size over # <size> <node> <key> <value>
+    btree_node_size dup
+    if { = btree_node_max_size btree_node_size dup } {
+        exit 1 print_string "panic: btree_node_insert into a full node\n"
+    } { }
+} ;
+
+constant "test_node" btree_node_create true ;
+print_newline print_btree_node test_node ;
+btree_node_insert test_node 11 2 ;
+print_newline print_btree_node test_node ;
+btree_node_insert test_node 5 2 ;
+print_newline print_btree_node test_node ;
+btree_node_insert test_node 1 2 ;
+print_newline print_btree_node test_node ;
+btree_node_insert test_node 4 2 ;
+print_newline print_btree_node test_node ;
+.s ;
+exit 0 ;
