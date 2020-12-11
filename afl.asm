@@ -1949,13 +1949,11 @@ f_read_and_compile_code__emit_instruction: equ     $-8
         dq          call(f_byte_vector_destroy), i_swap      ; <record> <scanner> <code vector> <dict>
 f_read_and_compile_code__emit_word: equ     $-8
         dq          i_return
-        dq          val(0) ; <ok bool> <scanner> <code vector> <dict>
-        dq          call(f_print_newline)      ; <scanner> <code vector> <dict>
-        dq          call(f_print_byte_vector), i_dup    ; <scanner> <code vector> <dict>
-        dq          call(f_byte_vector_destroy)      ; <scanner> <code vector> <dict>
-        dq          call(f_print_byte_vector), i_dup      ; <token> <scanner> <code vector> <dict>
-        dq          call(f_byte_vector_destroy), call(f_print_byte_vector), i_dup, call(f_byte_vector_from_bytes), val(10), val('b'), val('a'), val('d'), val(' '), val('w'), val('o'), val('r'), val('d'), val(':'), val(' ')
-        dq          i_drop ; drop null pointer ; <token> <scanner> <code vector> <dict>
+        dq          val(1) ; [scanner] [code vector] [dict]
+        dq          call(f_byte_vector_append_i64), i_swap, val(i_call), i_over  ; [scanner] [code vector] [dict]
+        dq          call(f_byte_vector_append_i64), i_dup_n, val(3) ; [func stub] [scanner] [code vector] [dict]
+        dq          call(f_create_function_stub), i_dup_n, val(4) ; [token] [scanner] [code vector] [dict]
+        dq          i_drop ; drop null pointer ; [null record] [token] [scanner] [code vector] [dict]
 f_read_and_compile_code__no_such_word_case: equ     $-8
         dq          i_return
         dq          call(f_if), val(f_id), val(f_read_and_compile_code__no_such_word_case), val(f_read_and_compile_code__emit_word)
@@ -2034,6 +2032,31 @@ f_read_and_compile_code_skip_to_semicolon: equ     $-8
         dq          call(f_read_and_compile_code__main)
 f_read_and_compile_code: equ     $-8
 
+
+; <dict> <token> -> <func>
+        dq          call(f_exit), val(1) 
+        dq          call(f_print_newline)
+        dq          call(f_print_byte_vector)
+        dq          call(f_byte_vector_destroy), call(f_print_byte_vector), i_dup, call(f_byte_vector_from_bytes), val(10), val('b'), val('a'), val('d'), val(' '), val('w'), val('o'), val('r'), val('d'), val(':'), val(' ')
+        dq          i_drop ; drop null pointer ; <token>
+f_create_function_stub_no_such_word_case: equ     $-8
+        dq          i_return
+        dq          i_indirect_call ; [function pointer]
+        dq          i_write_mem_i64, i_add, val(8) ; [function call site - 16] [function pointer] [function pointer]
+        ; !!!!!!!!!!!!!!!!!! HACK !!!!!!!!!!!!!!!!!!!!!!
+        dq          i_push_to_ret_stack, i_swap, i_push_to_ret_stack, i_swap, i_push_to_ret_stack, i_dup, i_pop_from_ret_stack, i_pop_from_ret_stack, i_pop_from_ret_stack ; [function pointer] [function pointer]
+        dq          i_dup ; [function pointer]
+        dq          call(f_word_def_func_pointer_or_inst), call(f_dictionary_record_word_def); [record]
+        dq          call(f_byte_vector_destroy), i_swap ; [record] [token]
+        dq          call(f_if), val(f_id), val(f_create_function_stub_no_such_word_case), val(f_id) 
+        dq          i_equal, val(0), i_dup ; [found record] [token]
+        dq          call(f_dictionary_find_record), i_swap, i_over ; [record] [token]
+        dq          i_read_mem_i64 ; [dict] [token]
+f_create_function_stub_the_stub: equ     $-8
+        dq          i_return ; [func with dict and token]
+        dq          call(f_func_concat), i_swap, call(f_capture), i_swap ; [func with dict] [token]
+        dq          call(f_func_concat), val(f_create_function_stub_the_stub), call(f_capture) ; [dict] [token]
+f_create_function_stub: equ     $-8
 
 
 ; main loop

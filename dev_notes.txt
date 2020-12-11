@@ -247,6 +247,7 @@
         + free in large block allocator
         + realloc in large block allocator
     + realloc test with mem checks
+    + recursion
     - b-tree
         # lazy maintenance
     - factor combinators
