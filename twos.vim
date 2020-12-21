@@ -5,7 +5,7 @@ endif
 
 " Keywords
 syn keyword twosKeyword def constant if while and or not r_peek
-syn keyword twosKeyword drop swap dup 2dup 2drop rot -rot over
+syn keyword twosKeyword drop swap dup 2dup 2drop 3drop 3dup rot -rot over
 syn match   twosKeyword '\v\>r'
 syn match   twosKeyword '\vr\>'
 syn match   twosKeyword '\vr\@'

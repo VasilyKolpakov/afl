@@ -50,7 +50,7 @@
         + i_stack_depth (5 min, 8 min #idiv problem, it doesn't support immediate values)
         + function (15 min, a 16 min)
             + print_byte
-    - lexer
+    + lexer
         + design sketch #1 (p 20 min, a 30)
         # splits input into tokens (token_type - string pairs)
         # reads one token per call !!!!
@@ -248,14 +248,17 @@
         + realloc in large block allocator
     + realloc test with mem checks
     + recursion
-    - b-tree
-        # lazy maintenance
+    - skip list
+        - set
+        - set with custom comparator
+        - sorted map over set
+    - conservative GC
+        # requires b+tree to support functions (and all other not-pointing-to-the-first-byte structures)
     - factor combinators
     - decompiler
         # anon functions in dictionary
         # function size suffix
     - debugger
-    - conservative GC
     - rewrite def function in 2s for better error logging
   - статическая проверка операций с return стеком
   - статическая проверка типов, вывод stack effect
@@ -292,6 +295,7 @@ Problems:
 
 идеи:
 
+- b+tree
 - pretty-printing code: optimized SSA; arg and return value names (define words with names?)
 - siginfo contains address that caused segfault
 - jit-optimize every n-th run instruction
