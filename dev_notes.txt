@@ -252,6 +252,8 @@
         - set
         - set with custom comparator
         - sorted map over set
+    - type inference
+        # type stack
     - conservative GC
         # requires b+tree to support functions (and all other not-pointing-to-the-first-byte structures)
     - factor combinators

@@ -45,6 +45,8 @@ def "random_bool" {
     = 0 % swap 2 random_next_int rng_instance
 } ;
 
+def "random_int32" { random_next_int rng_instance } ;
+
 def "skip_list_random_level" {
     while { random_bool } { + 1 } 0
 } ;
@@ -70,15 +72,15 @@ def "skip_list_node_get_level" {
     read_mem_i64
 } ;
 
-# <level> <node> -> <node>
+# <level> <node> -> <next node>
 def "skip_list_node_get_next" {
     read_mem_i64 + # <next offset> <node>
     + 16 * 8
 } ;
 
-# <level> <node> <node> ->
+# <level> <node> <next node> ->
 def "skip_list_node_set_next" {
-    write_mem_i64 + # <next offset> <node>
+    write_mem_i64 + # <next offset> <node> <next node>
     + 16 * 8
 } ;
 
@@ -106,25 +108,38 @@ def "skip_list_get_sentinel_node" {
 
 def "debug_print_skip_list_node" {
     print_string " }"
-    .
+    . % swap 100000
     print_string ", addr: "
+    . skip_list_node_get_level dup 
+    print_string ", level: "
     . skip_list_node_get_value dup
     print_string "{ value: "
 } ;
+
 # <skip list> -> 
 def "debug_print_skip_list" {
     2drop
     while { <= 0 dup } {
         + -1
+        dip { drop }
         print_string "NULL\n"
         while { not = 0 skip_list_node_get_next 2dup } {
             print_string " -> "
             keep { debug_print_skip_list_node dup skip_list_node_get_next }
         }
-        print_string "S -> "
+        print_string ", S -> "
+        . dup
+        print_string "level: "
+        dip { dup }
     }
+    dip { print_newline . print_string "S addr: " dup }
     # <level> <s node>
     skip_list_node_get_level dup skip_list_get_sentinel_node
+} ;
+
+# <skip list> -> <level>
+def "skip_list_get_max_level" {
+    skip_list_node_get_level skip_list_get_sentinel_node
 } ;
 
 # <skip list> <level> -> 
@@ -135,21 +150,28 @@ def "skip_list_set_max_level" {
     while { <= 2dup } {
         + 1
         swap
-        dip { skip_list_node_set_next -rot 0 2dup } # <level> <old level + n> <new s node> <list>
+        dip { skip_list_node_set_next -rot 0 2dup } # <level> <old level + n> <new s node> <list> # set next to NULL
         swap
     }
-    # <old level> <level> <new s node> <list>
+    + 1 # <old level> <level> <new s node> <list>
     skip_list_node_get_level over rot # <new s node> <list> <level>
     realloc swap rot # <s node> <list> <new s node size> <level>
     2dip { + 8 * 8 dup } # <s node> <list> <level>
     read_mem_i64 dup
 } ;
 
+# <skip list> <level>
+def "skip_list_update_level_if_less_than" {
+    if { < } {
+        skip_list_set_max_level
+    } { 2drop }
+    skip_list_get_max_level 2dup
+} ;
+
 def "is_neg" { > 0 } ;
 
 # <level> <node> <value> -> <bool> <node>
 def "skip_list_node_skip_one_less_than" {
-    debug "skip_list_node_skip_one_less_than return"
     if { = 0 dup } {
         false 0 2drop
     } {
@@ -161,27 +183,26 @@ def "skip_list_node_skip_one_less_than" {
     }
     # <next node> <value>
     skip_list_node_get_next
-    debug "skip one start"
 } ;
 
 # <level> <node> <value> -> <node>
 def "skip_list_node_skip_all_less_than" {
     dip { 2drop }
-    debug "skip_list_node_skip_all_less_than after loop"
     while { } {
         keep { drop if { } { swap } { } } # <bool> <node> <prev node> <level> <value>
         skip_list_node_skip_one_less_than swap 3dup
     } true # <node> <level> <value>
     swap
-    debug "skip_list_node_skip_all_less_than start"
 } ;
 
 # <level> <node for insert> <new value node> ->
 def "skip_list_node_insert_on_level" {
-    skip_list_node_set_next # <level> <node for i> <value node>
-    skip_list_node_set_next # <level> <value node> <prev next node> ...
-    keep { swap skip_list_node_get_next } 3dup
-    debug "skip_list_node_insert_on_level start"
+    if { <= over skip_list_node_get_level pick 3 } {
+        skip_list_node_set_next # <level> <node for i> <value node>
+        debug "skip_list_node_insert_on_level in if"
+        skip_list_node_set_next # <level> <value node> <prev next node> ...
+        keep { swap skip_list_node_get_next } 3dup
+    } { 3drop }
 } ;
 
 # <skip list> <value> -> 
@@ -197,15 +218,19 @@ def "skip_list_insert" {
     # <list level> <s node> <value node>
     skip_list_node_get_level dup
     skip_list_get_sentinel_node
+    skip_list_update_level_if_less_than dip { skip_list_node_get_level } 2dup # <skip list> <value node>
     dip { skip_list_node_create }
 } ;
 
 constant "test_list" skip_list_create ;
-skip_list_insert test_list 1 ;
-skip_list_insert test_list 9 ;
-skip_list_insert test_list 3 ;
-skip_list_insert test_list 2 ;
-skip_list_insert test_list 6 ;
+#skip_list_insert test_list 1 ; 
+#skip_list_insert test_list 2 ; 
+#skip_list_insert test_list 3 ; 
+#debug_print_skip_list test_list ;
+#skip_list_insert test_list 4 ; 
+do_n_times 10 {
+    skip_list_insert test_list % swap 100 random_int32  
+} ;
 debug_print_skip_list test_list ;
 .s ;
 exit 0 ;
