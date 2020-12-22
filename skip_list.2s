@@ -1,0 +1,211 @@
+# import syscalls.2s
+# import allocator.2s
+
+# <addr> <n> ->
+def "print_mem" {
+    drop
+    do_n_times swap {
+        + 8
+        print_string " "
+        . read_mem_i64 dup
+    }
+    swap
+} ;
+
+# <left> <right> -> <ordering>
+def "compare_list_values" {
+    if { > 2dup } {
+        2drop 1
+    } { 
+        if { < } {
+            -1
+        } {
+            0
+        }
+    }
+} ;
+
+# <bool func> <bool> -> <bool>
+def "lazy_and" {
+    if { not } {
+        false
+    }
+} ;
+
+# <size> -> <buffer>
+def "calloc" {
+    memzero over swap # <buffer> <size>
+    malloc dup
+} ;
+
+constant "rng_instance" syscall_mmap_anon 4096 ;
+random_init rng_instance 120 ;
+
+def "random_bool" {
+    = 0 % swap 2 random_next_int rng_instance
+} ;
+
+def "skip_list_random_level" {
+    while { random_bool } { + 1 } 0
+} ;
+
+# skip list node layout:
+# [level][value][level 0 next][level 1 next] ...
+
+# <value> -> <node>
+def "skip_list_node_create" {
+    keep { write_mem_i64 + 8 }
+    keep { write_mem_i64 }
+    debug "skip_list_node_create after calloc"
+    calloc + 16 * 8 + 1 dup skip_list_random_level 
+} ;
+
+# <node> -> <value>
+def "skip_list_node_get_value" {
+    read_mem_i64 + 8
+} ;
+
+# <node> -> <level>
+def "skip_list_node_get_level" {
+    read_mem_i64
+} ;
+
+# <level> <node> -> <node>
+def "skip_list_node_get_next" {
+    read_mem_i64 + # <next offset> <node>
+    + 16 * 8
+} ;
+
+# <level> <node> <node> ->
+def "skip_list_node_set_next" {
+    write_mem_i64 + # <next offset> <node>
+    + 16 * 8
+} ;
+
+# sentinel node layout:
+# [level][42][level 0 next][level 1 next] ...
+
+# <level> -> <node>
+def "create_sentinel_node" {
+    keep { write_mem_i64 swap 42 + 8 }
+    keep { write_mem_i64 } # <node> <level>
+    debug "create_sentinel_node after calloc"
+    calloc + 16 * 8 + 1 dup
+} ;
+
+# skip list layout
+# [sentinel node]
+def "skip_list_create" {
+    write_mem_i64 swap create_sentinel_node 0 dup
+    malloc 8
+} ;
+
+def "skip_list_get_sentinel_node" {
+    read_mem_i64
+} ;
+
+def "debug_print_skip_list_node" {
+    print_string " }"
+    .
+    print_string ", addr: "
+    . skip_list_node_get_value dup
+    print_string "{ value: "
+} ;
+# <skip list> -> 
+def "debug_print_skip_list" {
+    2drop
+    while { <= 0 dup } {
+        + -1
+        print_string "NULL\n"
+        while { not = 0 skip_list_node_get_next 2dup } {
+            print_string " -> "
+            keep { debug_print_skip_list_node dup skip_list_node_get_next }
+        }
+        print_string "S -> "
+    }
+    # <level> <s node>
+    skip_list_node_get_level dup skip_list_get_sentinel_node
+} ;
+
+# <skip list> <level> -> 
+def "skip_list_set_max_level" {
+    write_mem_i64 swap # <list> <new s node>
+    write_mem_i64 over # <level> <new s node> <list>
+    drop
+    while { <= 2dup } {
+        + 1
+        swap
+        dip { skip_list_node_set_next -rot 0 2dup } # <level> <old level + n> <new s node> <list>
+        swap
+    }
+    # <old level> <level> <new s node> <list>
+    skip_list_node_get_level over rot # <new s node> <list> <level>
+    realloc swap rot # <s node> <list> <new s node size> <level>
+    2dip { + 8 * 8 dup } # <s node> <list> <level>
+    read_mem_i64 dup
+} ;
+
+def "is_neg" { > 0 } ;
+
+# <level> <node> <value> -> <bool> <node>
+def "skip_list_node_skip_one_less_than" {
+    debug "skip_list_node_skip_one_less_than return"
+    if { = 0 dup } {
+        false 0 2drop
+    } {
+        if { is_neg compare_list_values skip_list_node_get_value over swap } {
+            true
+        } {
+            false
+        }
+    }
+    # <next node> <value>
+    skip_list_node_get_next
+    debug "skip one start"
+} ;
+
+# <level> <node> <value> -> <node>
+def "skip_list_node_skip_all_less_than" {
+    dip { 2drop }
+    debug "skip_list_node_skip_all_less_than after loop"
+    while { } {
+        keep { drop if { } { swap } { } } # <bool> <node> <prev node> <level> <value>
+        skip_list_node_skip_one_less_than swap 3dup
+    } true # <node> <level> <value>
+    swap
+    debug "skip_list_node_skip_all_less_than start"
+} ;
+
+# <level> <node for insert> <new value node> ->
+def "skip_list_node_insert_on_level" {
+    skip_list_node_set_next # <level> <node for i> <value node>
+    skip_list_node_set_next # <level> <value node> <prev next node> ...
+    keep { swap skip_list_node_get_next } 3dup
+    debug "skip_list_node_insert_on_level start"
+} ;
+
+# <skip list> <value> -> 
+def "skip_list_insert" {
+    3drop
+    while { <= 0 dup } {
+        + -1
+        skip_list_node_insert_on_level 3dup # <level> <node for insert> <value node>
+        debug "skip_list_insert after skip all"
+        keep { skip_list_node_skip_all_less_than } # <level> <node> <value> <value node>
+        2dip { skip_list_node_get_value dup }
+    }
+    # <list level> <s node> <value node>
+    skip_list_node_get_level dup
+    skip_list_get_sentinel_node
+    dip { skip_list_node_create }
+} ;
+
+constant "test_list" skip_list_create ;
+skip_list_insert test_list 1 ;
+skip_list_insert test_list 9 ;
+skip_list_insert test_list 3 ;
+skip_list_insert test_list 2 ;
+skip_list_insert test_list 6 ;
+debug_print_skip_list test_list ;
+.s ;
+exit 0 ;
