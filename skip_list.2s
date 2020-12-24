@@ -52,19 +52,25 @@ def "skip_list_random_level" {
 } ;
 
 # skip list node layout:
-# [level][value][level 0 next][level 1 next] ...
+# [level][key][value][level 0 next][level 1 next] ...
 
-# <value> -> <node>
+# <key> <value> -> <node>
 def "skip_list_node_create" {
+    keep { write_mem_i64 + 16 }
     keep { write_mem_i64 + 8 }
     keep { write_mem_i64 }
     debug "skip_list_node_create after calloc"
-    calloc + 16 * 8 + 1 dup skip_list_random_level 
+    calloc + 24 * 8 + 1 dup skip_list_random_level 
+} ;
+
+# <node> -> <key>
+def "skip_list_node_get_key" {
+    read_mem_i64 + 8
 } ;
 
 # <node> -> <value>
 def "skip_list_node_get_value" {
-    read_mem_i64 + 8
+    read_mem_i64 + 16
 } ;
 
 # <node> -> <level>
@@ -75,24 +81,24 @@ def "skip_list_node_get_level" {
 # <level> <node> -> <next node>
 def "skip_list_node_get_next" {
     read_mem_i64 + # <next offset> <node>
-    + 16 * 8
+    + 24 * 8
 } ;
 
 # <level> <node> <next node> ->
 def "skip_list_node_set_next" {
     write_mem_i64 + # <next offset> <node> <next node>
-    + 16 * 8
+    + 24 * 8
 } ;
 
 # sentinel node layout:
-# [level][42][level 0 next][level 1 next] ...
+# [level][42][13][level 0 next][level 1 next] ...
 
 # <level> -> <node>
 def "create_sentinel_node" {
+    keep { write_mem_i64 swap 13 + 16 }
     keep { write_mem_i64 swap 42 + 8 }
     keep { write_mem_i64 } # <node> <level>
-    debug "create_sentinel_node after calloc"
-    calloc + 16 * 8 + 1 dup
+    calloc + 24 * 8 + 1 dup
 } ;
 
 # skip list layout
@@ -113,7 +119,9 @@ def "debug_print_skip_list_node" {
     . skip_list_node_get_level dup 
     print_string ", level: "
     . skip_list_node_get_value dup
-    print_string "{ value: "
+    print_string ", value: "
+    . skip_list_node_get_key dup
+    print_string "{ key: "
 } ;
 
 # <skip list> -> 
@@ -170,42 +178,42 @@ def "skip_list_update_level_if_less_than" {
 
 def "is_neg" { > 0 } ;
 
-# <level> <node> <value> -> <bool> <node>
+# <level> <node> <key> -> <bool> <node>
 def "skip_list_node_skip_one_less_than" {
     if { = 0 dup } {
         false 0 2drop
     } {
-        if { is_neg compare_list_values skip_list_node_get_value over swap } {
+        if { is_neg compare_list_values skip_list_node_get_key over swap } {
             true
         } {
             false
         }
     }
-    # <next node> <value>
+    # <next node> <key>
     skip_list_node_get_next
 } ;
 
-# <level> <node> <value> -> <node>
+# <level> <node> <key> -> <node>
 def "skip_list_node_skip_all_less_than" {
     dip { 2drop }
     while { } {
-        keep { drop if { } { swap } { } } # <bool> <node> <prev node> <level> <value>
+        keep { drop if { } { swap } { } } # <bool> <node> <prev node> <level> <key>
         skip_list_node_skip_one_less_than swap 3dup
-    } true # <node> <level> <value>
+    } true # <node> <level> <key>
     swap
 } ;
 
-# <level> <node for insert> <new value node> ->
+# <level> <node for insert> <new node> ->
 def "skip_list_node_insert_on_level" {
     if { <= over skip_list_node_get_level pick 3 } {
-        skip_list_node_set_next # <level> <node for i> <value node>
+        skip_list_node_set_next # <level> <node for i> <new node>
         debug "skip_list_node_insert_on_level in if"
-        skip_list_node_set_next # <level> <value node> <prev next node> ...
+        skip_list_node_set_next # <level> <new node> <prev next node> ...
         keep { swap skip_list_node_get_next } 3dup
     } { 3drop }
 } ;
 
-# <skip list> <value> -> 
+# <skip list> <key> <value> -> 
 def "skip_list_insert" {
     3drop
     while { <= 0 dup } {
@@ -213,7 +221,7 @@ def "skip_list_insert" {
         skip_list_node_insert_on_level 3dup # <level> <node for insert> <value node>
         debug "skip_list_insert after skip all"
         keep { skip_list_node_skip_all_less_than } # <level> <node> <value> <value node>
-        2dip { skip_list_node_get_value dup }
+        2dip { skip_list_node_get_key dup }
     }
     # <list level> <s node> <value node>
     skip_list_node_get_level dup
@@ -223,13 +231,10 @@ def "skip_list_insert" {
 } ;
 
 constant "test_list" skip_list_create ;
-#skip_list_insert test_list 1 ; 
-#skip_list_insert test_list 2 ; 
-#skip_list_insert test_list 3 ; 
+#skip_list_insert test_list 1 2 ; 
 #debug_print_skip_list test_list ;
-#skip_list_insert test_list 4 ; 
 do_n_times 10 {
-    skip_list_insert test_list % swap 100 random_int32  
+    skip_list_insert test_list % swap 100 random_int32 666 
 } ;
 debug_print_skip_list test_list ;
 .s ;
