@@ -162,6 +162,11 @@ def "keep" {
     dip swap over # <func> <value>
 } ;
 
+# <func> <a> <b> ... -> <a> <b> ....
+def "2keep" {
+    2dip dip { 2dup }
+} ;
+
 # <syscall ret value> -> <syscall ret value>
 def "panic_on_syscall_error" {
     if {
