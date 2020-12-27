@@ -274,15 +274,9 @@ def "skip_list_insert" {
     dip { skip_list_node_create }
 } ;
 
-# <skip list> <key> -> <bool> <value>
-def "skip_list_find" {
-    if { lazy_and { = 0 compare_list_values skip_list_node_get_key over } not = 0 over } {
-        true skip_list_node_get_value
-    } {
-        false
-    }
-    # <key> <node>
-    swap skip_list_node_get_next 0 drop
+# <skip list> <key> -> <node>
+def "skip_list_find_node_before_key" {
+    drop swap drop # <level> <node> <key>
     while { <= 0 dup } {
         + -1
         keep { skip_list_node_skip_all_less_than } # <level> <node> <key> <key>
@@ -292,14 +286,44 @@ def "skip_list_find" {
     skip_list_get_sentinel_node
 } ;
 
+# <skip list> <key> -> <bool> <value>
+def "skip_list_find" {
+    if { lazy_and { = 0 compare_list_values skip_list_node_get_key over } not = 0 over } {
+        true skip_list_node_get_value
+    } {
+        false
+    }
+    # <key> <node>
+    swap skip_list_node_get_next 0
+    # <node> <key>
+    skip_list_find_node_before_key dip { dup }
+} ;
+
+# <skip list> <key> ->
+def "skip_list_remove" {
+    skip_list_update_level_after_delete 3drop
+    while { <= 0 dup } {
+        + -1
+        skip_list_node_delete_next_if_next_key_is_equal_to 3dup # <level> <node> <key> ...
+        keep { skip_list_node_skip_all_less_than } # <level> <node> <key> <key> ...
+        2dip { dup }
+    }
+    # <level> <s node> <key> <list>
+    skip_list_node_get_level dup
+    skip_list_get_sentinel_node # <list> <key> <list>
+    over swap
+} ;
+
 constant "test_list" skip_list_create ;
+
 skip_list_insert test_list 1 2 ; 
 skip_list_insert test_list 1 2 ; 
 skip_list_insert test_list 1 2 ; 
 skip_list_insert test_list 3 6 ; 
 skip_list_insert test_list 1 2 ; 
 skip_list_insert test_list 1 2 ; 
-skip_list_insert test_list 1 2 ; 
+skip_list_insert test_list 1 4 ; 
+skip_list_remove test_list 1 ; 
 print_newline . print_string " "  print_bool skip_list_find test_list 1 print_string "found value: "
 #debug_print_skip_list test_list ;
 #do_n_times 10 {
@@ -307,4 +331,5 @@ print_newline . print_string " "  print_bool skip_list_find test_list 1 print_st
 #} ;
 debug_print_skip_list test_list ;
 .s ;
+
 exit 0 ;
