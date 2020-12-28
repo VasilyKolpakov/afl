@@ -9,6 +9,7 @@ def "rng_int32" {
 
 constant "num_iterations" 1000 ;
 
+print_newline . allocator_get_current_bytes_allocated print_string "before test: " ;
 do_n_times num_iterations {
     #debug "malloc result"
     if {
@@ -29,12 +30,14 @@ do_n_times num_iterations {
     free_checked
 } ;
 
+print_newline . allocator_get_current_bytes_allocated print_string "after simple malloc test: " ;
 malloc 4096 ;
 do_n_times num_iterations {
     realloc swap
         + 8 % swap 10000 rng_int32
 } ;
 free ;
+print_newline . allocator_get_current_bytes_allocated print_string "after realloc test: " ;
 
 # this test allocates N buffers and reallocates them to random sizes
 # every buffer is initialised with it's index in every byte
@@ -46,6 +49,7 @@ free ;
 
 constant "N" 100 ;
 constant "buffer_array" malloc * 16 N ;
+print_newline . allocator_get_current_bytes_allocated print_string "after buffer array alloc: " ;
 # <buffer> <size> <index>
 def "put_buffer_to_array" {
     write_mem_i64 swap # <buffer> <buffer cell>
@@ -128,15 +132,29 @@ def "realloc_nth_buffer" {
     buffer_array_get_buffer dup
 } ;
 
+print_newline . allocator_get_current_bytes_allocated print_string "before randomized realloc test: " ;
+
 init_buffer_array ;
+print_newline . allocator_get_current_bytes_allocated print_string "after buffer array init: " ;
 check_all_buffers ;
 
 do_n_times 100 {
-    .s
     check_all_buffers
     realloc_nth_buffer % rng_int32 N
 } ;
 
+print_newline . allocator_get_current_bytes_allocated print_string "after reallocs: " ;
+drop 
+while { > N dup } {
+    + 1
+    free buffer_array_get_buffer dup
+} 0 ;
+
+print_newline . allocator_get_current_bytes_allocated print_string "after free: " ;
+free buffer_array ;
+print_newline . allocator_get_current_bytes_allocated print_string "end: " ;
+
+.s ;
 print_string "OK\n" ;
 
 exit 0 ;

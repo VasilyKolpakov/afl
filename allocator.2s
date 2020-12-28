@@ -24,6 +24,28 @@ block_allocator_init over 16
 block_allocator_init over 8
 allocator_array ;
 
+constant "allocator_stats" syscall_mmap_anon 4096 ;
+
+# -> <number>
+def "allocator_get_current_bytes_allocated" {
+    read_mem_i64 allocator_stats
+} ;
+
+# <number> ->
+def "allocator_set_current_bytes_allocated" {
+    write_mem_i64 allocator_stats
+} ;
+
+# <number> ->
+def "allocator_increment_current_bytes_allocated" {
+    allocator_set_current_bytes_allocated + allocator_get_current_bytes_allocated
+} ;
+
+# <number> ->
+def "allocator_decrement_current_bytes_allocated" {
+    allocator_set_current_bytes_allocated - allocator_get_current_bytes_allocated
+} ;
+
 # <size> -> <aligned size>
 def "allocator_align_to_page_size" {
     * 4096 + 1 / swap 4096 + -1
@@ -49,7 +71,7 @@ def "allocator_free_large_block" {
     if { = 16 % swap 4096 dup } {
         if { = -1 read_mem_i64 dup } {
             = 0 # syscall error code
-            syscall_munmap swap + 4096 # unmap data and the guard page <size> <addr (header)>
+            syscall_munmap swap + 4096 # unmap data and the guard page # <size> <addr (header)>
             read_mem_i64 + 8 dup # <addr (header)>
         } {
             false drop # bad page header
@@ -85,8 +107,19 @@ def "allocator_realloc_large_block" {
     rot dup allocator_align_to_page_size + 16 swap
 } ;
 
+# <addr> -> <size>
+def "allocator_get_actual_size" {
+    if { = -1 dup } {
+        + -16 read_mem_i64 + -8 drop # <-1> <addr>
+    } {
+        block_allocator_get_block_size drop swap # <blk alloc> <addr>
+    }
+    block_allocator_get_allocator_for_block dup
+} ;
+
 # <min size> -> <actual size> <addr>
 def "malloc_actual_size" {
+    allocator_increment_current_bytes_allocated dup
     if { not = -1  block_allocator_get_block_size dup } {
         block_allocator_get_block_size swap # <block> <allocator>
         block_allocator_allocate dup # <allocator>
@@ -118,12 +151,13 @@ def "free_checked" {
                 >= + * 8 block_allocator_instance_size allocator_array dup # <allocator> <addr> 
         } {
             #debug "free after block_allocator_free"
-            block_allocator_free
+            block_allocator_free # <addr>
             #debug "free before block_allocator_free"
         } { false 2drop } # bad allocator address
     } # <allocator> <addr>
     #debug "free after get_allocator"
     block_allocator_get_allocator_for_block dup
+    allocator_decrement_current_bytes_allocated allocator_get_actual_size dup
 } ;
 
 # <addr> ->
@@ -134,6 +168,7 @@ def "free" {
 
 # <addr> <new size> -> <actual size> <addr>
 def "realloc_actual_size" {
+    allocator_increment_current_bytes_allocated dup
     if { not } { exit 1 print_string "unable to realloc memory" } { }
     if { = -1 dup } {
         allocator_realloc_large_block drop # <-1> <addr> <new size>
@@ -144,11 +179,13 @@ def "realloc_actual_size" {
         memcopy r@ over swap r> # <min size> <new actual size>
         min over swap # <new actual size> <old size>
         >r swap # <new actual size> <new addr> <old size>
+        allocator_decrement_current_bytes_allocated dup # to avoid double counting # <new actual size> ...
         malloc_actual_size swap # <old size> <new size> 
         >r swap # <old size> <addr> <new size>
         block_allocator_get_block_size
     } # <allocator> <addr> <new size>
     block_allocator_get_allocator_for_block dup
+    allocator_decrement_current_bytes_allocated allocator_get_actual_size dup
 } ;
 
 # <addr> <new size> -> <addr>
