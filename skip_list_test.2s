@@ -1,0 +1,181 @@
+# import allocator.2s
+# import skip_list.2s
+
+# action layout
+# [action type][key][value]
+# insert action
+# [0][key][value]
+# remove action
+# [1][key][0]
+
+
+constant "action_count" 400 ;
+constant "action_size" 24 ;
+constant "max_key" 100 ;
+
+constant "rng_instance" malloc random_instance_size ;
+random_init rng_instance 10 ;
+
+constant "action_array" malloc * action_size action_count ;
+
+
+# <addr> <type> <key> <value>
+def "init_action" {
+    write_mem_i64 + 16
+    keep { write_mem_i64 + 8 }
+    keep { write_mem_i64 }
+} ;
+
+def "action_is_insert" {
+     = 0 read_mem_i64
+} ;
+
+def "action_get_key" {
+     read_mem_i64 + 8
+} ;
+
+def "action_get_value" {
+     read_mem_i64 + 16
+} ;
+
+def "rng_int32" {
+    random_next_int rng_instance
+} ;
+
+def "random_key" {
+    % rng_int32 + 1 max_key
+} ;
+
+def "random_value" {
+    % rng_int32 20
+} ;
+
+# <addr> ->
+def "init_random_action" {
+    if { = 0 % rng_int32 2 } {
+        # insert action
+        init_action dip { 0 random_key random_value }
+    } {
+        # remove action
+        init_action dip { 1 random_key -1 }
+    }
+} ;
+
+def "print_action" {
+    if { action_is_insert dup } {
+        print_string ")"
+        . action_get_value
+        print_string ", "
+        . action_get_key dup
+        print_string "insert("
+    } {
+        print_string ")"
+        . action_get_key
+        print_string "delete("
+    }
+} ;
+
+# <index> -> <action>
+def "get_action_by_index" {
+    + action_array * action_size 
+} ;
+
+def "print_action_array" {
+    drop
+    while { > action_count dup } {
+        + 1
+        print_newline
+        print_action get_action_by_index dup 
+    } 0
+} ;
+
+# <key> -> <bool> <value>
+def "last_value_for_key" {
+    2drop
+    while { <= 0 dup } {
+        + -1
+        if { = action_get_key get_action_by_index 2dup } { 
+            if { action_is_insert dup } {
+                -1 0 true action_get_value
+            } {
+                -1 0 false 0 drop
+            }
+            get_action_by_index
+            dip { 3drop } # <index> <key> <bool> <value>
+        } { }
+    } # <index> <key> <bool> <value>
+    - action_count 1 dip { false 0 }
+} ;
+
+def "init_actions" {
+    drop
+    while { > action_count dup } {
+        + 1
+        init_random_action + action_array * action_size dup
+    } 0
+} ;
+
+print_newline . print_string "before test: " allocator_get_current_bytes_allocated ;
+constant "test_list" skip_list_create ;
+
+def "test_all_keys" {
+    drop
+    while { >= max_key dup } {
+        + 1
+        if { not = 2dup } {
+            exit 1
+            .s skip_list_find test_list 0
+            print_action_array
+            debug_print_skip_list test_list
+            print_newline . 2drop 2drop print_string "wrong result for key: "
+            debug "====== stack ====="
+        } {
+            if { } {
+                if { not = } {
+                    exit 1
+                    print_newline . print_string "wrong result for key: "
+                } { } # bools are true case
+            } {
+                2drop # <expected val> <actual val> # bools are false case
+            }
+            drop
+        }
+        # <expected bool> <actual bool> <expected value> <actual value> <key>
+        dip { swap } # <expected bool> <expected value> <actual bool> <actual value> <key>
+        2dip { skip_list_find test_list dup } # <expected bool> <expected value> <key>
+        last_value_for_key dup
+    } 0
+} ;
+
+def "apply_actions" {
+    drop
+    while { > action_count dup } {
+        + 1
+        if { action_is_insert dup } {
+            skip_list_insert test_list bi { action_get_key } { action_get_value }
+        } {
+            skip_list_remove test_list action_get_key
+        } # <action> <index>
+        get_action_by_index dup
+    } 0
+} ;
+
+debug_print_skip_list test_list ;
+skip_list_clear test_list ;
+
+do_n_times 1000 {
+    skip_list_clear test_list
+    test_all_keys
+    apply_actions 
+    #print_action_array
+    init_actions 
+} ;
+
+debug_print_skip_list test_list ;
+skip_list_destroy test_list ;
+
+print_newline . allocator_get_current_bytes_allocated print_string "after test: " ;
+.s ;
+
+print_string "OK\n" ;
+exit 0 ;

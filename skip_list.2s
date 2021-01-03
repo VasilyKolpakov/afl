@@ -14,15 +14,7 @@ def "print_mem" {
 
 # <left> <right> -> <ordering>
 def "compare_list_values" {
-    if { > 2dup } {
-        2drop 1
-    } { 
-        if { < } {
-            -1
-        } {
-            0
-        }
-    }
+    -
 } ;
 
 # <bool func> <bool> -> <bool>
@@ -38,17 +30,11 @@ def "calloc" {
     malloc dup
 } ;
 
-constant "rng_instance" syscall_mmap_anon 4096 ;
-random_init rng_instance 120 ;
-
-def "random_bool" {
-    = 0 % swap 2 random_next_int rng_instance
-} ;
-
-def "random_int32" { random_next_int rng_instance } ;
+constant "skip_list_rng_instance" syscall_mmap_anon 4096 ;
+random_init skip_list_rng_instance 120 ;
 
 def "skip_list_random_level" {
-    while { random_bool } { + 1 } 0
+    while { = 0 % swap 2 random_next_int rng_instance } { + 1 } 0
 } ;
 
 # skip list node layout:
@@ -288,10 +274,10 @@ def "skip_list_find_node_before_key" {
 
 # <skip list> <key> -> <bool> <value>
 def "skip_list_find" {
-    if { lazy_and { = 0 compare_list_values skip_list_node_get_key over } not = 0 over } {
-        true skip_list_node_get_value
+    if { lazy_and { = 0 compare_list_values skip_list_node_get_key swap 2dup } not = 0 over } {
+        true skip_list_node_get_value drop
     } {
-        false
+        false drop
     }
     # <key> <node>
     swap skip_list_node_get_next 0
@@ -314,22 +300,24 @@ def "skip_list_remove" {
     over swap
 } ;
 
-constant "test_list" skip_list_create ;
+# <skip list> ->
+def "skip_list_clear" {
+    drop
+    while { not = 0 dup } {
+        dip { free }
+        skip_list_node_get_next 0 dup
+    }
+    # <first node>
+    dip { skip_list_node_set_next 0 swap 0 } # <first node> <s node>
+    skip_list_node_get_next 0 dup # <s node>
+    skip_list_get_sentinel_node
+    skip_list_set_max_level swap 0 dup
+} ;
 
-skip_list_insert test_list 1 2 ; 
-skip_list_insert test_list 1 2 ; 
-skip_list_insert test_list 1 2 ; 
-skip_list_insert test_list 3 6 ; 
-skip_list_insert test_list 1 2 ; 
-skip_list_insert test_list 1 2 ; 
-skip_list_insert test_list 1 4 ; 
-skip_list_remove test_list 1 ; 
-print_newline . print_string " "  print_bool skip_list_find test_list 1 print_string "found value: "
-#debug_print_skip_list test_list ;
-#do_n_times 10 {
-    #skip_list_insert test_list % swap 100 random_int32 666 
-#} ;
-debug_print_skip_list test_list ;
-.s ;
+# <skip list> ->
+def "skip_list_destroy" {
+    free
+    keep { free skip_list_get_sentinel_node }
+    keep { skip_list_clear }
+} ;
 
-exit 0 ;

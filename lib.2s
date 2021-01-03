@@ -106,6 +106,8 @@ def "align_mem_size" {
     * 8 / swap 8 + 7
 } ;
 
+constant "random_instance_size" 8 ;
+
 # <seed> -> <scrambled seed>
 def "random_initial_scramble" {
     bit_and
@@ -122,7 +124,7 @@ def "random_next_seed" {
 
 # <address> <seed> ->
 def "random_init" {
-    write_mem_i64 swap random_initial_scramble swap
+    write_mem_i64 dip { random_initial_scramble }
 } ;
 
 # <address> -> <number>
