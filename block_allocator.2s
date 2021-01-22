@@ -153,11 +153,12 @@ def "block_allocator_allocate" {
 
 # <block> -> <bool>
 def "block_allocator_free" {
-    if { dup block_allocator_check_bitset dup } {
-        block_allocator_update_bitset swap false
-        block_allocator_set_pointer_to_freelist r> dup # <block> <bool>
-        block_allocator_block_set_next_block swap
-            block_allocator_get_pointer_to_freelist r@ dup # <block> <bool>
-        >r block_allocator_get_allocator_for_block dup swap # <bool> <block>
-    } { }
+    if { block_allocator_check_bitset dup } {
+        true
+        block_allocator_update_bitset swap false # <block>
+        block_allocator_set_pointer_to_freelist r> dup # <block>
+        block_allocator_block_set_next_block swap # <free list> <block> <block>
+            block_allocator_get_pointer_to_freelist r@ dup # <block>
+        >r block_allocator_get_allocator_for_block dup # <block>
+    } { false drop }
 }
