@@ -68,6 +68,19 @@ def "bitset_contains" {
     bitset_bit_address
 } ;
 
+# <bool func> <bool> -> <bool>
+def "lazy_and" {
+    if { not } {
+        false
+    }
+} ;
+
+# <size> -> <buffer>
+def "calloc" {
+    memzero over swap # <buffer> <size>
+    malloc dup
+} ;
+
 # <address> <n> ->
 def "memzero" {
     2drop
@@ -140,12 +153,17 @@ def "random_next_int" {
 # <func f> <func g> <value a> -> ...
 # remove args from stack, push a, apply g, push a, apply f
 def "bi" {
-    drop r>
-    drop r>
-    drop r>
-    call r_pick 3 r@
-    call r_pick 2 r@
-    >r >r >r
+    call dip { keep }
+} ;
+
+# <func f> <func g> <a> <b> -> .... apply g to b then apply f to a
+def "bi*" {
+    call dip { dip }
+} ;
+
+# <func f> <a> <b> -> .... apply f to b then apply f to a
+def "bi@" {
+    bi* dup
 } ;
 
 def "dip" {
@@ -176,6 +194,18 @@ def "panic_on_syscall_error" {
             < -4096 r@
             > 0 r@
         >r dup
-    } { exit 1 stacktrace.print_return_stack_except_n_slots 2 print_newline . * -1 print_string "syscall error: " } { }
+    } { exit 1 stacktrace_print_return_stack_except_n_slots 2 print_newline . * -1 print_string "syscall error: " } { }
+} ;
+
+# <msg> <bool> ->
+def "assert" {
+    if { not swap } {
+        exit 1
+        stacktrace_print_return_stack_except_n_slots 2
+        print_string "Stacktrace:\n"
+        print_newline
+        print_string
+        print_string "failed assertion: "
+    } { drop }
 } ;
 

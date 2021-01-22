@@ -17,19 +17,6 @@ def "compare_list_values" {
     -
 } ;
 
-# <bool func> <bool> -> <bool>
-def "lazy_and" {
-    if { not } {
-        false
-    }
-} ;
-
-# <size> -> <buffer>
-def "calloc" {
-    memzero over swap # <buffer> <size>
-    malloc dup
-} ;
-
 constant "skip_list_rng_instance" syscall_mmap_anon 4096 ;
 random_init skip_list_rng_instance 120 ;
 

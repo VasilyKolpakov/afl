@@ -1,5 +1,5 @@
 # import syscalls.2s
-def "def_list" { 
+def "stacktrace_def_list" { 
     read_mem_i64 the_dictionary
 } ;
 
@@ -48,8 +48,8 @@ def "stacktrace_get_func_first_pointer" {
 # <i pointer> -> <func name or "#?#">
 def "stacktrace_print_func_name_by_instruction_pointer" {
     if { not = 0 dup } {
-        . print_string ": " print_string stacktrace_dict_record_name # <record> <i pointer>
-    } {  . print_string "?: " drop }
+        drop print_string stacktrace_dict_record_name # <record> <i pointer>
+    } {  drop print_string "?" drop }
     while {
         cond_end
         cond_default { false }
@@ -61,7 +61,7 @@ def "stacktrace_print_func_name_by_instruction_pointer" {
     } {
         stacktrace_dict_record_next
     } # <record> <i pointer>
-    def_list
+    stacktrace_def_list
 } ;
 
 def "print_all_function_names_and_addresses" {
@@ -79,12 +79,12 @@ def "print_all_function_names_and_addresses" {
             print_string "name: "
         } { }
     }
-    def_list
+    stacktrace_def_list
 } ;
 
 
 # <skip return stack slots> ->
-def "stacktrace.print_return_stack_except_n_slots" {
+def "stacktrace_print_return_stack_except_n_slots" {
     drop
     while { > + -11 return_stack_depth dup } {
         + 1
@@ -94,7 +94,7 @@ def "stacktrace.print_return_stack_except_n_slots" {
 
 write_mem_i64 sigsegv_handler_pointer {
     exit 1
-    stacktrace.print_return_stack_except_n_slots 1
+    stacktrace_print_return_stack_except_n_slots 1
     print_newline stacktrace_print_func_name_by_instruction_pointer # instruction pointer value at the moment of sigsegv is saven on top of the data stack
     print_string "Stacktrace:\n"
     print_string "\n=========== Segmentation fault\n"

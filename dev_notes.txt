@@ -248,22 +248,24 @@
         + realloc in large block allocator
     + realloc test with mem checks
     + recursion
-    - skip list
-        - set
-        - set with custom comparator
-        - sorted map over set
+    + skip list
+    + array list
+    - stack effect inference for programs without recursive functions
+    - disassembler
+        - minifier, only required functions
+    - rewrite the interpreter in 2s
+        - RPN
+        - modules
     - type inference
         # type stack
     - conservative GC
         # requires b+tree to support functions (and all other not-pointing-to-the-first-byte structures)
-    - factor combinators
     - decompiler
         # anon functions in dictionary
         # function size suffix
+    - profiler
     - debugger
     - rewrite def function in 2s for better error logging
-  - статическая проверка операций с return стеком
-  - статическая проверка типов, вывод stack effect
     - optional args
 
   - интерпретатор лиспа
@@ -287,7 +289,7 @@ not unrgent, maybe important:
   - i_peek_ret_stack: check for non-positive arg
 
 
-Разное
+Misc.:
 
 'if' function is terrible
 
@@ -295,8 +297,9 @@ Problems:
 
 - "/", "%", "-" arg order, often needs a swap (debugging: + 7 min)
 
-идеи:
+ideas:
 
+- fix sig handler: call sigreturn
 - b+tree
 - pretty-printing code: optimized SSA; arg and return value names (define words with names?)
 - siginfo contains address that caused segfault
@@ -310,8 +313,6 @@ Problems:
 - cond functions are possible in static typing (cond1, cond2, cond3 ...)
 - named type args
 - compile to wasm
-- capture function (for function concatinaiton function and constant defs)
-    # takes n values from stack and creates an anonymous function thap puts these values on stack
 - types: (number, bool)
 - test harness in 2s (instead of bash)
 - literal arrays with commas
@@ -320,7 +321,6 @@ Problems:
 - named stack vars, print stack states for functions
 - stack allocation, frame pointer
 - function pointer indirection for JIT
-- использовать late-binding чтобы работала рекурсия
 - оставлять тексты определение функций в словаре для late-binding
 - tail-call optimisation
   - все функции линейные, нет control flow
@@ -330,70 +330,3 @@ Problems:
 - sigsegv handler for stack guard
 - set_type function
 
-
-linux syscall args [ %rdi, %rsi, %rdx, %r10, %r8, %r9 ]
-
-
-// <number> -> <number>
-def "i64_str_size" {
-
-}
-// <number> <buffer> <buffer_size>
-def "i64_to_str" {
-
-}
-
-
-// atoi function
-// <char index> <number> <buffer> <string size>
-
-str_char(n, string) - n-th char
-
-str_size "123"      | 3
-str_char "123" 1    | '2'
-
-def "atoi" {
-    drop swap
-    drop swap
-    if {
-        =
-            45
-            str_char 0 dup-n 2
-        } { * -1 } { }
-    drop
-    while {
-        not or
-                =
-                    dup-n 3 // char index
-                    dup-n 5 // string size
-                or
-                    < 57
-                    swap
-                    > 48
-                    dup str_char dup-n 2 dup-n 3
-    } {
-        + 1 // increment index
-        swap
-        +
-            -
-                str_char dup-n 4 dup-n 5
-                48
-            * 10
-        swap
-    }
-    0 0
-    if {
-        =
-            45
-            str_char dup-n 2 dup-n 3
-        } { + 1 } { }
-
-} ;
-
-// <string>
-def "atoi-fun" {
-    fold_left { + * 10 }
-    map { - '0' }
-    take_while { and >= '0' swap <= '9' dup }
-    string_to_vec
-} ;
