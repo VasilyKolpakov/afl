@@ -194,7 +194,7 @@ def "panic_on_syscall_error" {
             < -4096 r@
             > 0 r@
         >r dup
-    } { exit 1 stacktrace_print_return_stack_except_n_slots 2 print_newline . * -1 print_string "syscall error: " } { }
+    } { exit 1 stacktrace_print_return_stack_except_n_slots 2 print_newline . * -1 print_string "syscall error: " dup } { }
 } ;
 
 # <msg> <bool> ->

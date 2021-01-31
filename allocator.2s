@@ -137,9 +137,6 @@ def "malloc_actual_size" {
     allocator_array 
 } ;
 
-# <size> -> <addr>
-def "malloc" { drop malloc_actual_size } ;
-
 # <addr> -> <bool>
 def "free_checked" {
     if { = -1 dup } {
@@ -153,17 +150,11 @@ def "free_checked" {
             #debug "free after block_allocator_free"
             block_allocator_free # <addr>
             #debug "free before block_allocator_free"
-        } { false 2drop } # bad allocator address
+        } { false drop } # bad allocator address
     } # <allocator> <addr>
     #debug "free after get_allocator"
     block_allocator_get_allocator_for_block dup
     allocator_decrement_current_bytes_allocated allocator_get_actual_size dup
-} ;
-
-# <addr> ->
-def "free" {
-    if { not } { exit 1 print_string "unable to free memory" } { }
-    free_checked
 } ;
 
 # <addr> <new size> -> <actual size> <addr>
@@ -188,6 +179,49 @@ def "realloc_actual_size" {
     allocator_decrement_current_bytes_allocated allocator_get_actual_size dup
 } ;
 
-# <addr> <new size> -> <addr>
-def "realloc" { drop realloc_actual_size } ;
+# use only large block allocator
+if { false } {
+    def "malloc" {
+        drop allocator_alloc_large_block
+    }
 
+    def "free" {
+        drop allocator_free_large_block
+    }
+
+    def "realloc" {
+        2drop allocator_realloc_large_block
+    }
+} {
+    # <addr> <new size> -> <addr>
+    def "realloc" { drop realloc_actual_size }
+
+    # <addr> ->
+    def "free" {
+        if { not } { exit 1 print_string "unable to free memory" } { }
+        free_checked
+    }
+
+    # <size> -> <addr>
+    def "malloc" { drop malloc_actual_size }
+} ;
+
+# <addr> -> <bool>
+def "is_not_freed" {
+    if { = -1 } {
+        true drop # large block allocator
+    } {
+        block_allocator_check_bitset
+    } # <allocator> <addr>
+    block_allocator_get_allocator_for_block dup
+} ;
+
+def "assert_not_free" {
+    assert "address was not freed" is_not_freed
+} ;
+
+# add instrumentation
+#rename_word "write_mem_i64" "allocator_temp_write_mem_i64" ;
+#def "write_mem_i64" {
+#    allocator_temp_write_mem_i64 assert_not_free dup
+#} ;

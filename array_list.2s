@@ -1,0 +1,119 @@
+# import allocator.2s
+
+# array list layout
+# [size][capacity][array pointer]
+constant "array_list_struct_size" * 3 8 ;
+
+# -> <list> # capacity = 10
+def "array_list_new" {
+    keep { write_mem_i64 + 16 swap malloc * 10 8 }
+    keep { write_mem_i64 + 8 swap 10 }
+    keep { write_mem_i64 swap 0 }
+    malloc * 3 8
+} ;
+
+def "array_list_get_size" { read_mem_i64 } ;
+# <list> <size> ->
+def "array_list_set_size" { write_mem_i64 } ;
+
+def "array_list_get_capacity" { read_mem_i64 + 8 } ;
+
+# <list> <cap> ->
+def "array_list_set_capacity" { write_mem_i64 + 8 } ;
+
+def "array_list_get_array" { read_mem_i64 + 16 } ;
+
+# <list> <array> ->
+def "array_list_set_array" { write_mem_i64 + 16 } ;
+
+# <list> ->
+def "array_list_print" {
+    print_string "]"
+    3drop
+    while { > 2dup } {
+        dip { + 1 }
+        if { = + -1 2dup } { } {
+            print_string ", "
+        }
+        dip { . read_mem_i64 + * 8 2dup }
+    }
+    # <size> <index> <array>
+    swap 0 
+    print_string "["
+    bi { array_list_get_size } { array_list_get_array }
+} ;
+
+# <list> <cap> ->
+def "array_list_ensure_capacity" {
+    if { < array_list_get_capacity 2dup } {
+        array_list_set_array # <list> <new array>
+        keep { realloc array_list_get_array dip { * 8 } }
+        array_list_set_capacity 2dup # <list> <cap>
+        keep {
+            drop swap
+            while { <= 2dup } { * 2 }
+            # <old cap> <new cap>
+            array_list_get_capacity
+        }
+    } { 2drop }
+    #print_newline . print_string ", new cap: " . array_list_get_capacity print_string "old cap: " 2dup
+} ;
+
+# <list> <value> ->
+def "array_list_append" {
+    bi { array_list_set_size } { + 1 array_list_get_size }
+    keep {
+        write_mem_i64 + # <value offset> <array> <value>
+        bi { * 8 array_list_get_size } { array_list_get_array }
+    }
+    if { = bi { array_list_get_capacity } { array_list_get_size } dup } {
+        bi { array_list_ensure_capacity } { + 1 array_list_get_capacity } dup
+    } { }
+} ;
+
+# <list> -> <value>
+def "array_list_pop_last" {
+    read_mem_i64 + bi { * 8 array_list_get_size } { array_list_get_array }
+    bi { array_list_set_size } { + -1 array_list_get_size } dup
+    assert "non-empty array_list" < 0 array_list_get_size dup
+} ;
+
+# <list> <index> -> <value>
+def "array_list_get" {
+    read_mem_i64 + array_list_get_array dip { * 8 }
+    assert "array_list_get out of range" <= 0 over
+    assert "array_list_get out of range" > array_list_get_size 2dup
+} ;
+
+# <list> -> <value>
+def "array_list_get_last" {
+    bi { array_list_get } { + -1 array_list_get_size }
+    assert "non-empty array_list" < 0 array_list_get_size dup
+} ;
+
+# same as get(size - 1 - index)
+# <list> <index> -> <value>
+def "array_list_peek" {
+    bi { array_list_get } { - + -1 array_list_get_size }
+    assert "non-empty array_list" < 0 array_list_get_size dup
+} ;
+
+# <list src> <pointer to new list struct> ->
+def "array_list_clone_to" {
+    array_list_set_array
+    keep { memcopy -rot bi { * 8 array_list_get_size } { array_list_get_array } } # <new list> <new array> <new array>
+    keep { dup malloc * 8 array_list_get_capacity }
+    keep { memcopy -rot array_list_struct_size swap }
+    swap
+} ;
+
+# <list> -> <list copy>
+def "array_list_clone" {
+    keep { array_list_clone_to swap }
+    malloc array_list_struct_size
+} ;
+
+def "array_list_destroy" {
+    free keep { free array_list_get_array }
+} ;
+

@@ -1,0 +1,28 @@
+# import array_list.2s
+
+constant "test_list" array_list_new ;
+drop while { > 100 dup } {
+    + 1
+    array_list_append test_list dup
+} 0 ;
+
+constant "test_list_copy" array_list_clone test_list ;
+array_list_append test_list 44 ;
+array_list_print test_list ;
+print_newline ;
+drop .s array_list_pop_last test_list ;
+print_newline array_list_print test_list ;
+print_newline . array_list_get test_list 0 ;
+print_newline . array_list_get test_list 99 ;
+print_newline . array_list_get_last test_list ;
+drop .s array_list_peek test_list 1 ;
+drop .s array_list_peek test_list 0 ;
+drop .s array_list_pop_last test_list ;
+drop .s array_list_pop_last test_list ;
+drop .s array_list_pop_last test_list ;
+drop .s array_list_pop_last test_list ;
+array_list_append test_list 666 ;
+print_newline array_list_print test_list ;
+print_newline array_list_print test_list_copy ;
+array_list_destroy test_list ;
+exit 0 ;

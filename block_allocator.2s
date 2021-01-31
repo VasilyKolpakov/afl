@@ -161,4 +161,4 @@ def "block_allocator_free" {
             block_allocator_get_pointer_to_freelist r@ dup # <block>
         >r block_allocator_get_allocator_for_block dup # <block>
     } { false drop }
-}
+} ;

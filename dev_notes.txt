@@ -250,30 +250,27 @@
     + recursion
     + skip list
     + array list
-    - stack effect inference for programs without recursive functions
-    - disassembler
-        - minifier, only required functions
+    + stack effect inference for programs without recursive functions
+    - check all functions for stack effect inconsistency
+        - make stack effect checker usable
+            + show function name on inconsistency error
+            - print stack effect (in count, out count)
     - rewrite the interpreter in 2s
         - RPN
         - modules
+        - typed IR (functions, strings)
     - type inference
         # type stack
-    - conservative GC
-        # requires b+tree to support functions (and all other not-pointing-to-the-first-byte structures)
-    - decompiler
-        # anon functions in dictionary
-        # function size suffix
-    - profiler
-    - debugger
-    - rewrite def function in 2s for better error logging
-    - optional args
-
-  - интерпретатор лиспа
-    - компиляция в виртуальную машину форта
-  - оптимизирующий компилятор лиспа (SSA, coloring, lambda calculus?)
-    - сначала написать ассемблер
-    - jit
-
+    - non-optimising bytecode compiler
+        - assembly target
+    - non-optimising native compiler
+        - template-based
+        - assembly target
+    - optimising native compiler
+        - SSA
+        - coloring
+        - assembly target
+        - x86 target
 
 API:
     - malloc n
@@ -299,6 +296,9 @@ Problems:
 
 ideas:
 
+- profiler
+- debugger
+- rewrite def function in 2s for better error logging
 - fix sig handler: call sigreturn
 - b+tree
 - pretty-printing code: optimized SSA; arg and return value names (define words with names?)
