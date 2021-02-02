@@ -251,14 +251,14 @@
     + skip list
     + array list
     + stack effect inference for programs without recursive functions
-    - check all functions for stack effect inconsistency
-        - make stack effect checker usable
-            + show function name on inconsistency error
-            - print stack effect (in count, out count)
+    + make stack effect checker usable
+        + show function name on inconsistency error
+        + print stack effect (in count, out count)
+            + pick max used vals 
     - rewrite the interpreter in 2s
-        - RPN
-        - modules
         - typed IR (functions, strings)
+        - modules
+    - RPN
     - type inference
         # type stack
     - non-optimising bytecode compiler
@@ -296,6 +296,8 @@ Problems:
 
 ideas:
 
+- checkpointing
+    - "COW", all references are replaced with handles, every check is an array of all handles
 - profiler
 - debugger
 - rewrite def function in 2s for better error logging
