@@ -7,4 +7,4 @@ function cat_imports {
     cut -f 2 |                              # remove line numbers
     xargs cat /dev/null                     # cat all files
 }
-(cat_imports $1 ; cat $1) | ./run_boot.sh 
+(cat_imports $1 ; cat $1; cat) | ./run_boot.sh 

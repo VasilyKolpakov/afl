@@ -178,6 +178,10 @@ def "2dip" {
     >r swap >r swap # <func> <value to keep 1> <value to keep 2>
 } ;
 
+def "3dip" {
+    dip { 2dip } swap
+} ;
+
 def "keep" {
     dip swap over # <func> <value>
 } ;

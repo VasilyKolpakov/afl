@@ -38,3 +38,8 @@ def "syscall_mprotect" {
         >r >r >r
 } ;
 
+# <fd> <buffer> <count> -> <error code>
+def "syscall_read" {
+    syscall 0 3dip { 1 2 3 }
+} ;
+

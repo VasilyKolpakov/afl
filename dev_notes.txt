@@ -256,6 +256,8 @@
         + print stack effect (in count, out count)
             + pick max used vals 
     - rewrite the interpreter in 2s
+        + byte_vector
+        - buffered stdin
         - typed IR (functions, strings)
         - modules
     - RPN
