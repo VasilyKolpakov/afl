@@ -21,6 +21,9 @@ rename_word "^" "bit_xor";
 rename_word "|" "bit_or";
 rename_word "&" "bit_and";
 
+rename_word "c+" "checked_add";
+rename_word "c*" "checked_mul";
+
 rename_word "nl" "print_newline" ;
 rename_word "p" "print_string" ;
 rename_word ".b" "print_bool" ;
@@ -36,21 +39,6 @@ rename_word "rr" "-rot" ;
 rename_word "dr" "drop" ;
 rename_word "o" "over" ;
 
-def "2drop" { drop drop } ;
-def "3drop" { drop drop drop } ;
-
-def "3dup" { 
-    pick 3
-    pick 3
-    pick 3
-} ;
-
-def "4dup" { 
-    pick 4
-    pick 4
-    pick 4
-    pick 4
-} ;
 
 
 rename_word "rd" "return_stack_depth" ;
@@ -71,16 +59,3 @@ rename_word "ca" "func_capture" ; # <value> -> <func that puts value on the stac
 
 rename_word "hp" "sigsegv_handler_pointer"
 
-# <name> <value> ->
-def "constant" {
-    def swap func_capture swap
-} ;
-
-constant "return_instruction_code" read_mem_i64 { } ;
-
-# <string> ->
-def "debug" {
-    print_newline .s print_newline print_string print_newline
-} ;
-
-def "exit" { drop syscall 60 r> 1 2 3 4 5 >r } ;

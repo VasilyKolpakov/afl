@@ -257,7 +257,14 @@
             + pick max used vals 
     - rewrite the interpreter in 2s
         + byte_vector
-        - buffered stdin
+        + buffered stdin
+        + number parsing
+            + overflow check, checked mul\add
+                + checked_add
+                + checked_mul
+        - tokenizer
+            - raw tokens
+            - literal chars
         - typed IR (functions, strings)
         - modules
     - RPN
@@ -298,6 +305,8 @@ Problems:
 
 ideas:
 
+- local defs, vars, constants
+    - local var stack?
 - checkpointing
     - "COW", all references are replaced with handles, every check is an array of all handles
 - profiler

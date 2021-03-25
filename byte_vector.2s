@@ -1,0 +1,94 @@
+# import lib.2s
+
+constant "byte_vector_struct_size" * 3 8 ;
+
+# -> <list> # capacity = 16
+def "byte_vector_new" {
+    keep { write_mem_i64 + 16 swap malloc 16 }
+    keep { write_mem_i64 + 8 swap 16 }
+    keep { write_mem_i64 swap 0 }
+    malloc byte_vector_struct_size
+} ;
+
+def "byte_vector_get_size" { read_mem_i64 } ;
+# <list> <size> ->
+def "byte_vector_set_size" { write_mem_i64 } ;
+
+def "byte_vector_get_capacity" { read_mem_i64 + 8 } ;
+
+# <list> <cap> ->
+def "byte_vector_set_capacity" { write_mem_i64 + 8 } ;
+
+def "byte_vector_get_array" { read_mem_i64 + 16 } ;
+
+# <list> <array> ->
+def "byte_vector_set_array" { write_mem_i64 + 16 } ;
+
+# <list> ->
+def "byte_vector_print" {
+    print_string "]"
+    3drop
+    while { > 2dup } {
+        dip { + 1 }
+        if { = + -1 2dup } { } {
+            print_string ", "
+        }
+        dip { . byte_vector_get swap 2dup }
+    }
+    # <size> <index> <array>
+    swap 0 
+    print_string "["
+    bi { byte_vector_get_size } { byte_vector_get_array }
+} ;
+
+# <list> <cap> ->
+def "byte_vector_ensure_capacity" {
+    if { < byte_vector_get_capacity 2dup } {
+        byte_vector_set_array # <list> <new array>
+        keep { realloc byte_vector_get_array }
+        byte_vector_set_capacity 2dup # <list> <cap>
+        keep {
+            drop swap
+            while { <= 2dup } { * 2 }
+            # <old cap> <new cap>
+            byte_vector_get_capacity
+        }
+    } { 2drop }
+    #print_newline . print_string ", new cap: " . byte_vector_get_capacity print_string "old cap: " 2dup
+} ;
+
+# <list> <value> ->
+def "byte_vector_append" {
+    bi { byte_vector_set_size } { + 1 byte_vector_get_size }
+    keep {
+        write_mem_byte + # <value offset> <array> <value>
+        bi { byte_vector_get_size } { byte_vector_get_array }
+    }
+    if { = bi { byte_vector_get_capacity } { byte_vector_get_size } dup } {
+        bi { byte_vector_ensure_capacity } { + 1 byte_vector_get_capacity } dup
+    } { }
+} ;
+
+# <list> <value> ->
+def "byte_vector_append_i64" {
+    bi { byte_vector_set_size } { + 8 byte_vector_get_size }
+    keep {
+        write_mem_i64 + # <value offset> <array> <value>
+        bi { byte_vector_get_size } { byte_vector_get_array }
+    }
+    if { = bi { byte_vector_get_capacity } { byte_vector_get_size } dup } {
+        bi { byte_vector_ensure_capacity } { + 8 byte_vector_get_capacity } dup
+    } { }
+} ;
+
+# <list> <index> -> <value>
+def "byte_vector_get" {
+    read_mem_byte + byte_vector_get_array
+    assert "byte_vector_get out of range" <= 0 over
+    assert "byte_vector_get out of range" > byte_vector_get_size 2dup
+} ;
+
+def "byte_vector_destroy" {
+    free keep { free byte_vector_get_array }
+} ;
+

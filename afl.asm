@@ -127,6 +127,22 @@ i_mul:
         mov         [r12 - 8], rax
         jmp iloop
 
+; <number> <number> -> <bool> <number>
+i_checked_mul:
+        drop_data_stack 2
+        mov         rax,  [r12 + 8*1]       ; number
+        mov         rdi,  [r12 + 8*0]       ; number
+        add         r12, 16
+        imul        rax, rdi
+        jo i_checked_add_overflow
+        mov QWORD   [r12 - 8], 1
+        mov         [r12 - 16], rax
+        jmp iloop
+i_checked_mul_overflow:
+        mov QWORD   [r12 - 8], 0
+        mov         [r12 - 16], rax
+        jmp iloop
+
 ; <a> <b> -> <a / b>
 i_div:
         drop_data_stack 2
@@ -157,6 +173,22 @@ i_add:
         add         r12, 8
         add         rax, rdi
         mov         [r12 - 8], rax
+        jmp iloop
+
+; <number> <number> -> <bool> <number>
+i_checked_add:
+        drop_data_stack 2
+        mov         rax,  [r12 + 8*1]       ; number
+        mov         rdi,  [r12 + 8*0]       ; number
+        add         r12, 16
+        add         rax, rdi
+        jo i_checked_add_overflow
+        mov QWORD   [r12 - 8], 1
+        mov         [r12 - 16], rax
+        jmp iloop
+i_checked_add_overflow:
+        mov QWORD   [r12 - 8], 0
+        mov         [r12 - 16], rax
         jmp iloop
 
 ; <a> <b> -> <a - b>
@@ -2474,7 +2506,9 @@ f_tests: equ     $-8
 
 
                     def_instruction_word '+', i_add
+                    def_instruction_word_2 'c', '+', i_checked_add
                     def_instruction_word '*', i_mul
+                    def_instruction_word_2 'c', '*', i_checked_mul
                     def_instruction_word '-', i_sub
                     def_instruction_word '/', i_div
                     def_instruction_word '%', i_mod

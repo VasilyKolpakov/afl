@@ -1,0 +1,157 @@
+# import lib.2s
+# import buffered_stdin.2s
+# import byte_vector.2s
+# import stack_effect.2s
+
+# <str 1> <str 2> -> <bool>
+def "string_equal" {
+    lazy_and {
+        dip { 0 }
+        byte_vector_get_size dup
+    }
+    = bi@ { byte_vector_get_size } 2dup
+} ;
+
+def "print_char_ord" {
+    print_newline
+    . read_mem_byte read_mem_i64 + 16
+    print_string "' is " print_string dup print_string "char '"
+} ;
+
+print_char_ord ";" ;
+print_char_ord " " ;
+print_char_ord "{" ;
+print_char_ord "}" ;
+print_char_ord "\t" ;
+print_char_ord "\n" ;
+
+def "skip_whitespace" {
+    drop
+    while { lazy_or { lazy_or { = 9 dup } = 10 dup } = 32 dup } {
+        buffered_stdin_peek_byte
+        drop buffered_stdin_read_byte drop
+    }
+    buffered_stdin_peek_byte
+} ;
+
+# -> <token string>
+def "read_token" {
+    drop swap
+    while { not lazy_or { lazy_or { = 9 over } = 10 over } = 32 over } {
+        dip { buffered_stdin_peek_byte }
+        drop buffered_stdin_read_byte
+        keep { byte_vector_append }
+    }
+    byte_vector_new
+    buffered_stdin_peek_byte
+    skip_whitespace
+} ;
+
+# <size> <pointer 1> <pointer 2> -> <-1 or 0 or 1>
+def "memcmp" {
+    dip { 2drop } drop
+    while { and bi* { < 0 } { = 0 } 2dup } { # while size > 0 and result = 0
+        + -1 2dip { bi@ { + 1 } } # advance pointers and decrement size
+        dip {
+            compare_i64 bi@ { read_mem_byte } 2dup
+            drop
+        }
+    }
+    # <size> <cmp result> <p1> <p2>
+    dip { 0 }
+} ;
+
+# <str 1> <str 2> -> <bool>
+def "string_equals" {
+    if { = bi@ { byte_vector_get_size } 2dup } {
+        = 0 memcmp
+        dip { bi@ { byte_vector_get_array } }
+        byte_vector_get_size dup
+    } { false 2drop }
+} ;
+
+# token layout
+# [type id] [value]
+# types:
+# 0 - {{ 
+# 1 - }} 
+# 2 - {
+# 3 - }
+# 4 - string literal, value is string
+# 5 - char literal, value is byte
+# 6 - word or i64 literal, value is string
+# 7 - ;
+
+# <expr type id> <value> -> <token>
+def "token_create" {
+    keep { write_mem_i64 + 8 }
+    keep { write_mem_i64 }
+    malloc * 2 8
+} ;
+ 
+# <expr> -> <token type id>
+def "token_get_type_id" {
+    read_mem_i64
+} ;
+
+# <expr> -> <value>
+def "token_get_value" {
+    read_mem_i64 + 8
+} ;
+
+# <token> ->
+def "token_print" {
+    cond_end
+    cond_default { assert "bad token type" false 2drop }
+    cond_when { = 7 dup } { print_string "semicolon" 2drop }
+    cond_when { = 6 dup } { print_string "'" print_string token_get_value print_string "word or i64 literal: '" drop }
+    cond_when { = 5 dup } { print_string "'" write_byte_to_stdout token_get_value print_string "char literal: '" drop }
+    cond_when { = 4 dup } { print_string "'" print_string token_get_value print_string "string literal: '" drop }
+    cond_when { = 3 dup } { print_string "close paren" 2drop }
+    cond_when { = 2 dup } { print_string "open paren" 2drop }
+    cond_when { = 1 dup } { print_string "double close paren" 2drop }
+    cond_when { = 0 dup } { print_string "double open paren" 2drop }
+    cond_start
+    token_get_type_id dup
+} ;
+
+# expression layout
+# [type id] [value]
+# types:
+# 0 - quoted expressions {{ }}, value is expression list
+# 1 - anon function { }, value is expression list
+# 2 - i64 literal, value is i64
+# 3 - string literal, value is string
+# 4 - char literal, value is byte
+# 5 - word, value is string
+
+# <expr type id> <value> -> <expression>
+def "expression_create" {
+    keep { write_mem_i64 + 8 }
+    keep { write_mem_i64 }
+    malloc * 2 8
+} ;
+ 
+# <expr> -> <token type id>
+def "expression_get_type_id" {
+    read_mem_i64
+} ;
+
+# <expr> -> <value>
+def "expression_get_value" {
+    read_mem_i64 + 8
+} ;
+
+se_check_last_defined_function ;
+# <token> ->
+def "expression_print" {
+    cond_end
+    cond_default { assert "bad expression type" false 2drop }
+    cond_when { = 5 dup } { print_string expression_get_value drop }
+    cond_start
+    expression_get_type_id dup
+} ;
+
+token_print token_create 7 0 ;
+
+exit 0 ;

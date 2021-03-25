@@ -6,8 +6,7 @@ constant "buffered_stdin_buffer" malloc buffered_stdin_buffer_size ;
 constant "buffered_stdin_struct_size" * 2 8 ;
 constant "buffered_stdin_struct" malloc buffered_stdin_struct_size ;
 
-
-# pos points to next available byte or (exclusive) is equal to cap, cap points to next unavailable byte
+# pos points to the next available byte or (exclusive) is equal to cap, cap points to the next unavailable byte
 
 def "buffered_stdin_pos" {
     read_mem_i64 buffered_stdin_struct
@@ -40,14 +39,15 @@ def "buffered_stdin_ensure_next_byte_availability" {
     assert "stdin buffer invariant 0 <= pos" <= 0 buffered_stdin_pos
 } ;
 
+
 # -> <byte>
-def "buffered_stdin_read_byte" {
-    buffered_stdin_set_pos + 1 buffered_stdin_pos
+def "buffered_stdin_peek_byte" {
     read_mem_byte + buffered_stdin_pos buffered_stdin_buffer
     buffered_stdin_ensure_next_byte_availability
 } ;
 
-
-while { true } {
-    write_byte_to_stdout buffered_stdin_read_byte
+# -> <byte>
+def "buffered_stdin_read_byte" {
+    buffered_stdin_set_pos + 1 buffered_stdin_pos
+    buffered_stdin_peek_byte
 } ;

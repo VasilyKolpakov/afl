@@ -1,0 +1,94 @@
+# <name> <value> ->
+def "constant" {
+    def swap func_capture swap
+} ;
+
+constant "return_instruction_code" read_mem_i64 { } ;
+
+# <string> ->
+def "debug" {
+    print_newline .s print_newline print_string print_newline
+} ;
+
+def "exit" { drop syscall 60 r> 1 2 3 4 5 >r } ;
+
+def "2drop" { drop drop } ;
+def "3drop" { drop drop drop } ;
+
+def "3dup" { 
+    pick 3
+    pick 3
+    pick 3
+} ;
+
+def "4dup" { 
+    pick 4
+    pick 4
+    pick 4
+    pick 4
+} ;
+
+# <func f> <func g> <value a> -> ...
+# remove args from stack, push a, apply g, push a, apply f
+def "bi" {
+    call dip { keep }
+} ;
+
+# <func f> <func g> <a> <b> -> .... apply g to b then apply f to a
+def "bi*" {
+    call dip { dip }
+} ;
+
+# <func f> <a> <b> -> .... apply f to b then apply f to a
+def "bi@" {
+    bi* dup
+} ;
+
+def "dip" {
+    r>
+    call
+    >r swap # <func> <value to keep>
+} ;
+
+def "2dip" {
+    r> r>
+    call
+    >r swap >r swap # <func> <value to keep 1> <value to keep 2>
+} ;
+
+def "3dip" {
+    dip { 2dip } swap
+} ;
+
+def "keep" {
+    dip swap over # <func> <value>
+} ;
+
+# <func> <a> <b> ... -> <a> <b> ....
+def "2keep" {
+    2dip dip { 2dup }
+} ;
+
+def "3keep" {
+    3dip dip { 3dup }
+} ;
+
+# <bool func> <bool> -> <bool>
+def "lazy_and" {
+    if { not } {
+        false
+    }
+} ;
+
+# <bool> <func> -> <bool>
+def "lazy_or" {
+    if { } { true }
+} ;
+
+def "compare_i64" {
+    if { < 2dup } {
+        -1 2drop
+    } {
+        if { = } { 0 } { 1 }
+    }
+} ;

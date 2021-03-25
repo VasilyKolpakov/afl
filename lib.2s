@@ -1,3 +1,4 @@
+# import core_lib.2s
 # import syscalls.2s
 # import stacktrace.2s
 # <n> <function>
@@ -66,13 +67,6 @@ def "bitset_contains" {
     bit_lshift 1 swap   # <byte> <bit n>
     read_mem_byte swap  # <bit n> <byte address>
     bitset_bit_address
-} ;
-
-# <bool func> <bool> -> <bool>
-def "lazy_and" {
-    if { not } {
-        false
-    }
 } ;
 
 # <size> -> <buffer>
@@ -148,47 +142,6 @@ def "random_next_int" {
     write_mem_i64 # <address> <next seed> <next seed>
     rot dup random_next_seed # <seed> <address>
     read_mem_i64 dup
-} ;
-
-# <func f> <func g> <value a> -> ...
-# remove args from stack, push a, apply g, push a, apply f
-def "bi" {
-    call dip { keep }
-} ;
-
-# <func f> <func g> <a> <b> -> .... apply g to b then apply f to a
-def "bi*" {
-    call dip { dip }
-} ;
-
-# <func f> <a> <b> -> .... apply f to b then apply f to a
-def "bi@" {
-    bi* dup
-} ;
-
-def "dip" {
-    r>
-    call
-    >r swap # <func> <value to keep>
-} ;
-
-def "2dip" {
-    r> r>
-    call
-    >r swap >r swap # <func> <value to keep 1> <value to keep 2>
-} ;
-
-def "3dip" {
-    dip { 2dip } swap
-} ;
-
-def "keep" {
-    dip swap over # <func> <value>
-} ;
-
-# <func> <a> <b> ... -> <a> <b> ....
-def "2keep" {
-    2dip dip { 2dup }
 } ;
 
 # <syscall ret value> -> <syscall ret value>

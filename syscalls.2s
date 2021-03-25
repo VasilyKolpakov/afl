@@ -1,3 +1,5 @@
+# import core_lib.2s
+
 constant "syscall_mmap_PROT_READ" 1 ;
 constant "syscall_mmap_PROT_WRITE" 2 ;
 constant "syscall_mmap_PROT_NONE" 0 ;
@@ -43,3 +45,7 @@ def "syscall_read" {
     syscall 0 3dip { 1 2 3 }
 } ;
 
+# <fd> <buffer> <count> -> <error code>
+def "syscall_write" {
+    syscall 1 3dip { 1 2 3 }
+} ;
