@@ -3,13 +3,72 @@
 # import byte_vector.2s
 # import stack_effect.2s
 
-# <str 1> <str 2> -> <bool>
-def "string_equal" {
-    lazy_and {
-        dip { 0 }
-        byte_vector_get_size dup
+# <size> <pointer 1> <pointer 2> -> <-1 or 0 or 1>
+def "memcmp" {
+    dip { 2drop } drop
+    while { and bi* { < 0 } { = 0 } 2dup } { # while size > 0 and result = 0
+        + -1 2dip { bi@ { + 1 } } # advance pointers and decrement size
+        dip {
+            compare_i64 bi@ { read_mem_byte } 2dup
+            drop
+        }
     }
-    = bi@ { byte_vector_get_size } 2dup
+    # <size> <cmp result> <p1> <p2>
+    dip { 0 }
+} ;
+
+# <str 1> <str 2> -> <bool>
+def "string_equals" {
+    if { = bi@ { byte_vector_get_size } 2dup } {
+        = 0 memcmp
+        dip { bi@ { byte_vector_get_array } }
+        byte_vector_get_size dup
+    } { false 2drop }
+} ;
+
+# <word name> -> <bool>
+def "is_word_exists" {
+    dip { drop } drop
+    while { lazy_and { not = 0 dup } not over } {
+        stacktrace_dict_record_next
+        keep { string_equals stacktrace_dict_record_name dip { dup } }
+        dip { drop }
+    }
+    stacktrace_def_list false
+} ;
+
+# <name> <func> ->
+def "shadow_def" {
+    write_mem_i64 the_dictionary
+    keep { write_mem_i64 + 16 dip { stacktrace_def_list } } # next
+    keep { write_mem_i64 } # name
+    keep { write_mem_i64 + 8 } # word_def
+    malloc 24
+    keep { write_mem_i64 + 8 dip { true } } # is_function = true
+    keep { write_mem_i64 }
+    malloc 16
+    swap
+} ;
+
+# <name> <func> ->
+shadow_def "def" {
+    debug "in def"
+    shadow_def
+    if { is_word_exists dup } {
+        exit 1
+        print_newline
+        print_string "' is already defined"
+        print_string dup
+        print_string "word '"
+    } { }
+    print_newline
+    print_string dup
+    print_string "defining "
+} ;
+
+# <name> <value> ->
+shadow_def "constant" {
+    def swap func_capture swap
 } ;
 
 def "print_char_ord" {
@@ -35,7 +94,7 @@ def "skip_whitespace" {
 } ;
 
 # -> <token string>
-def "read_token" {
+def "read_raw_token" {
     drop swap
     while { not lazy_or { lazy_or { = 9 over } = 10 over } = 32 over } {
         dip { buffered_stdin_peek_byte }
@@ -47,28 +106,6 @@ def "read_token" {
     skip_whitespace
 } ;
 
-# <size> <pointer 1> <pointer 2> -> <-1 or 0 or 1>
-def "memcmp" {
-    dip { 2drop } drop
-    while { and bi* { < 0 } { = 0 } 2dup } { # while size > 0 and result = 0
-        + -1 2dip { bi@ { + 1 } } # advance pointers and decrement size
-        dip {
-            compare_i64 bi@ { read_mem_byte } 2dup
-            drop
-        }
-    }
-    # <size> <cmp result> <p1> <p2>
-    dip { 0 }
-} ;
-
-# <str 1> <str 2> -> <bool>
-def "string_equals" {
-    if { = bi@ { byte_vector_get_size } 2dup } {
-        = 0 memcmp
-        dip { bi@ { byte_vector_get_array } }
-        byte_vector_get_size dup
-    } { false 2drop }
-} ;
 
 # token layout
 # [type id] [value]
@@ -115,6 +152,24 @@ def "token_print" {
     token_get_type_id dup
 } ;
 
+def "scanner_peek" {
+    buffered_stdin_peek_byte
+} ;
+
+def "scanner_advance" {
+    drop buffered_stdin_read_byte
+} ;
+
+def "char" {
+    byte_vector_get dip { 0 }
+} ;
+
+# -> <token>
+def "read_next_token" {
+    if { = scanner_peek }
+    skip_whitespace
+} ;
+
 # expression layout
 # [type id] [value]
 # types:
@@ -125,12 +180,15 @@ def "token_print" {
 # 4 - char literal, value is byte
 # 5 - word, value is string
 
+print_newline . return_stack_depth print_string "ret stack depth: " ;
+
 # <expr type id> <value> -> <expression>
 def "expression_create" {
     keep { write_mem_i64 + 8 }
     keep { write_mem_i64 }
     malloc * 2 8
 } ;
+
  
 # <expr> -> <token type id>
 def "expression_get_type_id" {
@@ -142,7 +200,9 @@ def "expression_get_value" {
     read_mem_i64 + 8
 } ;
 
+
 se_check_last_defined_function ;
+
 # <token> ->
 def "expression_print" {
     cond_end
@@ -152,6 +212,11 @@ def "expression_print" {
     expression_get_type_id dup
 } ;
 
-token_print token_create 7 0 ;
 
+print_string "after\n" ;
+
+token_print token_create 7 0 ;
+print_newline . char " " ;
+print_newline . char "\t" ;
+print_newline . char "\n" ;
 exit 0 ;

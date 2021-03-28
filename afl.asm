@@ -699,8 +699,7 @@ f_default_sigsegv_handler: equ     $-8
 
 ; <bool function> <true function> <false function>
 ; if function
-        dq          i_return,
-        dq          i_indirect_call
+        dq          i_indirect_jmp
         dq          i_value_if
         dq          i_drop, i_pop_from_ret_stack                ; drop bool f
         dq          i_pop_from_ret_stack                        ; true f
@@ -1637,20 +1636,16 @@ f_dictionary_find_record__equal_zero: equ     $-8
         dq          i_return
         dq          i_drop, i_swap
 f_dictionary_find_record__case_zero: equ     $-8
-        dq          i_return
-        dq          call(f_if), val(f_dictionary_find_record__if_names_are_equal), val(f_dictionary_find_record__case_zero), val(f_dictionary_find_record__case_names_are_not_equal)
+        dq          f_if, i_jmp, val(f_dictionary_find_record__if_names_are_equal), val(f_dictionary_find_record__case_zero), val(f_dictionary_find_record__case_names_are_not_equal)
 f_dictionary_find_record__case_non_zero: equ     $-8
-        dq          i_return
-        dq          call(f_byte_vector_equals)
+        dq          f_byte_vector_equals, i_jmp
         dq          call(f_dictionary_record_name)
         dq          i_2dup
 f_dictionary_find_record__if_names_are_equal: equ     $-8
-        dq          i_return
-        dq          call(f_dictionary_find_record)
+        dq          f_dictionary_find_record, i_jmp
         dq          call(f_dictionary_record_next)
 f_dictionary_find_record__case_names_are_not_equal: equ     $-8
-        dq          i_return
-        dq          call(f_if), val(f_dictionary_find_record__equal_zero)
+        dq          f_if, i_jmp, val(f_dictionary_find_record__equal_zero)
         dq          val(f_dictionary_find_record__case_zero), val(f_dictionary_find_record__case_non_zero)
 f_dictionary_find_record: equ     $-8
 
