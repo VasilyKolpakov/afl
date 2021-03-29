@@ -1,0 +1,5 @@
+def "when" { func_compose { if } func_compose func_capture } ;
+
+def "then" { func_compose func_capture } ;
+
+def "otherwise" { func_capture } ;
