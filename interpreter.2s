@@ -2,6 +2,7 @@
 # import buffered_stdin.2s
 # import byte_vector.2s
 # import stack_effect.2s
+# import switch_stmt.2s
 
 # <size> <pointer 1> <pointer 2> -> <-1 or 0 or 1>
 def "memcmp" {
@@ -27,7 +28,7 @@ def "string_equals" {
 } ;
 
 # <word name> -> <bool>
-def "is_word_exists" {
+def "does_word_exist" {
     dip { drop } drop
     while { lazy_and { not = 0 dup } not over } {
         stacktrace_dict_record_next
@@ -52,18 +53,14 @@ def "shadow_def" {
 
 # <name> <func> ->
 shadow_def "def" {
-    debug "in def"
     shadow_def
-    if { is_word_exists dup } {
+    if { does_word_exist dup } {
         exit 1
         print_newline
         print_string "' is already defined"
         print_string dup
         print_string "word '"
     } { }
-    print_newline
-    print_string dup
-    print_string "defining "
 } ;
 
 # <name> <value> ->
@@ -77,34 +74,33 @@ def "print_char_ord" {
     print_string "' is " print_string dup print_string "char '"
 } ;
 
-print_char_ord ";" ;
-print_char_ord " " ;
-print_char_ord "{" ;
-print_char_ord "}" ;
-print_char_ord "\t" ;
-print_char_ord "\n" ;
-
-def "skip_whitespace" {
-    drop
-    while { lazy_or { lazy_or { = 9 dup } = 10 dup } = 32 dup } {
-        buffered_stdin_peek_byte
-        drop buffered_stdin_read_byte drop
-    }
-    buffered_stdin_peek_byte
+def "string_first_char" {
+    byte_vector_get dip { 0 }
 } ;
 
-# -> <token string>
-def "read_raw_token" {
+constant "open_bracket_char" string_first_char "{" ;
+constant "close_bracket_char" string_first_char "}" ;
+constant "semicolon_char" string_first_char ";" ;
+constant "space_char" string_first_char " " ;
+constant "tab_char" string_first_char "\t" ;
+constant "newline_char" string_first_char "\n" ;
+constant "double_quote_char" 34 ;
+constant "backslash_char" 92 ;
+
+# <char> -> <bool>
+def "is_whitespace_char" {
     drop swap
-    while { not lazy_or { lazy_or { = 9 over } = 10 over } = 32 over } {
-        dip { buffered_stdin_peek_byte }
-        drop buffered_stdin_read_byte
-        keep { byte_vector_append }
-    }
-    byte_vector_new
-    buffered_stdin_peek_byte
-    skip_whitespace
+    lazy_or { lazy_or { = space_char dup } = tab_char dup } = newline_char dup
 } ;
+def "skip_whitespace" {
+    while { is_whitespace_char } {
+        buffered_stdin_peek_byte
+        drop buffered_stdin_read_byte
+    }
+    buffered_stdin_peek_byte
+} ;
+
+se_check_last_defined_function ;
 
 
 # token layout
@@ -118,6 +114,15 @@ def "read_raw_token" {
 # 5 - char literal, value is byte
 # 6 - word or i64 literal, value is string
 # 7 - ;
+
+constant "token_double_open_bracket_type"   0 ;
+constant "token_double_close_bracket_type"  1 ;
+constant "token_open_bracket_type"          2 ;
+constant "token_close_bracket_type"         3 ;
+constant "token_string_literal_type"        4 ;
+constant "token_char_literal_type"          5 ;
+constant "token_word_or_i64_literal_type"   6 ;
+constant "token_semicolon_type"             7 ;
 
 # <expr type id> <value> -> <token>
 def "token_create" {
@@ -136,22 +141,25 @@ def "token_get_value" {
     read_mem_i64 + 8
 } ;
 
+def "token_print_switch"
+    when { = 7 dup } then { print_string "semicolon" 2drop } otherwise
+    when { = 6 dup } then { print_string "'" print_string token_get_value print_string "word or i64 literal: '" drop } otherwise
+    when { = 5 dup } then { print_string "'" write_byte_to_stdout token_get_value print_string "char literal: '" drop } otherwise
+    when { = 4 dup } then { print_string "'" print_string token_get_value print_string "string literal: '" drop } otherwise
+    when { = 3 dup } then { print_string "close paren" 2drop } otherwise
+    when { = 2 dup } then { print_string "open paren" 2drop } otherwise
+    when { = 1 dup } then { print_string "double close paren" 2drop } otherwise
+    when { = 0 dup } then { print_string "double open paren" 2drop } otherwise
+    { assert "bad token type" false 2drop }
+;
+
 # <token> ->
 def "token_print" {
-    cond_end
-    cond_default { assert "bad token type" false 2drop }
-    cond_when { = 7 dup } { print_string "semicolon" 2drop }
-    cond_when { = 6 dup } { print_string "'" print_string token_get_value print_string "word or i64 literal: '" drop }
-    cond_when { = 5 dup } { print_string "'" write_byte_to_stdout token_get_value print_string "char literal: '" drop }
-    cond_when { = 4 dup } { print_string "'" print_string token_get_value print_string "string literal: '" drop }
-    cond_when { = 3 dup } { print_string "close paren" 2drop }
-    cond_when { = 2 dup } { print_string "open paren" 2drop }
-    cond_when { = 1 dup } { print_string "double close paren" 2drop }
-    cond_when { = 0 dup } { print_string "double open paren" 2drop }
-    cond_start
+    token_print_switch
     token_get_type_id dup
 } ;
 
+se_check_last_defined_function ;
 def "scanner_peek" {
     buffered_stdin_peek_byte
 } ;
@@ -160,13 +168,30 @@ def "scanner_advance" {
     drop buffered_stdin_read_byte
 } ;
 
-def "char" {
-    byte_vector_get dip { 0 }
+# -> <token>
+def "read_next_token_open_bracket" {
+    if { = open_bracket_char dup } {
+        read_next_token_double_open_bracket drop
+    } {
+        if { is_whitespace_char dup } {
+            token_create token_open_bracket_type 0 drop
+        } {
+            read_next_token_
+        }
+    }
+    scanner_peek scanner_advance
 } ;
+
+# <char> -> <token> # scanner on the char's position
+def "read_next_token_switch"
+    when { = open_bracket_char dup } then { drop } otherwise
+    { drop }
+;
 
 # -> <token>
 def "read_next_token" {
-    if { = scanner_peek }
+    if { = open_bracket_char scanner_peek } 
+    if { = close_bracket_char dup } 
     skip_whitespace
 } ;
 
@@ -179,8 +204,6 @@ def "read_next_token" {
 # 3 - string literal, value is string
 # 4 - char literal, value is byte
 # 5 - word, value is string
-
-print_newline . return_stack_depth print_string "ret stack depth: " ;
 
 # <expr type id> <value> -> <expression>
 def "expression_create" {
@@ -213,10 +236,6 @@ def "expression_print" {
 } ;
 
 
-print_string "after\n" ;
 
 token_print token_create 7 0 ;
-print_newline . char " " ;
-print_newline . char "\t" ;
-print_newline . char "\n" ;
 exit 0 ;
