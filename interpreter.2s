@@ -242,10 +242,21 @@ def "read_next_token_close_bracket" {
     scanner_advance
 } ;
 
+# -> <token>
+def "read_next_token_semicolon" {
+    if { is_whitespace_char scanner_peek } {
+        token_create token_semicolon_type 0
+    } {
+        read_next_token_word_1 semicolon_char
+    }
+    scanner_advance
+} ;
+
 # -> <token> # scanner on the char's position
 def "read_next_token_switch"
     when { = open_bracket_char scanner_peek } then { read_next_token_open_bracket } otherwise
     when { = close_bracket_char scanner_peek } then { read_next_token_close_bracket } otherwise
+    when { = semicolon_char scanner_peek } then { read_next_token_semicolon } otherwise
     { read_next_token_word }
 ;
 
