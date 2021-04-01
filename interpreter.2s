@@ -100,8 +100,6 @@ def "skip_whitespace" {
     buffered_stdin_peek_byte
 } ;
 
-se_check_last_defined_function ;
-
 
 # token layout
 # [type id] [value]
@@ -150,7 +148,7 @@ def "token_print_switch"
     when { = 2 dup } then { print_string "open paren" 2drop } otherwise
     when { = 1 dup } then { print_string "double close paren" 2drop } otherwise
     when { = 0 dup } then { print_string "double open paren" 2drop } otherwise
-    { assert "bad token type" false 2drop }
+    { assert "bad token type" false 2drop . dup }
 ;
 
 # <token> ->
@@ -159,7 +157,6 @@ def "token_print" {
     token_get_type_id dup
 } ;
 
-se_check_last_defined_function ;
 def "scanner_peek" {
     buffered_stdin_peek_byte
 } ;
@@ -168,32 +165,96 @@ def "scanner_advance" {
     drop buffered_stdin_read_byte
 } ;
 
-# -> <token>
-def "read_next_token_open_bracket" {
-    if { = open_bracket_char dup } {
-        read_next_token_double_open_bracket drop
-    } {
-        if { is_whitespace_char dup } {
-            token_create token_open_bracket_type 0 drop
-        } {
-            read_next_token_
-        }
+# <string> -> <token>
+def "read_next_token_word_read_rest" {
+    token_create token_word_or_i64_literal_type
+    while { not is_whitespace_char scanner_peek } {
+        scanner_advance
+        keep { byte_vector_append dip { scanner_peek } } 
     }
-    scanner_peek scanner_advance
+} ;
+# -> <token> 
+def "read_next_token_word" {
+    read_next_token_word_read_rest
+    byte_vector_new
 } ;
 
-# <char> -> <token> # scanner on the char's position
+# <char> -> <token> # first char is the arg, scanner on next char's position
+def "read_next_token_word_1" {
+    read_next_token_word_read_rest
+    keep { byte_vector_append }
+    byte_vector_new
+} ;
+
+# <char> <char> -> <token> # first 2 chars are args, scanner on next char's position
+def "read_next_token_word_2" {
+    read_next_token_word_read_rest
+    keep { byte_vector_append }
+    keep { byte_vector_append }
+    byte_vector_new
+} ;
+
+# -> <token> # scanner on second bracket
+def "read_next_token_double_open_bracket" {
+    if { is_whitespace_char scanner_peek } {
+        token_create token_double_open_bracket_type 0
+    } {
+        read_next_token_word_2 open_bracket_char open_bracket_char
+    }
+    scanner_advance
+} ;
+
+# -> <token>
+def "read_next_token_open_bracket" {
+    if { = open_bracket_char scanner_peek } {
+        read_next_token_double_open_bracket
+    } {
+        if { is_whitespace_char scanner_peek } {
+            token_create token_open_bracket_type 0
+        } {
+            read_next_token_word_1 open_bracket_char
+        }
+    }
+    scanner_advance
+} ;
+
+# -> <token> # scanner on second bracket
+def "read_next_token_double_close_bracket" {
+    if { is_whitespace_char scanner_peek } {
+        token_create token_double_close_bracket_type 0
+    } {
+        read_next_token_word_2 close_bracket_char close_bracket_char
+    }
+    scanner_advance
+} ;
+
+# -> <token>
+def "read_next_token_close_bracket" {
+    if { = close_bracket_char scanner_peek } {
+        read_next_token_double_close_bracket
+    } {
+        if { is_whitespace_char scanner_peek } {
+            token_create token_close_bracket_type 0
+        } {
+            read_next_token_word_1 close_bracket_char
+        }
+    }
+    scanner_advance
+} ;
+
+# -> <token> # scanner on the char's position
 def "read_next_token_switch"
-    when { = open_bracket_char dup } then { drop } otherwise
-    { drop }
+    when { = open_bracket_char scanner_peek } then { read_next_token_open_bracket } otherwise
+    when { = close_bracket_char scanner_peek } then { read_next_token_close_bracket } otherwise
+    { read_next_token_word }
 ;
 
 # -> <token>
 def "read_next_token" {
-    if { = open_bracket_char scanner_peek } 
-    if { = close_bracket_char dup } 
+    read_next_token_switch
     skip_whitespace
 } ;
+se_check_last_defined_function ;
 
 # expression layout
 # [type id] [value]
@@ -224,8 +285,6 @@ def "expression_get_value" {
 } ;
 
 
-se_check_last_defined_function ;
-
 # <token> ->
 def "expression_print" {
     cond_end
@@ -235,7 +294,6 @@ def "expression_print" {
     expression_get_type_id dup
 } ;
 
-
-
-token_print token_create 7 0 ;
-exit 0 ;
+while { true } {
+    print_newline token_print read_next_token
+} ;
