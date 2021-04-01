@@ -85,6 +85,7 @@ constant "space_char" string_first_char " " ;
 constant "tab_char" string_first_char "\t" ;
 constant "newline_char" string_first_char "\n" ;
 constant "double_quote_char" 34 ;
+constant "single_quote_char" 39 ;
 constant "backslash_char" 92 ;
 
 # <char> -> <bool>
@@ -109,7 +110,7 @@ def "skip_whitespace" {
 # 2 - {
 # 3 - }
 # 4 - string literal, value is string
-# 5 - char literal, value is byte
+# 5 - char literal, value is string
 # 6 - word or i64 literal, value is string
 # 7 - ;
 
@@ -142,7 +143,7 @@ def "token_get_value" {
 def "token_print_switch"
     when { = 7 dup } then { print_string "semicolon" 2drop } otherwise
     when { = 6 dup } then { print_string "'" print_string token_get_value print_string "word or i64 literal: '" drop } otherwise
-    when { = 5 dup } then { print_string "'" write_byte_to_stdout token_get_value print_string "char literal: '" drop } otherwise
+    when { = 5 dup } then { print_string "'" print_string token_get_value print_string "char literal: '" drop } otherwise
     when { = 4 dup } then { print_string "'" print_string token_get_value print_string "string literal: '" drop } otherwise
     when { = 3 dup } then { print_string "close paren" 2drop } otherwise
     when { = 2 dup } then { print_string "open paren" 2drop } otherwise
@@ -252,11 +253,53 @@ def "read_next_token_semicolon" {
     scanner_advance
 } ;
 
+def "is_double_quote_or_newline" { or bi { = double_quote_char } { = newline_char } } ;
+
+# -> <token>
+def "read_next_token_double_quote" {
+    assert "whitespace after string literal" is_whitespace_char scanner_peek
+    token_create token_string_literal_type
+    scanner_advance
+    assert "no newline in string literals" not = newline_char scanner_peek
+    while { not is_double_quote_or_newline scanner_peek } {
+        scanner_advance
+        if { = backslash_char scanner_peek } {
+            keep { byte_vector_append dip { scanner_peek } } 
+            scanner_advance
+        } { }
+        keep { byte_vector_append dip { scanner_peek } } 
+    }
+    scanner_advance
+    byte_vector_new
+} ;
+
+def "is_single_quote_or_newline" { or bi { = single_quote_char } { = newline_char } } ;
+
+# -> <token>
+def "read_next_token_single_quote" {
+    assert "whitespace after char literal" is_whitespace_char scanner_peek
+    token_create token_char_literal_type
+    scanner_advance
+    assert "no newline in char literals" not = newline_char scanner_peek
+    while { not is_single_quote_or_newline scanner_peek } {
+        scanner_advance
+        if { = backslash_char scanner_peek } {
+            keep { byte_vector_append dip { scanner_peek } } 
+            scanner_advance
+        } { }
+        keep { byte_vector_append dip { scanner_peek } } 
+    }
+    scanner_advance
+    byte_vector_new
+} ;
+
 # -> <token> # scanner on the char's position
 def "read_next_token_switch"
     when { = open_bracket_char scanner_peek } then { read_next_token_open_bracket } otherwise
     when { = close_bracket_char scanner_peek } then { read_next_token_close_bracket } otherwise
     when { = semicolon_char scanner_peek } then { read_next_token_semicolon } otherwise
+    when { = double_quote_char scanner_peek } then { read_next_token_double_quote } otherwise
+    when { = single_quote_char scanner_peek } then { read_next_token_single_quote } otherwise
     { read_next_token_word }
 ;
 
@@ -304,7 +347,7 @@ def "expression_print" {
     cond_start
     expression_get_type_id dup
 } ;
-
+    
 while { true } {
     print_newline token_print read_next_token
 } ;
