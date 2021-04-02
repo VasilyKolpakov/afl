@@ -141,14 +141,14 @@ def "token_get_value" {
 } ;
 
 def "token_print_switch"
-    when { = 7 dup } then { print_string "semicolon" 2drop } otherwise
-    when { = 6 dup } then { print_string "'" print_string token_get_value print_string "word or i64 literal: '" drop } otherwise
-    when { = 5 dup } then { print_string "'" print_string token_get_value print_string "char literal: '" drop } otherwise
-    when { = 4 dup } then { print_string "'" print_string token_get_value print_string "string literal: '" drop } otherwise
-    when { = 3 dup } then { print_string "close paren" 2drop } otherwise
-    when { = 2 dup } then { print_string "open paren" 2drop } otherwise
-    when { = 1 dup } then { print_string "double close paren" 2drop } otherwise
-    when { = 0 dup } then { print_string "double open paren" 2drop } otherwise
+    when { = token_semicolon_type dup } then { print_string "semicolon" 2drop } otherwise
+    when { = token_word_or_i64_literal_type dup } then { print_string "'" print_string token_get_value print_string "word or i64 literal: '" drop } otherwise
+    when { = token_char_literal_type dup } then { print_string "'" print_string token_get_value print_string "char literal: '" drop } otherwise
+    when { = token_string_literal_type dup } then { print_string "'" print_string token_get_value print_string "string literal: '" drop } otherwise
+    when { = token_close_bracket_type dup } then { print_string "close paren" 2drop } otherwise
+    when { = token_open_bracket_type dup } then { print_string "open bracket" 2drop } otherwise
+    when { = token_double_close_bracket_type dup } then { print_string "double close bracket" 2drop } otherwise
+    when { = token_double_open_bracket_type dup } then { print_string "double open bracket" 2drop } otherwise
     { assert "bad token type" false 2drop . dup }
 ;
 
@@ -157,6 +157,31 @@ def "token_print" {
     token_print_switch
     token_get_type_id dup
 } ;
+
+def "token_destroy_switch"
+    when { = token_semicolon_type dup } then { free drop } otherwise
+    when { = token_word_or_i64_literal_type dup } then {
+        bi { free } { byte_vector_destroy token_get_value } drop
+    } otherwise
+    when { = token_char_literal_type dup } then {
+        bi { free } { byte_vector_destroy token_get_value } drop
+    } otherwise
+    when { = token_string_literal_type dup } then {
+        bi { free } { byte_vector_destroy token_get_value } drop
+    } otherwise
+    when { = token_close_bracket_type dup } then { free drop } otherwise
+    when { = token_open_bracket_type dup } then { free drop } otherwise
+    when { = token_double_close_bracket_type dup } then { free drop } otherwise
+    when { = token_double_open_bracket_type dup } then { free drop } otherwise
+    { assert "bad token type" false 2drop . dup }
+;
+
+# <token> ->
+def "token_destroy" {
+    token_destroy_switch
+    token_get_type_id dup
+} ;
+se_check_last_defined_function ;
 
 def "scanner_peek" {
     buffered_stdin_peek_byte
@@ -309,6 +334,8 @@ def "read_next_token" {
     skip_whitespace
 } ;
 se_check_last_defined_function ;
+
+
 
 # expression layout
 # [type id] [value]
