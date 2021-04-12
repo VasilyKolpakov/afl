@@ -439,6 +439,19 @@ i_indirect_call:
         mov         r14, rax                ; jump to callee
         jmp iloop
 
+i_late_bind_and_call_word:
+        bump_return_stack 1
+        mov         rax, [r14]              ; next word is a [dict, name] struct
+        sub         r14, 8                  ; move instruction pointer to the next instruction
+        mov         [r13 - 8], r14          ; save return pointer
+        bump_data_stack 2
+        mov         [r12 - 8*1], rax        ; write value to data stack
+        mov         r11, r14                ; save ip
+        add         r11, 16
+        mov         [r12 - 8*2], r11        ; write ip to data stack
+        mov         r14, f_late_bind_and_call_word ; jump to bind_and_call function
+        jmp iloop
+
 ; <a> <b> <true> -> <a>
 ; <a> <b> <false> -> <b>
 i_value_if:
@@ -1655,6 +1668,12 @@ f_dictionary_find_record: equ     $-8
 ;                    # panics if name is already taken
 ;                    # adds new record to the front of the list
         dq          i_return
+        dq          call(f_exit_0)
+        dq          call(f_print_panic)
+        dq          call(f_print_newline)
+        dq          call(f_print_byte_vector)
+f_dictionary_add__word_exists: equ     $-8
+        dq          i_return
         dq          i_equal, val(0), i_dup
 f_dictionary_add__equal_zero: equ     $-8
         dq          i_return
@@ -1664,7 +1683,7 @@ f_dictionary_add__equal_zero: equ     $-8
         dq          i_read_mem_i64, i_peek_ret_stack, val(1) ; <record pointer> <name> <word def>
         dq          i_push_to_ret_stack
         dq          i_rot ; <dict> <name> <word def>
-        dq          call(f_panic_if), val(f_id), i_not, i_equal, val(0) ; <name> <word def> <dict>
+        dq          call(f_if), val(f_id), val(f_dictionary_add__word_exists), val(f_id), i_not, i_equal, val(0) ; <name> <word def> <dict>
         dq          call(f_dictionary_find_record)  ; <found record pointer> <name> <word def> <dict>
         dq          i_swap, i_over  ; <record pointer> <name> <name> <word def> <dict>
         dq          i_read_mem_i64, i_dup_n, val(3)         ; <record pointer> <name> <word def> <dict>
@@ -1977,9 +1996,9 @@ f_read_and_compile_code__emit_instruction: equ     $-8
 f_read_and_compile_code__emit_word: equ     $-8
         dq          i_return
         dq          val(1) ; [scanner] [code vector] [dict]
-        dq          call(f_byte_vector_append_i64), i_swap, val(i_call), i_over  ; [scanner] [code vector] [dict]
-        dq          call(f_byte_vector_append_i64), i_dup_n, val(3) ; [func stub] [scanner] [code vector] [dict]
-        dq          call(f_create_function_stub), i_dup_n, val(4) ; [token] [scanner] [code vector] [dict]
+        dq          call(f_byte_vector_append_i64), i_swap, val(i_late_bind_and_call_word), i_over  ; [scanner] [code vector] [dict]
+        dq          call(f_byte_vector_append_i64), i_dup_n, val(3) ; [struct] [scanner] [code vector] [dict]
+        dq          call(f_create_struct_dict_string), i_dup_n, val(4) ; [token] [scanner] [code vector] [dict]
         dq          i_drop ; drop null pointer ; [null record] [token] [scanner] [code vector] [dict]
 f_read_and_compile_code__no_such_word_case: equ     $-8
         dq          i_return
@@ -2060,31 +2079,33 @@ f_read_and_compile_code_skip_to_semicolon: equ     $-8
 f_read_and_compile_code: equ     $-8
 
 
-; <dict> <token> -> <func>
+; <dict> <string> -> <struct>
+        dq          i_return
+        dq          i_pop_from_ret_stack
+        dq          i_write_mem_i64, i_add, val(8), i_peek_ret_stack_first ; [string]
+        dq          i_write_mem_i64, i_peek_ret_stack_first ; [dict] [string]
+        dq          i_push_to_ret_stack, call(f_malloc), val(16) ; [dict] [string]
+f_create_struct_dict_string: equ     $-8
+
         dq          call(f_exit), val(1) 
         dq          call(f_print_newline)
         dq          call(f_print_byte_vector)
         dq          call(f_byte_vector_destroy), call(f_print_byte_vector), i_dup, call(f_byte_vector_from_bytes), val(10), val('b'), val('a'), val('d'), val(' '), val('w'), val('o'), val('r'), val('d'), val(':'), val(' ')
         dq          i_drop ; drop null pointer ; <token>
-f_create_function_stub_no_such_word_case: equ     $-8
-        dq          i_return
-        dq          i_indirect_call ; [function pointer]
-        dq          i_write_mem_i64, i_add, val(8) ; [function call site - 16] [function pointer] [function pointer]
-        ; !!!!!!!!!!!!!!!!!! HACK !!!!!!!!!!!!!!!!!!!!!!
-        dq          i_push_to_ret_stack, i_swap, i_push_to_ret_stack, i_swap, i_push_to_ret_stack, i_dup, i_pop_from_ret_stack, i_pop_from_ret_stack, i_pop_from_ret_stack ; [function pointer] [function pointer]
-        dq          i_dup ; [function pointer]
-        dq          call(f_word_def_func_pointer_or_inst), call(f_dictionary_record_word_def); [record]
-        dq          call(f_byte_vector_destroy), i_swap ; [record] [token]
-        dq          call(f_if), val(f_id), val(f_create_function_stub_no_such_word_case), val(f_id) 
-        dq          i_equal, val(0), i_dup ; [found record] [token]
-        dq          call(f_dictionary_find_record), i_swap, i_over ; [record] [token]
-        dq          i_read_mem_i64 ; [dict] [token]
-f_create_function_stub_the_stub: equ     $-8
-        dq          i_return ; [func with dict and token]
-        dq          call(f_func_concat), i_swap, call(f_capture), i_swap ; [func with dict] [token]
-        dq          call(f_func_concat), val(f_create_function_stub_the_stub), call(f_capture) ; [dict] [token]
-f_create_function_stub: equ     $-8
-
+f_late_bind_and_call_word_no_such_word_case: equ     $-8
+; <struct <dict> <string>> <instruction pointer> -> ... 
+        dq          i_indirect_jmp; [func]
+        dq          i_write_mem_i64, i_add, val(-8) ; [ip] [func] [func]
+        dq          i_write_mem_i64, i_swap, val(i_call), i_dup ; [ip] [func] [func]
+        dq          i_rot, i_dup ; [func] [ip]
+        dq          call(f_word_def_func_pointer_or_inst), call(f_dictionary_record_word_def); [record] [ip]
+        dq          i_drop, i_swap ; [record] [token] [ip]
+        dq          call(f_if), val(f_id), val(f_late_bind_and_call_word_no_such_word_case), val(f_id), i_equal, val(0), i_dup ; [record] [token] [ip]
+        dq          call(f_dictionary_find_record), i_swap, i_over ; [record] [token] [ip]
+        dq          i_read_mem_i64 ; [dict] [string] [ip]
+        dq          i_read_mem_i64, i_swap ; [string] [struct] [ip]
+        dq          i_read_mem_i64, i_add, val(8), i_dup ; [struct] [ip]
+f_late_bind_and_call_word: equ     $-8
 
 ; main loop
 ; <scanner> <dict> ->
@@ -2117,11 +2138,17 @@ f_f_read_compile_run_loop__loop: equ     $-8
         dq          call(f_while), val(f_true), val(f_f_read_compile_run_loop__loop)
 f_read_compile_run_loop: equ     $-8
 
+        dq          i_return
+        dq          call(f_exit_0)
+        dq          call(f_print_panic)
+        dq          call(f_print_newline)
+        dq          call(f_print_byte_vector)
+f_rename_word_word_exists: equ     $-8
 ; <dict> <old name> <new name> ->
         dq          i_return
         dq          call(f_dictionary_record_set_name) ; [the record] [new name]
         dq          call(f_byte_vector_destroy), call(f_dictionary_record_name), i_dup ; destroy old name [the record] [new name]
-        dq          call(f_panic_if), val(f_id), i_equal, val(0), i_dup ; [the record] [new name]
+        dq          call(f_if), val(f_id), val(f_rename_word_word_exists), val(f_id), i_equal, val(0), i_dup ; [the record] [new name]
         dq          call(f_dictionary_find_record)  ; [record] [old name] [new name]
         dq          i_read_mem_i64  ; [dict] [old name] [new name]
 f_rename_word: equ     $-8
@@ -2550,6 +2577,7 @@ f_tests: equ     $-8
 
                  
                     def_instruction_word 'i', i_indirect_call
+                    def_instruction_word 'l', i_late_bind_and_call_word
 
                     def_function_word_2 '.','s', f_print_data_stack
                     def_function_word_2 '.','b', f_print_bool

@@ -1,26 +1,27 @@
 # import lib.2s
 # import allocator.2s
-# <string>
+
+# <string> ->
 def "print_bash_escape_seq" {
     print_string
     write_byte_to_stdout 27
 } ;
 
-# <string>
+# <string> ->
 def "print_green_string" {
     print_bash_escape_seq "[0m"
     print_string
     print_bash_escape_seq "[0;32m"
 } ;
 
-# <string>
+# <string> ->
 def "print_red_string" {
     print_bash_escape_seq "[0m"
     print_string
     print_bash_escape_seq "[0;31m"
 } ;
 
-# <test name> <test body>
+# <test name> <test body> ->
 def "run_test" {
    if { call } { print_green_string "OK\n" } { print_red_string "FAIL\n" }
    print_string ": "

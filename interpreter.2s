@@ -1,31 +1,9 @@
 # import lib.2s
 # import buffered_stdin.2s
 # import byte_vector.2s
+# import array_list.2s
 # import stack_effect.2s
 # import switch_stmt.2s
-
-# <size> <pointer 1> <pointer 2> -> <-1 or 0 or 1>
-def "memcmp" {
-    dip { 2drop } drop
-    while { and bi* { < 0 } { = 0 } 2dup } { # while size > 0 and result = 0
-        + -1 2dip { bi@ { + 1 } } # advance pointers and decrement size
-        dip {
-            compare_i64 bi@ { read_mem_byte } 2dup
-            drop
-        }
-    }
-    # <size> <cmp result> <p1> <p2>
-    dip { 0 }
-} ;
-
-# <str 1> <str 2> -> <bool>
-def "string_equals" {
-    if { = bi@ { byte_vector_get_size } 2dup } {
-        = 0 memcmp
-        dip { bi@ { byte_vector_get_array } }
-        byte_vector_get_size dup
-    } { false 2drop }
-} ;
 
 # <word name> -> <bool>
 def "does_word_exist" {
@@ -322,7 +300,7 @@ def "read_next_token_single_quote" {
 def "read_next_token_switch"
     when { = open_bracket_char scanner_peek } then { read_next_token_open_bracket } otherwise
     when { = close_bracket_char scanner_peek } then { read_next_token_close_bracket } otherwise
-    when { = semicolon_char scanner_peek } then { read_next_token_semicolon } otherwise
+#    when { = semicolon_char scanner_peek } then { read_next_token_semicolon } otherwise
     when { = double_quote_char scanner_peek } then { read_next_token_double_quote } otherwise
     when { = single_quote_char scanner_peek } then { read_next_token_single_quote } otherwise
     { read_next_token_word }
@@ -347,13 +325,18 @@ se_check_last_defined_function ;
 # 4 - char literal, value is byte
 # 5 - word, value is string
 
+constant "expression_quoted_type" 0 ;
+constant "expression_anon_func_type" 1 ;
+constant "expression_i64_literal_type" 2 ;
+constant "expression_string_literal_type" 3 ;
+constant "expression_char_literal_type" 4 ;
+constant "expression_word_type" 5 ;
 # <expr type id> <value> -> <expression>
 def "expression_create" {
     keep { write_mem_i64 + 8 }
     keep { write_mem_i64 }
     malloc * 2 8
 } ;
-
  
 # <expr> -> <token type id>
 def "expression_get_type_id" {
@@ -366,14 +349,40 @@ def "expression_get_value" {
 } ;
 
 
+# <list> ->
+def "print_expression_list" {
+    2drop
+    while { > array_list_get_size 2dup } {
+        dip { + 1 }
+        print_newline
+        expression_print array_list_get 2dup
+    }
+    dip { 0 }
+} ;
+
+def "expression_print_switch"
+    when { = expression_word_type dup } then { print_string "'" print_string expression_get_value print_string "word: '" drop } otherwise
+    when { = expression_string_literal_type dup } then { print_string "'" print_string expression_get_value print_string "string literal: '" drop } otherwise
+    when { = expression_char_literal_type dup } then { print_string "'" write_byte_to_stdout expression_get_value print_string "char literal: '" drop } otherwise
+    when { = expression_i64_literal_type dup } then { . expression_get_value print_string "i64 literal: " drop } otherwise
+    when { = expression_anon_func_type dup } then { print_string "anon func:end" print_expression_list expression_get_value print_string "anon func:start\n" drop } otherwise
+    when { = expression_quoted_type dup } then { print_string "quote:end" print_expression_list expression_get_value print_string "quote:start\n" drop } otherwise
+    { assert "bad expression type" false 2drop . dup }
+;
+
 # <token> ->
 def "expression_print" {
-    cond_end
-    cond_default { assert "bad expression type" false 2drop }
-    cond_when { = 5 dup } { print_string expression_get_value drop }
-    cond_start
+    expression_print_switch
     expression_get_type_id dup
 } ;
+
+print_newline
+expression_print
+expression_create expression_anon_func_type
+keep { array_list_append dip { expression_create expression_i64_literal_type 42 } }
+array_list_new
+;
+se_check_last_defined_function ;
     
 while { true } {
     print_newline token_print read_next_token

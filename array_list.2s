@@ -117,3 +117,18 @@ def "array_list_destroy" {
     free keep { free array_list_get_array }
 } ;
 
+# <list> <element> -> <index>
+def "array_list_last_index_of" {
+    dip { drop } drop
+    while { } {
+        if { <= 0 over } {
+            not = array_list_get 3dup
+        } {
+            false dip { -1 drop } # checked all elements, return -1
+        }
+        dip { + -1 }
+    } # <continue bool> <list> <index> <element>
+    true
+    keep { array_list_get_size }
+} ;
+

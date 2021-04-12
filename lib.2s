@@ -103,6 +103,20 @@ def "memcopy" {
     rot
 } ;
 
+# <size> <pointer 1> <pointer 2> -> <-1 or 0 or 1>
+def "memcmp" {
+    dip { 2drop } drop
+    while { and bi* { < 0 } { = 0 } 2dup } { # while size > 0 and result = 0
+        + -1 2dip { bi@ { + 1 } } # advance pointers and decrement size
+        dip {
+            compare_i64 bi@ { read_mem_byte } 2dup
+            drop
+        }
+    }
+    # <size> <cmp result> <p1> <p2>
+    dip { 0 }
+} ;
+
 # <byte mem size> -> <8-byte aligned byte size>
 def "align_mem_size" {
     * 8 / swap 8 + 7

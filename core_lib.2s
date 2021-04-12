@@ -4,6 +4,7 @@ def "constant" {
 } ;
 
 constant "return_instruction_code" read_mem_i64 { } ;
+constant "call_instruction_code" read_mem_i64 { constant } ;
 
 # <string> ->
 def "debug" {
@@ -14,19 +15,6 @@ def "exit" { drop syscall 60 r> 1 2 3 4 5 >r } ;
 
 def "2drop" { drop drop } ;
 def "3drop" { drop drop drop } ;
-
-def "3dup" { 
-    pick 3
-    pick 3
-    pick 3
-} ;
-
-def "4dup" { 
-    pick 4
-    pick 4
-    pick 4
-    pick 4
-} ;
 
 # <func f> <func g> <value a> -> ...
 # remove args from stack, push a, apply g, push a, apply f
@@ -48,6 +36,18 @@ def "dip" {
     r>
     call
     >r swap # <func> <value to keep>
+} ;
+
+def "3dup" {
+    dip { dip { swap } swap }
+    dup
+    dip { 2dup }
+} ;
+
+def "4dup" {
+    dip { dip { dip { swap } swap } swap }
+    dup
+    dip { 3dup }
 } ;
 
 def "2dip" {

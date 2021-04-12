@@ -2,6 +2,7 @@ r "r" "rename_word" ;
 
 rename_word "d" "def" ;
 
+rename_word "l" "late_bind_and_call_word" ;
 rename_word "i" "call" ;
 rename_word "w" "while" ;
 rename_word "cs" "cond_start" ;
@@ -31,7 +32,7 @@ rename_word ".c" "write_byte_to_stdout" ;
 
 
 rename_word "du" "dup" ;
-rename_word "dn" "pick" ;
+#rename_word "dn" "pick" ;
 rename_word "2d" "2dup" ;
 rename_word "s" "swap" ;
 rename_word "ro" "rot" ;

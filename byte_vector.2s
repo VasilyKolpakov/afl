@@ -92,3 +92,12 @@ def "byte_vector_destroy" {
     free keep { free byte_vector_get_array }
 } ;
 
+# <str 1> <str 2> -> <bool>
+def "string_equals" {
+    if { = bi@ { byte_vector_get_size } 2dup } {
+        = 0 memcmp
+        dip { bi@ { byte_vector_get_array } }
+        byte_vector_get_size dup
+    } { false 2drop }
+} ;
+
