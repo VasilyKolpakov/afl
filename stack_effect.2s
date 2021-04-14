@@ -1,6 +1,14 @@
 # import lib.2s
 # import array_list.2s
 # import byte_vector.2s
+# import switch_stmt.2s
+
+constant "se_tracing_enabled" false ;
+
+def "se_tracing" {
+    if { se_tracing_enabled } { call } { drop }
+} ;
+
 def "se_def_list" { 
     read_mem_i64 the_dictionary
 } ;
@@ -44,6 +52,38 @@ def "se_find_record_by_name" {
     while { lazy_and { not string_equals se_dict_record_name 2dup } not = 0 dup } {
         se_dict_record_next
     } se_def_list 
+} ;
+
+def "se_print_instruction_switch" 
+    when { = return_instruction_code dup } then { print_string "i_return" 2drop } otherwise
+    when { = call_instruction_code dup } then {
+        print_string se_dict_record_name
+        se_find_record_by_instruction_or_pointer
+        read_mem_i64 + -8
+        drop
+        print_string "call: "
+    } otherwise
+    when { = lit_instruction_code dup } then {
+        . read_mem_i64 + -8
+        drop
+        print_string "literal: "
+    } otherwise
+    when { = late_bind_instruction_code dup } then {
+        print_string read_mem_i64 + 8 read_mem_i64 + -8
+        drop
+        print_string "unbound call: "
+    } otherwise {
+        drop
+        print_string se_dict_record_name
+        se_find_record_by_instruction_or_pointer
+    }
+;
+
+# <instruction pointer> ->
+def  "se_print_instruction" {
+    se_print_instruction_switch
+    # <inst code> <ip>
+    read_mem_i64 dup
 } ;
 
 # stacks are represented as array_lists
@@ -223,16 +263,31 @@ def "se_run_function_on_fake_stacks" {
         se_run_function_on_fake_stacks_unchecked
     } {
         if { = -1 se_stacks_get_recursive_call_index over } {
+            keep { se_stacks_set_recursive_call_index swap -1 } # unset recursion mode
+            se_tracing {
+                keep { if { not = -1 se_stacks_get_recursive_call_index } { print_string "recursion mode: off\n" } { } }  
+            }
             se_run_function_on_fake_stacks_unchecked
-            se_stacks_set_recursive_call_index
-            keep { array_list_last_index_of se_stacks_get_call_stack }
-            # <stacks> <func> ...
-            swap 2dup
+            if { array_list_contains se_stacks_get_call_stack swap 2dup } {
+                dip {
+                    bi { se_stacks_set_recursive_call_index } { + -1 array_list_get_size se_stacks_get_call_stack } dup
+                }
+                se_tracing { print_string "recursion mode: on\n" }
+            } { }
+            # <func> <stacks>
         } {
             # check if there is a recursion after recursive_call_index (failure case)
             if { < bi { se_stacks_get_recursive_call_index } { array_list_last_index_of se_stacks_get_call_stack } } {
                 se_stacks_set_recursive_failure_flag swap true dup
-                drop
+                se_tracing {
+                    print_newline
+                    . se_stacks_get_recursive_call_index dup
+                    print_string ", recursive call index: "
+                    array_list_print se_stacks_get_call_stack dup
+                    print_string ", call stack: "
+                    .
+                    print_string "recursion failure: trying to run function: "
+                }
             } {
                 se_run_function_on_fake_stacks_unchecked
             }
@@ -247,6 +302,10 @@ def "se_run_function_on_fake_stacks_unchecked" {
     keep { drop array_list_pop_last se_stacks_get_call_stack } # restore call stack
     drop
     # <func end pointer> <stacks>
+    se_tracing { dip {
+        print_string "}\n" drop while { < 0 dup } { print_string "\t" + -1 } array_list_get_size se_stacks_get_call_stack dup
+        if { se_stacks_get_recursive_failure_flag dup } { print_string "recursion failure\n" } { }
+    } }
     while { lazy_and { not = return_instruction_code read_mem_i64 dup } not se_stacks_get_recursive_failure_flag over } {
         + -8
         # print stacks
@@ -442,6 +501,12 @@ def "se_run_function_on_fake_stacks_unchecked" {
                         if { > bi@ { se_stacks_get_gen_val_count } 2dup } { swap } { } 
 
                         assert "value stacks are not equal in 'while'" = bi@ { se_stacks_get_effective_value_stack_size } 2dup
+#                        print_newline
+#                        se_stacks_print
+#                        print_newline
+#                        se_stacks_print
+#                        print_string "while check\n"
+#                        2dup
                         # <stacks> <stacks clone>
                         dip {
                             keep { drop se_stacks_pop_from_value_stack } # drop cond result
@@ -456,6 +521,10 @@ def "se_run_function_on_fake_stacks_unchecked" {
                         keep { se_stacks_pop_from_value_stack }
                         keep { se_stacks_pop_from_value_stack }
                     } {
+#                        print_newline
+#                        se_stacks_print
+#                        print_string "while rec check\n"
+#                        dup
                         # run only loop cond
                         keep { drop se_stacks_pop_from_value_stack } # drop cond result
                         se_run_function_on_fake_stacks swap # run loop cond
@@ -482,6 +551,12 @@ def "se_run_function_on_fake_stacks_unchecked" {
                             se_stacks_print
                             2dup
                         } { }
+#                            print_newline
+#                            se_stacks_print
+#                            print_newline
+#                            se_stacks_print
+#                            print_string "if check\n"
+#                            2dup
                         se_run_function_on_fake_stacks swap # run then func
                         # <stacks> <then func> <stacks copy>
                         dip {
@@ -501,12 +576,29 @@ def "se_run_function_on_fake_stacks_unchecked" {
                         keep { se_stacks_pop_from_value_stack }
                     } {
                         if { se_stacks_get_recursive_failure_flag dup } {
+#                            print_newline
+#                            se_stacks_print
+#                            print_string "if rec check else func\n"
+#                            dup
                             se_run_function_on_fake_stacks swap
+#                            print_newline
+#                            se_stacks_print
+#                            print_string "if rec check else func before\n"
+#                            dup
                             se_stacks_destroy
                         } {
                             dip { drop se_stacks_destroy }
                         }
+
+#                        print_newline
+#                        se_stacks_print
+#                        print_string "if rec check then func\n"
+#                        dup
                         se_run_function_on_fake_stacks swap
+#                        print_newline
+#                        se_stacks_print
+#                        print_string "if rec check before then func\n"
+#                        dup
                         # <stacks> <then func> <stacks copy> <else func>
                         dip { swap }
                         # <stacks> <stacks copy> <then func> <else func>
@@ -543,7 +635,16 @@ def "se_run_function_on_fake_stacks_unchecked" {
             # <instruction pointer> <stacks>
         }
         cond_start
+        se_tracing {
+            print_newline
+            se_print_instruction dup
+            dip { drop while { < 0 dup } { print_string "\t" + -1 } array_list_get_size se_stacks_get_call_stack dup }
+        }
         # <pointer to instruction> <stacks>
+    }
+
+    se_tracing {
+        dip { print_string "{\n" drop while { < 0 dup } { print_string "\t" + -1 } array_list_get_size se_stacks_get_call_stack dup }
     }
     # print func name
     # dip { keep { print_newline print_string se_find_first_named_function_name_in_call_stack se_stacks_get_call_stack print_newline } }

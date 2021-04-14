@@ -5,6 +5,8 @@ def "constant" {
 
 constant "return_instruction_code" read_mem_i64 { } ;
 constant "call_instruction_code" read_mem_i64 { constant } ;
+constant "lit_instruction_code" read_mem_i64 { 0 } ;
+constant "late_bind_instruction_code" read_mem_i64 { late_bind_and_call_word } ;
 
 # <string> ->
 def "debug" {
