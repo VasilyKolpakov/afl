@@ -1,4 +1,6 @@
-def "when" { func_compose { if } func_compose func_capture } ;
+constant "{if}" read_mem_i64 + -8 { if } ;
+
+def "when" { func_compose {if} func_compose func_capture } ;
 
 def "then" { func_compose func_capture } ;
 

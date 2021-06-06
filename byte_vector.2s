@@ -92,6 +92,21 @@ def "byte_vector_destroy" {
     free keep { free byte_vector_get_array }
 } ;
 
+# <list src> <pointer to new list struct> ->
+def "byte_vector_clone_to" {
+    byte_vector_set_array
+    keep { memcopy -rot bi { byte_vector_get_size } { byte_vector_get_array } } # <new list> <new array> <new array>
+    keep { dup malloc byte_vector_get_capacity }
+    keep { memcopy -rot byte_vector_struct_size swap }
+    swap
+} ;
+
+# <list> -> <list copy>
+def "byte_vector_clone" {
+    keep { byte_vector_clone_to swap }
+    malloc byte_vector_struct_size
+} ;
+
 # <str 1> <str 2> -> <bool>
 def "string_equals" {
     if { = bi@ { byte_vector_get_size } 2dup } {

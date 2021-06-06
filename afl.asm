@@ -65,7 +65,7 @@
 
 
 data_stack_size:        equ    10240
-return_stack_size:      equ    10240
+return_stack_size:      equ    102400
 
         section   .text
 

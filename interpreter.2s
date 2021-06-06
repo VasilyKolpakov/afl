@@ -360,6 +360,7 @@ def "print_expression_list" {
     dip { 0 }
 } ;
 
+# <expr type> <expr> ->
 def "expression_print_switch"
     when { = expression_word_type dup } then { print_string "'" print_string expression_get_value print_string "word: '" drop } otherwise
     when { = expression_string_literal_type dup } then { print_string "'" print_string expression_get_value print_string "string literal: '" drop } otherwise
@@ -370,20 +371,52 @@ def "expression_print_switch"
     { assert "bad expression type" false 2drop . dup }
 ;
 
-# <token> ->
+# <expr> ->
 def "expression_print" {
     expression_print_switch
     expression_get_type_id dup
 } ;
-
-print_newline
-expression_print
-expression_create expression_anon_func_type
-keep { array_list_append dip { expression_create expression_i64_literal_type 42 } }
-array_list_new
-;
 se_check_last_defined_function ;
-    
+
+# <token type id> <token> -> <expression> 
+def "read_next_expression_switch"
+    when { = token_string_literal_type dup } then {
+        token_destroy
+        keep {
+            expression_create expression_string_literal_type
+            byte_vector_clone token_get_value
+        }
+        drop
+    } otherwise
+    when { = token_char_literal_type dup } then {
+        token_destroy
+        keep {
+            expression_create expression_char_literal_type
+            byte_vector_clone token_get_value
+        }
+        drop
+    } otherwise
+#    when { = token_word_or_i64_literal_type dup } then {
+#        token_destroy
+#        keep {
+#            expression_create expression_char_literal_type
+#            byte_vector_clone token_get_value
+#        }
+#        drop
+#    } otherwise
+    { 0 2drop assert "correct token type" false }
+;
+
+# -> <expr>
+def "read_next_expression" {
+    read_next_expression_switch
+    token_get_type_id dup
+    read_next_token
+} ;
+
+#se_enable_tracing ;
+se_check_last_defined_function ;
+
 while { true } {
-    print_newline token_print read_next_token
+    print_newline expression_print read_next_expression
 } ;

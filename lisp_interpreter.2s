@@ -1,0 +1,559 @@
+# import buffered_stdin.2s
+# import byte_vector.2s
+# import array_list.2s
+# import stack_effect.2s
+# import switch_stmt.2s
+# import lib.2s
+
+def "string_first_char" {
+    byte_vector_get dip { 0 }
+} ;
+se_check_last_defined_function ;
+
+constant "open_paren_char" string_first_char "(" ;
+constant "close_paren_char" string_first_char ")" ;
+constant "space_char" string_first_char " " ;
+constant "tab_char" string_first_char "\t" ;
+constant "newline_char" string_first_char "\n" ;
+constant "double_quote_char" 34 ;
+constant "single_quote_char" 39 ;
+constant "backslash_char" 92 ;
+
+# <char> -> <bool>
+def "is_whitespace_char" {
+    drop swap
+    lazy_or { lazy_or { = space_char dup } = tab_char dup } = newline_char dup
+} ;
+
+def "skip_whitespace" {
+    while { is_whitespace_char } {
+        buffered_stdin_peek_byte
+        drop buffered_stdin_read_byte
+    }
+    buffered_stdin_peek_byte
+} ;
+
+constant "token_open_paren_type"            0 ;
+constant "token_close_paren_type"           1 ;
+constant "token_symbol_or_i64_literal_type" 2 ;
+constant "token_string_literal_type"        3 ;
+constant "token_char_literal_type"          4 ;
+
+# <expr type id> <value> -> <token>
+def "token_create" {
+    keep { write_mem_i64 + 8 }
+    keep { write_mem_i64 }
+    malloc * 2 8
+} ;
+ 
+# <expr> -> <token type id>
+def "token_get_type_id" {
+    read_mem_i64
+} ;
+
+# <expr> -> <value>
+def "token_get_value" {
+    read_mem_i64 + 8
+} ;
+
+def "token_print_switch"
+    when { = token_open_paren_type dup } then { print_string "open paren" 2drop } otherwise
+    when { = token_close_paren_type dup } then { print_string "close paren" 2drop } otherwise
+    when { = token_symbol_or_i64_literal_type dup } then { print_string "'" print_string token_get_value print_string "symbol or i64 literal: '" drop } otherwise
+    when { = token_char_literal_type dup } then { print_string "'" print_string token_get_value print_string "char literal: '" drop } otherwise
+    when { = token_string_literal_type dup } then {
+        print_string "'" byte_vector_destroy print_string dup decode_string_literal print_string "decoded: '"
+        print_string "', " print_string dup token_get_value
+        print_string "string literal: '" drop } otherwise
+    { assert "bad token type" false 2drop . dup }
+;
+
+# <token> ->
+def "token_print" {
+    token_print_switch
+    token_get_type_id dup
+} ;
+
+def "token_destroy_switch"
+    when { = token_open_paren_type dup } then { free drop } otherwise
+    when { = token_close_paren_type dup } then { free drop } otherwise
+    when { = token_symbol_or_i64_literal_type dup } then {
+        bi { free } { byte_vector_destroy token_get_value } drop
+    } otherwise
+    when { = token_char_literal_type dup } then {
+        bi { free } { byte_vector_destroy token_get_value } drop
+    } otherwise
+    when { = token_string_literal_type dup } then {
+        bi { free } { byte_vector_destroy token_get_value } drop
+    } otherwise
+    { assert "bad token type" false 2drop . dup }
+;
+
+# <token> ->
+def "token_destroy" {
+    token_destroy_switch
+    token_get_type_id dup
+} ;
+
+def "scanner_peek" {
+    buffered_stdin_peek_byte
+} ;
+
+def "scanner_advance" {
+    drop buffered_stdin_read_byte
+} ;
+
+def "read_next_token_symbol_or_number" {
+    token_create token_symbol_or_i64_literal_type
+    while { not is_whitespace_char scanner_peek } {
+        scanner_advance
+        keep { byte_vector_append dip { scanner_peek } } 
+    }
+    byte_vector_new
+} ;
+
+def "is_double_quote_or_newline" { or bi { = double_quote_char } { = newline_char } } ;
+
+# -> <token>
+def "read_next_token_double_quote" {
+    assert "whitespace after string literal" is_whitespace_char scanner_peek
+    token_create token_string_literal_type
+    scanner_advance
+    assert "no newline in string literals" not = newline_char scanner_peek
+    while { not is_double_quote_or_newline scanner_peek } {
+        scanner_advance
+        if { = backslash_char scanner_peek } {
+            keep { byte_vector_append dip { scanner_peek } } 
+            scanner_advance
+        } { }
+        keep { byte_vector_append dip { scanner_peek } } 
+    }
+    scanner_advance
+    byte_vector_new
+} ;
+
+def "is_single_quote_or_newline" { or bi { = single_quote_char } { = newline_char } } ;
+
+# -> <token>
+def "read_next_token_single_quote" {
+    assert "whitespace after char literal" is_whitespace_char scanner_peek
+    token_create token_char_literal_type
+    scanner_advance
+    assert "no newline in char literals" not = newline_char scanner_peek
+    while { not is_single_quote_or_newline scanner_peek } {
+        scanner_advance
+        if { = backslash_char scanner_peek } {
+            keep { byte_vector_append dip { scanner_peek } } 
+            scanner_advance
+        } { }
+        keep { byte_vector_append dip { scanner_peek } } 
+    }
+    scanner_advance
+    byte_vector_new
+} ;
+
+# -> <token> # scanner on the char's position
+def "read_next_token_switch"
+    when { = open_paren_char scanner_peek } then {
+        token_create token_open_paren_type 0
+        scanner_advance
+    } otherwise
+    when { = close_paren_char scanner_peek } then {
+        token_create token_close_paren_type 0
+        scanner_advance
+    } otherwise
+    when { = double_quote_char scanner_peek } then { read_next_token_double_quote } otherwise
+    when { = single_quote_char scanner_peek } then { read_next_token_single_quote } otherwise
+    { read_next_token_symbol_or_number }
+;
+
+# -> <token>
+def "read_next_token" {
+    read_next_token_switch
+    skip_whitespace
+} ;
+se_check_last_defined_function ;
+
+# <char> -> <char>
+def "decode_escaped_char" 
+    when { = string_first_char "t" dup } then { tab_char drop } otherwise
+    when { = string_first_char "n" dup } then { newline_char drop } otherwise
+    when { = double_quote_char dup } then { double_quote_char drop } otherwise
+    when { = backslash_char dup } then { backslash_char drop } otherwise
+    { 0 assert "no bad chars" false print_newline . }
+;
+# <string> -> <string>
+def "decode_string_literal" {
+    dip { 2drop }
+    while { swap dip { > byte_vector_get_size 2dup } } {
+        keep { byte_vector_append }
+        dip {
+            2dip { + 1 }
+            if { = backslash_char dup } {
+                decode_escaped_char byte_vector_get 2dup
+                dip { + 1 }
+                drop
+            } { }
+            byte_vector_get 2dup
+        }
+    }
+    # <new string> <original string> <index>
+    byte_vector_new dip { 0 }
+} ;
+se_check_last_defined_function ;
+
+# Lisp objects
+#
+# Every object has a 8-byte header
+# Object header structure: [type_id: i64][gc_marked_flag (0 or 1) i64]
+#
+# Types
+#   symbol:
+#       type_id: 0
+#       structure: [length: i64][string_buffer: variable]
+#   i64:
+#       type_id: 1
+#       structure: [value: i64]
+#   pair:
+#       type_id: 2
+#       structure: [car: pointer][cdr: pointer]
+#   nil:
+#       null pointer
+#
+#   Symbols
+#       Symbols are interned strings and are not freed by GC
+
+constant "symbol_obj_type_id" 0 ;
+constant "i64_obj_type_id" 1 ;
+constant "pair_obj_type_id" 2 ;
+
+constant "obj_header_size" 16 ;
+
+# <obj ptr> <type_id> ->
+def "obj_set_type_id" {
+    write_mem_i64
+} ;
+
+# <obj ptr> ->
+def "obj_get_type_id" {
+    read_mem_i64
+} ;
+
+# <obj ptr> <type_id> ->
+def "obj_set_gc_marked_flag" {
+    write_mem_i64 + 8
+} ;
+
+# <obj ptr> ->
+def "obj_get_gc_marked_flag" {
+    read_mem_i64 + 8
+} ;
+
+# <string> -> <symbol>
+def "alloc_symbol" {
+    keep {
+        memcopy swap dip { bi { byte_vector_get_array } { byte_vector_get_size } }
+        + 8
+        write_mem_i64 dip { byte_vector_get_size } 2dup
+        + obj_header_size
+    }
+    obj_set_type_id swap symbol_obj_type_id dup
+    # <symbol ptr> <string>
+    malloc + 8 + obj_header_size byte_vector_get_size dup
+} ;
+se_check_last_defined_function ;
+
+def "symbol_get_size" {
+    read_mem_i64 + obj_header_size
+} ;
+
+def "symbol_get_buffer" {
+    + 8 + obj_header_size
+} ;
+
+# <buffer> <size>
+def "print_buffer" {
+    assert "buffer is fully written" =
+    dip {
+        panic_on_syscall_error
+        syscall 1 1 2dip { 1 2 3 }
+    }
+    over
+} ;
+
+constant "symbol_list" array_list_new ;
+
+# <symbol> <string> -> <bool>
+def "symbol_name_equal" {
+    if { = bi* { symbol_get_size } { byte_vector_get_size } 2dup } {
+        = 0 memcmp dip { bi* { symbol_get_buffer } { byte_vector_get_array } } symbol_get_size dup
+    } {
+        false 2drop
+    }
+} ;
+se_check_last_defined_function ;
+
+# <string> -> <symbol>
+def "get_or_create_symbol" {
+    if { = array_list_get_size symbol_list dup } {
+        array_list_append symbol_list dup alloc_symbol drop
+    } {
+        array_list_get symbol_list dip { drop }
+    }
+    while { lazy_and { not symbol_name_equal array_list_get symbol_list 2dup } > array_list_get_size symbol_list dup } {
+        + 1
+    }
+    0
+} ;
+se_check_last_defined_function ;
+
+# <number> -> <obj>
+def "alloc_i64" {
+    keep { write_mem_i64 + obj_header_size }
+    keep { obj_set_gc_marked_flag swap 0 }
+    keep { obj_set_type_id swap i64_obj_type_id }
+    malloc + 8 obj_header_size
+} ;
+
+# <obj> -> <value>
+def "obj_i64_get_value" {
+    read_mem_i64 + obj_header_size
+} ;
+
+# <car obj> <cdr obj> -> <pair obj>
+def "alloc_pair" {
+    keep { write_mem_i64 + 8 + obj_header_size }
+    keep { write_mem_i64 + obj_header_size }
+    keep { obj_set_gc_marked_flag swap 0 }
+    keep { obj_set_type_id swap pair_obj_type_id }
+    malloc + 16 obj_header_size
+} ;
+
+# <obj> -> <value>
+def "obj_pair_car" {
+    read_mem_i64 + obj_header_size
+} ;
+
+# <obj> -> <value>
+def "obj_pair_cdr" {
+    read_mem_i64 + 8 + obj_header_size
+} ;
+
+# <obj> -> <bool>
+def "obj_is_pair" {
+    if { = 0 dup } {
+        false drop
+    } {
+        = pair_obj_type_id obj_get_type_id
+    }
+} ;
+
+# <obj> -> <bool>
+def "obj_is_list" {
+    = 0 while { obj_is_pair dup } { obj_pair_cdr }
+} ;
+
+def "print_list" {
+    print_string ")"
+    drop
+    while { not = 0 dup } {
+        if { not = 0 dup } { print_string " " } { }
+        obj_pair_cdr
+        print_obj obj_pair_car dup
+    }
+    print_string "("
+    assert "is list" obj_is_list dup
+} ;
+
+def "print_obj_switch"
+    when { = symbol_obj_type_id obj_get_type_id dup } then { print_string "`" print_buffer bi { symbol_get_buffer } { symbol_get_size } print_string "`" } otherwise
+    when { = i64_obj_type_id obj_get_type_id dup } then { . obj_i64_get_value } otherwise
+    when { obj_is_list dup } then { print_list } otherwise
+    when { = pair_obj_type_id obj_get_type_id dup } then {
+        print_string ")"
+        print_obj obj_pair_cdr
+        print_string " . "
+        print_obj obj_pair_car dup
+        print_string "("
+    } otherwise
+    { assert "suppoted obj type" false print_newline . obj_get_type_id }
+;
+
+def "print_obj" {
+    if { = 0 dup } {
+        print_string "nil" drop
+    } {
+        print_obj_switch
+    }
+} ;
+se_check_last_defined_function ;
+
+print_newline print_obj . dup get_or_create_symbol "test" ;
+print_newline print_obj . dup get_or_create_symbol "1" ;
+print_newline print_obj . dup get_or_create_symbol "test" ;
+print_newline print_obj . dup get_or_create_symbol "asf" ;
+print_newline print_obj . dup get_or_create_symbol "test" ;
+print_newline print_obj alloc_pair alloc_i64 123 alloc_i64 321 ;
+print_newline print_list
+    alloc_pair alloc_i64 1
+    alloc_pair
+        alloc_pair alloc_i64 1
+        alloc_pair alloc_pair alloc_i64 2 alloc_i64 2
+        0
+    alloc_pair alloc_i64 123
+    0 ; 
+
+constant "current_token_ptr" malloc 8 ;
+
+def "token_scanner_advance" {
+    write_mem_i64 current_token_ptr read_next_token
+} ;
+def "token_scanner_peek" {
+    read_mem_i64 current_token_ptr
+    if { = read_mem_i64 current_token_ptr 0 } {
+        token_scanner_advance
+    } { }
+} ;
+
+
+# <char*> <size> -> <bool> <number>
+def "parse_i64_non_empty" {
+    2drop # <char* end> <char*> <bool> <number>
+    if { = 45 read_mem_byte over } {
+        # negative
+        while { lazy_and { rot 2dip { dup } } > 2dup } {
+            dip {
+                + 1 # <char*> <bool> <number>
+                if { and bi { <= 48 } { > 58 } read_mem_byte dup } {
+                    keep {
+                        and
+                        dip { checked_add * -1 + -48 read_mem_byte }
+                        swap
+                    } # <char*> <bool> <number>
+                    dip { checked_mul 10 drop }
+                } {
+                    dip { false drop }
+                }
+            }
+        }
+        dip { + 1 }
+    } {
+        # positive
+        while { lazy_and { rot 2dip { dup } } > 2dup } {
+            dip {
+                + 1 # <char*> <bool> <number>
+                if { and bi { <= 48 } { > 58 } read_mem_byte dup } {
+                    keep {
+                        and
+                        dip { checked_add + -48 read_mem_byte }
+                        swap
+                    } # <char*> <bool> <number>
+                    dip { checked_mul 10 drop }
+                } {
+                    dip { false drop }
+                }
+            }
+        }
+    }
+    # <char* end> <char*> <bool> <number>
+    swap keep { + }
+    2dip { true 0 }
+} ;
+
+# <char*> <size> -> <bool> <number>
+def "parse_i64" {
+    if { < 0 over } {
+        parse_i64_non_empty
+    } {
+        false 0 2drop
+    }
+} ;
+
+# <buffer> <number> ->
+def "render_i64" {
+    2drop
+    if { > 0 over } {
+        # negative
+        write_mem_byte swap 45 dup
+        while { not = 0 over } {
+            + -1 dip { / swap 10 }
+            2keep { 
+                write_mem_byte dip { + 48 * -1 % swap 10 }
+            }
+        }
+        + -1 dip { / swap 10 }
+        2keep { 
+            write_mem_byte dip { + 48 * -1 % swap 10 }
+        }
+    } {
+        # positive
+        while { not = 0 over } {
+            + -1 dip { / swap 10 }
+            2keep { 
+                write_mem_byte dip { + 48 % swap 10 }
+            }
+        }
+        + -1 dip { / swap 10 }
+        2keep { 
+            write_mem_byte dip { + 48 % swap 10 }
+        }
+    }
+    # <buffer end> <number>
+    + dip { + -1 i64_text_length dup }
+} ;
+
+# <number> -> <length>
+def "i64_text_length" {
+    drop swap
+    while { not = 0 over }  {
+        + 1 dip { / swap 10 }
+    }
+        + 1 dip { / swap 10 }
+    # <length> <number>
+    if { > 0 dup } { 1 } { 0 }
+} ;
+
+def "parse_i64_string" {
+    parse_i64 bi { byte_vector_get_array } { byte_vector_get_size }
+} ;
+
+constant "gc_safe_stack" array_list_new ;
+
+def "gc_safe_stack_push" {
+    array_list_append gc_safe_stack
+} ;
+
+def "gc_safe_stack_pop" {
+    array_list_pop_last gc_safe_stack
+} ;
+
+def "read_next_expression_switch"
+    when { = token_symbol_or_i64_literal_type token_get_type_id token_scanner_peek } then {
+        token_destroy token_scanner_peek
+        if { } {
+            gc_safe_stack_push alloc_i64
+        } {
+            gc_safe_stack_push get_or_create_symbol token_get_value token_scanner_peek drop
+        }
+        parse_i64_string token_get_value token_scanner_peek
+    } otherwise
+    { assert "suppoted literal type" false print_newline . token_get_type_id token_scanner_peek }
+;
+
+def "read_next_expression" {
+    read_next_expression_switch
+    token_scanner_advance
+} ;
+
+se_check_last_defined_function ;
+
+#while { true } {
+#    print_newline token_print read_next_token
+#} ;
+
+while { true } {
+    print_newline print_obj gc_safe_stack_pop
+    read_next_expression
+} ;
+
+
