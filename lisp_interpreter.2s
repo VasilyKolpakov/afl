@@ -25,6 +25,10 @@ def "is_whitespace_char" {
     lazy_or { lazy_or { = space_char dup } = tab_char dup } = newline_char dup
 } ;
 
+def "is_paren_char" {
+    or bi { = open_paren_char } { = close_paren_char }
+} ;
+
 def "skip_whitespace" {
     while { is_whitespace_char } {
         buffered_stdin_peek_byte
@@ -105,7 +109,7 @@ def "scanner_advance" {
 
 def "read_next_token_symbol_or_number" {
     token_create token_symbol_or_i64_literal_type
-    while { not is_whitespace_char scanner_peek } {
+    while { lazy_and { not is_paren_char scanner_peek } not is_whitespace_char scanner_peek } {
         scanner_advance
         keep { byte_vector_append dip { scanner_peek } } 
     }
@@ -353,6 +357,16 @@ def "obj_is_list" {
     = 0 while { obj_is_pair dup } { obj_pair_cdr }
 } ;
 
+def "obj_list_length" {
+    drop
+    while { obj_is_pair dup } {
+        dip { + 1 }
+        obj_pair_cdr
+    }
+    dip { 0 }
+    assert "obj is list" obj_is_list dup
+} ;
+
 def "print_list" {
     print_string ")"
     drop
@@ -388,30 +402,15 @@ def "print_obj" {
 } ;
 se_check_last_defined_function ;
 
-print_newline print_obj . dup get_or_create_symbol "test" ;
-print_newline print_obj . dup get_or_create_symbol "1" ;
-print_newline print_obj . dup get_or_create_symbol "test" ;
-print_newline print_obj . dup get_or_create_symbol "asf" ;
-print_newline print_obj . dup get_or_create_symbol "test" ;
-print_newline print_obj alloc_pair alloc_i64 123 alloc_i64 321 ;
-print_newline print_list
-    alloc_pair alloc_i64 1
-    alloc_pair
-        alloc_pair alloc_i64 1
-        alloc_pair alloc_pair alloc_i64 2 alloc_i64 2
-        0
-    alloc_pair alloc_i64 123
-    0 ; 
-
 constant "current_token_ptr" malloc 8 ;
 
 def "token_scanner_advance" {
-    write_mem_i64 current_token_ptr read_next_token
+    write_mem_i64 current_token_ptr 0
 } ;
 def "token_scanner_peek" {
     read_mem_i64 current_token_ptr
     if { = read_mem_i64 current_token_ptr 0 } {
-        token_scanner_advance
+        write_mem_i64 current_token_ptr read_next_token
     } { }
 } ;
 
@@ -517,23 +516,50 @@ def "parse_i64_string" {
     parse_i64 bi { byte_vector_get_array } { byte_vector_get_size }
 } ;
 
-constant "gc_safe_stack" array_list_new ;
+constant "lisp_value_stack" array_list_new ;
 
-def "gc_safe_stack_push" {
-    array_list_append gc_safe_stack
+def "lisp_value_stack_push" {
+    array_list_append lisp_value_stack
 } ;
 
-def "gc_safe_stack_pop" {
-    array_list_pop_last gc_safe_stack
+def "lisp_value_stack_pop" {
+    array_list_pop_last lisp_value_stack
+} ;
+
+def "lisp_value_stack_peek_top" {
+    array_list_get_last lisp_value_stack
+} ;
+
+def "lisp_value_stack_peek" {
+    array_list_peek lisp_value_stack
 } ;
 
 def "read_next_expression_switch"
+    when { = token_open_paren_type token_get_type_id token_scanner_peek } then {
+        drop
+        while { < 0 dup } {
+            lisp_value_stack_push
+            drop lisp_value_stack_pop
+            drop lisp_value_stack_pop
+            alloc_pair lisp_value_stack_peek 1 lisp_value_stack_peek 0
+            + -1
+        }
+        lisp_value_stack_push 0
+        token_scanner_advance
+        while { not = token_close_paren_type token_get_type_id token_scanner_peek } {
+            + 1
+            read_next_expression
+        }
+        0
+        token_scanner_advance
+    } otherwise
     when { = token_symbol_or_i64_literal_type token_get_type_id token_scanner_peek } then {
+        token_scanner_advance
         token_destroy token_scanner_peek
         if { } {
-            gc_safe_stack_push alloc_i64
+            lisp_value_stack_push alloc_i64
         } {
-            gc_safe_stack_push get_or_create_symbol token_get_value token_scanner_peek drop
+            lisp_value_stack_push get_or_create_symbol token_get_value token_scanner_peek drop
         }
         parse_i64_string token_get_value token_scanner_peek
     } otherwise
@@ -542,18 +568,155 @@ def "read_next_expression_switch"
 
 def "read_next_expression" {
     read_next_expression_switch
-    token_scanner_advance
 } ;
 
+#se_check_last_defined_function ;
+
+constant "lisp_program_stack" array_list_new ;
+
+def "lisp_program_stack_push" {
+    array_list_append lisp_program_stack
+} ;
+
+def "lisp_program_stack_pop" {
+    array_list_pop_last lisp_program_stack
+} ;
+
+# <obj> <obj> -> <obj>
+def "obj_i64_add" {
+    alloc_i64 + bi@ { obj_i64_get_value }
+    bi@ { assert "'add' args are i64" = i64_obj_type_id obj_get_type_id } 2dup
+} ;
 se_check_last_defined_function ;
 
-#while { true } {
-#    print_newline token_print read_next_token
-#} ;
-
-while { true } {
-    print_newline print_obj gc_safe_stack_pop
-    read_next_expression
+constant "obj_i64_add_instruction" {
+    lisp_value_stack_push
+    drop lisp_value_stack_pop
+    drop lisp_value_stack_pop
+    obj_i64_add lisp_value_stack_peek 1 lisp_value_stack_peek 0
 } ;
 
+constant "literal_instruction" {
+    lisp_value_stack_push lisp_program_stack_pop
+} ;
 
+constant "define_instruction" {
+    drop lisp_value_stack_pop
+    write_mem_i64 lisp_global_env_ptr alloc_pair dip { read_mem_i64 lisp_global_env_ptr }
+    lisp_value_stack_push dup
+    drop lisp_value_stack_pop
+    drop lisp_value_stack_pop
+    alloc_pair
+        lisp_value_stack_peek 0 # symbol
+        lisp_value_stack_peek 1 # value
+    if { lookup_global_lisp_env lisp_value_stack_peek 0 } {
+        exit 1
+        drop
+        print_newline
+        print_obj lisp_value_stack_peek 0
+        print_string "symbol is already defined: "
+    } {
+        drop   
+    }
+} ;
+
+constant "lisp_plus_symbol" get_or_create_symbol "+" ;
+constant "lisp_define_symbol" get_or_create_symbol "define" ;
+
+# <obj> ->
+def "lisp_compile_list_switch"
+    when { = lisp_plus_symbol obj_pair_car dup } then {
+        drop
+        lisp_compile_expression obj_pair_car dup
+        obj_pair_cdr
+        lisp_compile_expression obj_pair_car dup
+        obj_pair_cdr
+        lisp_program_stack_push obj_i64_add_instruction
+        assert "+ takes 2 args" = 3 obj_list_length dup
+    } otherwise
+    when { = lisp_define_symbol obj_pair_car dup } then {
+        lisp_value_stack_push 0
+        drop
+        lisp_compile_expression obj_pair_car dup
+        obj_pair_cdr
+        lisp_program_stack_push literal_instruction
+        lisp_program_stack_push obj_pair_car dup
+        obj_pair_cdr
+        lisp_program_stack_push define_instruction
+        assert "define takes 2 args" = 3 obj_list_length dup
+    } otherwise
+    { assert "list switch is OK" false print_newline print_obj }
+;
+
+def "lisp_compile_list" {
+    lisp_compile_list_switch
+} ;
+
+# <obj> ->
+def "lisp_compile_expression_switch" 
+    when { obj_is_list dup } then {
+        lisp_compile_list
+    } otherwise
+    when { = i64_obj_type_id obj_get_type_id dup } then {
+        lisp_program_stack_push literal_instruction
+        lisp_program_stack_push
+    } otherwise
+    when { = symbol_obj_type_id obj_get_type_id dup } then {
+        if { } {
+            drop
+            lisp_program_stack_push literal_instruction
+            lisp_program_stack_push
+        } {
+            exit 1
+            print_newline
+            print_obj
+            print_string "undefined symbol: "
+            drop
+        }
+        lookup_lisp_env read_mem_i64 lisp_global_env_ptr dup
+    } otherwise
+    { assert "supported expression" false print_newline print_obj }
+;
+
+# <obj> ->
+def "lisp_compile_expression" {
+    lisp_compile_expression_switch
+} ;
+
+constant "lisp_global_env_ptr" malloc 8 ;
+write_mem_i64 lisp_global_env_ptr 0 ;
+
+# <env> <symbol> -> <found bool> <value>
+def "lookup_lisp_env" {
+    if { not = 0 dup } {
+        true obj_pair_cdr obj_pair_car  
+    } {
+        false 0 drop
+    }
+    dip { drop }
+    while { lazy_and { not = obj_pair_car obj_pair_car 2dup } not = 0 dup } {
+        obj_pair_cdr
+    }
+    assert "env is list" obj_is_list dup
+} ;
+se_check_last_defined_function ;
+
+def "lookup_global_lisp_env" { lookup_lisp_env read_mem_i64 lisp_global_env_ptr } ;
+
+# -> # expects expression to be on the top of lisp_value_stack
+def "lisp_eval" {
+    while { not array_list_is_empty lisp_program_stack } {
+        call lisp_program_stack_pop
+    }
+    lisp_compile_expression lisp_value_stack_pop
+} ;
+
+def "define_instruction_func" { call define_instruction } ;
+se_check_last_defined_function ;
+
+#while { true } { print_newline token_print read_next_token } ;
+#while { true } { print_newline print_obj lisp_value_stack_pop lisp_eval read_next_expression } ;
+while { true } { print_newline print_obj read_mem_i64 lisp_global_env_ptr print_newline print_obj lisp_value_stack_pop lisp_eval read_next_expression } ;
+(define a 42)
+(define b 2)
+(+ a b)

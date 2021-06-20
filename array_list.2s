@@ -137,3 +137,7 @@ def "array_list_contains" {
     not = -1 array_list_last_index_of
 } ;
 
+def "array_list_is_empty" {
+    = 0 array_list_get_size
+} ;
+
