@@ -275,18 +275,6 @@ def "se_is_one_of_functions" {
     false
 } ;
 
-
-def "se_check_function_by_name" {
-    print_newline
-    se_check_function_and_print_stack_effect
-        se_word_def_address se_dict_record_word_def
-
-    print_string "': "
-    print_string se_dict_record_name dup
-    print_string "function '"
-    se_find_record_by_name
-} ;
-
 def "se_run_function_on_fake_stacks_unchecked_" {
     keep { drop array_list_pop_last se_stacks_get_call_stack } # restore call stack
     drop
@@ -681,6 +669,7 @@ def "se_run_function_on_fake_stacks_instruction_switch"
 
 # <func> ->
 def "se_check_function_and_print_stack_effect_" {
+    print_newline
     se_stacks_destroy
     if { se_stacks_get_recursive_failure_flag dup } {
         print_string "recursion resolution failed"
@@ -696,12 +685,21 @@ def "se_check_function_and_print_stack_effect_" {
 
 #def "se_check_last_defined_function_" {
 def "se_check_last_defined_function" {
-    print_newline
     se_check_function_and_print_stack_effect_
         se_word_def_address se_dict_record_word_def se_def_list
 
     print_string "': "
     print_string se_dict_record_name se_def_list
+    print_string "function '"
+} ;
+
+# <string> ->
+def "se_check_function_by_name" {
+    se_check_function_and_print_stack_effect_
+        se_word_def_address se_dict_record_word_def
+    se_find_record_by_name
+    print_string "': "
+    print_string dup
     print_string "function '"
 } ;
 
