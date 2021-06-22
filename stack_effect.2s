@@ -86,7 +86,13 @@ def "se_print_instruction_switch"
         print_string "unbound call: "
     } otherwise {
         drop
-        print_string se_dict_record_name
+        if { = 0 dup } {
+            print_newline
+            print_string "unknown instruction"
+            drop
+        } {
+            print_string se_dict_record_name
+        }
         se_find_record_by_instruction_or_pointer
     }
 ;
@@ -269,425 +275,6 @@ def "se_is_one_of_functions" {
     false
 } ;
 
-# <func> <stacks> -> <stacks> # can return new stacks obj and destroy input stacks
-def "se_run_function_on_fake_stacks" {
-    if { se_is_one_of_functions { bi bi* bi@ dip 2dip 3dip keep 2keep 3keep lazy_and lazy_or } dup } {
-        se_run_function_on_fake_stacks_unchecked
-    } {
-        if { = -1 se_stacks_get_recursive_call_index over } {
-            keep { se_stacks_set_recursive_call_index swap -1 } # unset recursion mode
-            se_tracing {
-                keep { if { not = -1 se_stacks_get_recursive_call_index } { print_string "recursion mode: off\n" } { } }  
-            }
-            se_run_function_on_fake_stacks_unchecked
-            if { array_list_contains se_stacks_get_call_stack swap 2dup } {
-                dip {
-                    bi { se_stacks_set_recursive_call_index } { + -1 array_list_get_size se_stacks_get_call_stack } dup
-                }
-                se_tracing { print_string "recursion mode: on\n" }
-            } { }
-            # <func> <stacks>
-        } {
-            # check if there is a recursion after recursive_call_index (failure case)
-            if { < bi { se_stacks_get_recursive_call_index } { array_list_last_index_of se_stacks_get_call_stack } } {
-                se_stacks_set_recursive_failure_flag swap true dup
-                se_tracing {
-                    print_newline
-                    . se_stacks_get_recursive_call_index dup
-                    print_string ", recursive call index: "
-                    array_list_print se_stacks_get_call_stack dup
-                    print_string ", call stack: "
-                    .
-                    print_string "recursion failure: trying to run function: "
-                }
-            } {
-                se_run_function_on_fake_stacks_unchecked
-            }
-            # <stacks> <func> ...
-            swap 2dup
-        }
-    }
-} ;
-
-# <func> <stacks> -> <stacks> # can return new stacks obj and destroy input stacks
-def "se_run_function_on_fake_stacks_unchecked" {
-    keep { drop array_list_pop_last se_stacks_get_call_stack } # restore call stack
-    drop
-    # <func end pointer> <stacks>
-    se_tracing { dip {
-        print_string "}\n" drop while { < 0 dup } { print_string "\t" + -1 } array_list_get_size se_stacks_get_call_stack dup
-        if { se_stacks_get_recursive_failure_flag dup } { print_string "recursion failure\n" } { }
-    } }
-    while { lazy_and { not = return_instruction_code read_mem_i64 dup } not se_stacks_get_recursive_failure_flag over } {
-        + -8
-        # print stacks
-        # dip { print_newline print_newline se_stacks_print dup }
-        cond_end
-        cond_default { exit 1 print_newline print_string se_dict_record_name se_find_record_by_instruction_or_pointer print_string " " . dup read_mem_i64 dup print_string "unsupported instruction: " }
-        # binary ops
-        cond_when { se_is_one_of_instructions { + * - / % and or bit_lshift bit_rshift bit_xor bit_or bit_and = > >= < <= } dup } {
-            dip {
-                keep { array_list_append swap 1 se_stacks_get_value_stack }
-                keep { drop se_stacks_pop_from_value_stack }
-                keep { drop se_stacks_pop_from_value_stack }
-            }
-        }
-        # binary ops with overflow check
-        cond_when { se_is_one_of_instructions { checked_add checked_mul } dup } {
-            dip {
-                keep { array_list_append swap 1 se_stacks_get_value_stack }
-                keep { array_list_append swap 1 se_stacks_get_value_stack }
-                keep { drop se_stacks_pop_from_value_stack }
-                keep { drop se_stacks_pop_from_value_stack }
-            }
-        }
-        cond_when { se_equal_deref_values { syscall } dup } {
-            dip {
-                keep { array_list_append swap 1 se_stacks_get_value_stack }
-                keep { drop se_stacks_pop_from_value_stack }
-                keep { drop se_stacks_pop_from_value_stack }
-                keep { drop se_stacks_pop_from_value_stack }
-                keep { drop se_stacks_pop_from_value_stack }
-                keep { drop se_stacks_pop_from_value_stack }
-                keep { drop se_stacks_pop_from_value_stack }
-                keep { drop se_stacks_pop_from_value_stack }
-            }
-        }
-        cond_when { se_equal_deref_values { return_stack_depth } dup } {
-            dip {
-                keep { array_list_append swap 1 se_stacks_get_value_stack }
-            }
-        }
-        cond_when { se_is_one_of_instructions { write_mem_byte write_mem_i64 } dup } {
-            dip {
-                keep { drop se_stacks_pop_from_value_stack }
-                keep { drop se_stacks_pop_from_value_stack }
-            }
-        }
-        cond_when { se_is_one_of_instructions { read_mem_byte read_mem_i64 not } dup } {
-            dip {
-                keep { array_list_append swap 1 se_stacks_get_value_stack }
-                keep { drop se_stacks_pop_from_value_stack }
-            }
-        }
-        cond_when { se_equal_deref_values { drop } dup } {
-            dip {
-                keep { drop se_stacks_pop_from_value_stack }
-            }
-        }
-        cond_when { se_equal_deref_values { swap } dup } {
-            dip {
-                keep { array_list_append se_stacks_get_value_stack }
-                keep { array_list_append se_stacks_get_value_stack }
-                dip { swap }
-                keep { se_stacks_pop_from_value_stack }
-                keep { se_stacks_pop_from_value_stack }
-            }
-        }
-        cond_when { se_equal_deref_values { rot } dup } {
-            dip {
-                keep { array_list_append se_stacks_get_value_stack }
-                keep { array_list_append se_stacks_get_value_stack }
-                keep { array_list_append se_stacks_get_value_stack }
-                dip { -rot } 
-                # <stacks> <c> <b> <a> # value stack : <a> <b> <c>
-                keep { se_stacks_pop_from_value_stack }
-                keep { se_stacks_pop_from_value_stack }
-                keep { se_stacks_pop_from_value_stack }
-            }
-        }
-        cond_when { se_equal_deref_values { -rot } dup } {
-            dip {
-                keep { array_list_append se_stacks_get_value_stack }
-                keep { array_list_append se_stacks_get_value_stack }
-                keep { array_list_append se_stacks_get_value_stack }
-                dip { rot } 
-                # <stacks> <c> <b> <a> # value stack : <a> <b> <c>
-                keep { se_stacks_pop_from_value_stack }
-                keep { se_stacks_pop_from_value_stack }
-                keep { se_stacks_pop_from_value_stack }
-            }
-        }
-        cond_when { se_equal_deref_values { dup } dup } {
-            dip {
-                keep { array_list_append se_stacks_get_value_stack }
-                keep { array_list_append se_stacks_get_value_stack }
-                keep { dup se_stacks_pop_from_value_stack }
-            }
-        }
-        cond_when { se_equal_deref_values { over } dup } {
-            dip {
-                keep { array_list_append se_stacks_get_value_stack }
-                keep { array_list_append se_stacks_get_value_stack }
-                keep { array_list_append se_stacks_get_value_stack }
-                dip { -rot dup }
-                # <stacks> <b> <a> # value stack : <a> <b>
-                keep { se_stacks_pop_from_value_stack }
-                keep { se_stacks_pop_from_value_stack }
-            }
-        }
-        cond_when { se_equal_deref_values { 2dup } dup } {
-            dip {
-                keep { array_list_append se_stacks_get_value_stack }
-                keep { array_list_append se_stacks_get_value_stack }
-                keep { array_list_append se_stacks_get_value_stack }
-                keep { array_list_append se_stacks_get_value_stack }
-                dip { 2dup }
-                keep { se_stacks_pop_from_value_stack }
-                keep { se_stacks_pop_from_value_stack }
-            }
-        }
-        cond_when { se_equal_deref_values { pick } dup } {
-            dip {
-                keep { array_list_append se_stacks_get_value_stack }
-                keep { array_list_get se_stacks_get_value_stack } # <stacks> <value stack index>
-                keep { - array_list_get_size se_stacks_get_value_stack } # <stacks> <value>
-                keep { se_stacks_pop_from_value_stack }
-            }
-        }
-        cond_when { se_equal_deref_values { r> } dup } {
-            dip {
-                keep { array_list_append se_stacks_get_value_stack }
-                keep { array_list_pop_last se_stacks_get_return_stack }
-            }
-        }
-        cond_when { se_equal_deref_values { >r } dup } {
-            dip {
-                keep { array_list_append se_stacks_get_return_stack }
-                keep { se_stacks_pop_from_value_stack }
-            }
-        }
-        cond_when { se_equal_deref_values { r@ } dup } {
-            dip {
-                keep { array_list_append se_stacks_get_value_stack }
-                keep { array_list_get_last se_stacks_get_return_stack }
-            }
-        }
-        cond_when { se_equal_deref_values { r_pick } dup } {
-            dip {
-                keep { array_list_append se_stacks_get_value_stack }
-                keep { array_list_get se_stacks_get_return_stack } # <stacks> <ret stack index>
-                keep { - array_list_get_size se_stacks_get_return_stack } # <stacks> <value>
-                keep { se_stacks_pop_from_value_stack }
-            }
-        }
-        cond_when { se_equal_deref_values { call } dup } {
-            dip {
-                se_run_function_on_fake_stacks swap
-                keep { se_stacks_pop_from_value_stack }
-            }
-        }
-        cond_when { se_equal_deref_values { late_bind_and_call_word } dup } {
-            dip {
-                se_run_function_on_fake_stacks
-                se_word_def_address se_dict_record_word_def
-                if { = 0 dup } {
-                    exit 1
-                    dip { print_string }
-                    print_string "se_run_func: bad_word: "
-                } {
-                    dip { drop }
-                }
-                se_find_record_by_name dup read_mem_i64 + 8
-                # <struct <dict> <name>> <stacks>
-            }
-            keep { read_mem_i64 }
-            + -8
-        }
-        cond_when { se_equal_deref_values { 0 } dup } {
-            array_list_append se_stacks_get_value_stack swap read_mem_i64
-            2dup
-            + -8
-            # <instruction pointer> <stacks>
-        }
-        # function call
-        cond_when { se_equal_deref_values { if } dup } {
-            cond_end
-            cond_default {
-                keep { se_run_function_on_fake_stacks read_mem_i64 } # <pointer to funciton> <stacks> ...
-            }
-            cond_when { se_equal_deref_values + -8 { while } dup } {
-                dip {
-                    if { = -1 se_stacks_get_recursive_call_index dup } {
-                        se_stacks_destroy # destroy smallest stack (least amount of generated values)
-                        if { > bi@ { se_stacks_get_gen_val_count } 2dup } { swap } { } 
-
-                        assert "value stacks are not equal in 'while'" = bi@ { se_stacks_get_effective_value_stack_size } 2dup
-#                        print_newline
-#                        se_stacks_print
-#                        print_newline
-#                        se_stacks_print
-#                        print_string "while check\n"
-#                        2dup
-                        # <stacks> <stacks clone>
-                        dip {
-                            keep { drop se_stacks_pop_from_value_stack } # drop cond result
-                            se_run_function_on_fake_stacks swap # run cond
-                            se_run_function_on_fake_stacks swap # run body
-                        }
-                        # <stacks> <stacks clone> <loop body> <loop cond>
-                        keep { se_stacks_clone }
-                        keep { drop se_stacks_pop_from_value_stack } # drop cond result
-                        se_run_function_on_fake_stacks swap dip { over } # run loop cond
-                        # <stacks> <loop body> <loop cond>
-                        keep { se_stacks_pop_from_value_stack }
-                        keep { se_stacks_pop_from_value_stack }
-                    } {
-#                        print_newline
-#                        se_stacks_print
-#                        print_string "while rec check\n"
-#                        dup
-                        # run only loop cond
-                        keep { drop se_stacks_pop_from_value_stack } # drop cond result
-                        se_run_function_on_fake_stacks swap # run loop cond
-                        # <stacks> <loop cond>
-                        keep { drop se_stacks_pop_from_value_stack }
-                        keep { se_stacks_pop_from_value_stack }
-                    }
-                }
-            }
-            cond_when { se_equal_deref_values + -8 { if } dup } {
-                dip {
-                    if { = -1 se_stacks_get_recursive_call_index dup } {
-                        se_stacks_destroy # destroy smallest stack (least amount of generated values)
-                        if { > bi@ { se_stacks_get_gen_val_count } 2dup } { swap } { } 
-
-                        if { not = bi@ { se_stacks_get_effective_value_stack_size } 2dup } {
-                            exit 1
-                            print_newline
-                            keep { print_newline print_string se_find_first_named_function_name_in_call_stack se_stacks_get_call_stack print_newline }
-                            print_string "\nvalue stacks are not equal in 'if' in "
-                            print_newline
-                            se_stacks_print
-                            print_newline
-                            se_stacks_print
-                            2dup
-                        } { }
-#                            print_newline
-#                            se_stacks_print
-#                            print_newline
-#                            se_stacks_print
-#                            print_string "if check\n"
-#                            2dup
-                        se_run_function_on_fake_stacks swap # run then func
-                        # <stacks> <then func> <stacks copy>
-                        dip {
-                            swap
-                            se_run_function_on_fake_stacks swap # run else func
-                        }
-                        # <stacks> <stacks copy> <else func> <then func>
-                        keep { se_stacks_clone }
-                        # <stacks> <else func> <then func>
-                        keep { drop se_stacks_pop_from_value_stack } # drop cond result
-                        se_run_function_on_fake_stacks swap # run cond
-                        # <stacks> <if cond> <else func> <then func>
-                        dip { rot }
-                        # <stacks> <else func> <then func> <if cond>
-                        keep { se_stacks_pop_from_value_stack }
-                        keep { se_stacks_pop_from_value_stack }
-                        keep { se_stacks_pop_from_value_stack }
-                    } {
-                        if { se_stacks_get_recursive_failure_flag dup } {
-#                            print_newline
-#                            se_stacks_print
-#                            print_string "if rec check else func\n"
-#                            dup
-                            se_run_function_on_fake_stacks swap
-#                            print_newline
-#                            se_stacks_print
-#                            print_string "if rec check else func before\n"
-#                            dup
-                            se_stacks_destroy
-                        } {
-                            dip { drop se_stacks_destroy }
-                        }
-
-#                        print_newline
-#                        se_stacks_print
-#                        print_string "if rec check then func\n"
-#                        dup
-                        se_run_function_on_fake_stacks swap
-#                        print_newline
-#                        se_stacks_print
-#                        print_string "if rec check before then func\n"
-#                        dup
-                        # <stacks> <then func> <stacks copy> <else func>
-                        dip { swap }
-                        # <stacks> <stacks copy> <then func> <else func>
-                        keep { se_stacks_clone }
-                        keep { drop se_stacks_pop_from_value_stack } # drop cond result
-                        se_run_function_on_fake_stacks swap
-                        # <stacks> <if cond> <then func> <else func>
-                        keep { -rot se_stacks_pop_from_value_stack }
-                        # <stacks> <if cond> <then func>
-                        keep { swap se_stacks_pop_from_value_stack }
-                        keep { se_stacks_pop_from_value_stack }
-                    }
-                }
-            }
-            cond_when { se_equal_deref_values + -8 { stacktrace_print_return_stack_except_n_slots } dup } {
-                dip {
-                    keep { drop se_stacks_pop_from_value_stack }
-                }
-            }
-            cond_when { se_equal_deref_values + -8 { . } dup } {
-                dip {
-                    keep { drop se_stacks_pop_from_value_stack }
-                }
-            }
-            cond_when { se_equal_deref_values + -8 { print_string } dup } {
-                dip {
-                    keep { drop se_stacks_pop_from_value_stack }
-                }
-            }
-            cond_when { se_equal_deref_values + -8 { .s } dup } { }
-            cond_when { se_equal_deref_values + -8 { print_newline } dup } { }
-            cond_start
-            + -8
-            # <instruction pointer> <stacks>
-        }
-        cond_start
-        se_tracing {
-            print_newline
-            se_print_instruction dup
-            dip { drop while { < 0 dup } { print_string "\t" + -1 } array_list_get_size se_stacks_get_call_stack dup }
-        }
-        # <pointer to instruction> <stacks>
-    }
-
-    se_tracing {
-        dip { print_string "{\n" drop while { < 0 dup } { print_string "\t" + -1 } array_list_get_size se_stacks_get_call_stack dup }
-    }
-    # print func name
-    # dip { keep { print_newline print_string se_find_first_named_function_name_in_call_stack se_stacks_get_call_stack print_newline } }
-    array_list_append se_stacks_get_call_stack swap 2dup # append current function to call stack
-    # <func> <stacks>
-} ;
-
-# <func> ->
-def "se_check_function_and_print_stack_effect" {
-    se_stacks_destroy
-    if { se_stacks_get_recursive_failure_flag dup } {
-        print_string "recursion resolution failed"
-    } {
-        keep { . array_list_get_size se_stacks_get_value_stack } # <stacks>
-        print_string " -> "
-        keep { . se_stacks_get_gen_val_count } # <stacks>
-    }
-    se_run_function_on_fake_stacks swap # <stacks> <func>
-    se_stacks_new
-    # <func>
-} ;
-
-def "se_check_last_defined_function" {
-    print_newline
-    se_check_function_and_print_stack_effect
-        se_word_def_address se_dict_record_word_def se_def_list
-
-    print_string "': "
-    print_string se_dict_record_name se_def_list
-    print_string "function '"
-} ;
 
 def "se_check_function_by_name" {
     print_newline
@@ -1030,14 +617,6 @@ def "se_run_function_on_fake_stacks_instruction_switch"
             keep { se_stacks_pop_from_value_stack }
         }
     } otherwise
-    when { se_equal_deref_values { pick } dup } then {
-        dip {
-            keep { array_list_append se_stacks_get_value_stack }
-            keep { array_list_get se_stacks_get_value_stack } # <stacks> <value stack index>
-            keep { - array_list_get_size se_stacks_get_value_stack } # <stacks> <value>
-            keep { se_stacks_pop_from_value_stack }
-        }
-    } otherwise
     when { se_equal_deref_values { r> } dup } then {
         dip {
             keep { array_list_append se_stacks_get_value_stack }
@@ -1115,7 +694,8 @@ def "se_check_function_and_print_stack_effect_" {
     # <func>
 } ;
 
-def "se_check_last_defined_function_" {
+#def "se_check_last_defined_function_" {
+def "se_check_last_defined_function" {
     print_newline
     se_check_function_and_print_stack_effect_
         se_word_def_address se_dict_record_word_def se_def_list
@@ -1126,10 +706,11 @@ def "se_check_last_defined_function_" {
 } ;
 
 #print_newline .  se_find_record_by_instruction_or_pointer read_mem_i64 4199908 ;
-#def "test" {
-#    se_run_function_on_fake_stacks_
-#} ;
-#se_enable_tracing ;
-#se_check_last_defined_function_ ;
 
+#def "test" {
+#    test    
+#} ;
+##se_enable_tracing ;
+#se_check_last_defined_function ;
+#
 #exit 0 ;
