@@ -141,3 +141,22 @@ def "array_list_is_empty" {
     = 0 array_list_get_size
 } ;
 
+# <list> ->
+def "array_list_clear" {
+    array_list_set_size swap 0
+} ;
+
+# <list> <src list> ->
+def "array_list_append_all" {
+    3drop
+    while { < dip { array_list_get_size } 2dup } {
+        + 1
+        keep { 
+            array_list_append swap
+            array_list_get swap
+            dip { 2dup }
+        }
+    } 0
+    swap
+} ;
+
