@@ -257,17 +257,17 @@ def "obj_get_gc_marked_flag" {
 
 # <string> -> <symbol>
 def "alloc_symbol" {
-    keep { write_mem_i64 swap 0 + 24 + obj_header_size }
-    keep { write_mem_i64 swap false + 16 + obj_header_size }
     keep {
         memcopy swap dip { bi { byte_vector_get_array } { byte_vector_get_size } }
-        + 8
+        + 24
         write_mem_i64 dip { byte_vector_get_size } 2dup
         + obj_header_size
     }
+    keep { write_mem_i64 swap 0 + 16 + obj_header_size }
+    keep { write_mem_i64 swap false + 8 + obj_header_size }
     obj_set_type_id swap symbol_obj_type_id dup
     # <symbol ptr> <string>
-    malloc + * 8 4 + obj_header_size byte_vector_get_size dup
+    malloc + * 8 3 + obj_header_size byte_vector_get_size dup
 } ;
 se_check_last_defined_function ;
 
@@ -275,26 +275,26 @@ def "symbol_get_size" {
     read_mem_i64 + obj_header_size
 } ;
 
-def "symbol_get_buffer" {
-    + 8 + obj_header_size
-} ;
-
 def "symbol_has_binding" {
-    read_mem_i64 + 16 + obj_header_size
+    read_mem_i64 + 8 + obj_header_size
 } ;
 
 # <symbol> <bool> -> 
 def "symbol_set_binding_flag" {
-    write_mem_i64 + 16 + obj_header_size
+    write_mem_i64 + 8 + obj_header_size
 } ;
 
 def "symbol_get_binding" {
-    read_mem_i64 + 24 + obj_header_size
+    read_mem_i64 + 16 + obj_header_size
 } ;
 
 # <symbol> <value> -> 
 def "symbol_set_binding" {
-    write_mem_i64 + 24 + obj_header_size
+    write_mem_i64 + 16 + obj_header_size
+} ;
+
+def "symbol_get_buffer" {
+    + 24 + obj_header_size
 } ;
 
 # <symbol> <value> -> 
@@ -692,7 +692,7 @@ def "read_next_expression" {
     read_next_expression_switch
 } ;
 
-#se_check_last_defined_function ;
+se_check_last_defined_function ;
 
 constant "lisp_program_stack" array_list_new ;
 
@@ -923,10 +923,12 @@ keep { obj_env_add_binding dip { get_or_create_symbol "b" alloc_i64 1 } }
 keep { obj_env_add_binding dip { get_or_create_symbol "a" alloc_i64 0 } }
 alloc_env array_list_new ;
 #while { true } { print_newline token_print read_next_token } ;
-#while { true } { print_newline print_obj lisp_value_stack_pop lisp_eval read_next_expression } ;
+#while { true } { print_newline print_obj lisp_value_stack_pop read_next_expression } ;
 while { true } { assert "value stack is empty" array_list_is_empty lisp_value_stack  print_newline print_obj lisp_value_stack_pop lisp_eval read_next_expression } ;
 (define a 42)
 (define b (+ 1 1))
 (define adder (lambda (x)
     (lambda (y) (+ x y))))
 ((adder a) b)
+(define first-arg (lambda (f s) f))
+(first-arg 1 2)

@@ -684,23 +684,33 @@ def "se_check_function_and_print_stack_effect_" {
 } ;
 
 #def "se_check_last_defined_function_" {
-def "se_check_last_defined_function" {
-    se_check_function_and_print_stack_effect_
-        se_word_def_address se_dict_record_word_def se_def_list
+constant "se_enabled_ptr" malloc 8 ;
+def "se_is_enabled" { read_mem_i64 se_enabled_ptr } ;
+def "se_enable" { write_mem_i64 se_enabled_ptr true } ;
+def "se_disable" { write_mem_i64 se_enabled_ptr false } ;
+se_disable ;
 
-    print_string "': "
-    print_string se_dict_record_name se_def_list
-    print_string "function '"
+def "se_check_last_defined_function" {
+    if { se_is_enabled } {
+        se_check_function_and_print_stack_effect_
+            se_word_def_address se_dict_record_word_def se_def_list
+
+        print_string "': "
+        print_string se_dict_record_name se_def_list
+        print_string "function '"
+    } { }
 } ;
 
 # <string> ->
 def "se_check_function_by_name" {
-    se_check_function_and_print_stack_effect_
-        se_word_def_address se_dict_record_word_def
-    se_find_record_by_name
-    print_string "': "
-    print_string dup
-    print_string "function '"
+    if { se_is_enabled } {
+        se_check_function_and_print_stack_effect_
+            se_word_def_address se_dict_record_word_def
+        se_find_record_by_name
+        print_string "': "
+        print_string dup
+        print_string "function '"
+    } { drop }
 } ;
 
 #print_newline .  se_find_record_by_instruction_or_pointer read_mem_i64 4199908 ;
