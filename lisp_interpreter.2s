@@ -232,6 +232,7 @@ constant "i64_obj_type_id" 1 ;
 constant "pair_obj_type_id" 2 ;
 constant "lambda_obj_type_id" 3 ;
 constant "env_obj_type_id" 4 ;
+constant "bool_obj_type_id" 4 ;
 
 constant "obj_header_size" 16 ;
 
@@ -470,7 +471,25 @@ def "obj_env_lookup" {
 } ;
 se_check_last_defined_function ;
 
+def "alloc_bool" {
+    keep { obj_set_gc_marked_flag swap 0 }
+    keep { obj_set_type_id swap bool_obj_type_id }
+    malloc obj_header_size
+} ;
+
+constant "obj_bool_true" alloc_bool ;
+constant "obj_bool_false" alloc_bool ;
+
+constant "lisp_true_symbol" get_or_create_symbol "true" ;
+constant "lisp_false_symbol" get_or_create_symbol "false" ;
+
+symbol_bind lisp_true_symbol obj_bool_true ;
+symbol_bind lisp_false_symbol obj_bool_false ;
+
 def "print_obj_switch"
+    when { = obj_bool_true dup } then { print_string "true" drop } otherwise
+    when { = obj_bool_false dup } then { print_string "false" drop } otherwise
+    when { obj_is_list dup } then { print_list } otherwise
     when { = symbol_obj_type_id obj_get_type_id dup } then { print_string "`" print_buffer bi { symbol_get_buffer } { symbol_get_size } print_string "`" } otherwise
     when { = i64_obj_type_id obj_get_type_id dup } then { . obj_i64_get_value } otherwise
     when { obj_is_list dup } then { print_list } otherwise
@@ -542,18 +561,22 @@ def "parse_i64_non_empty" {
     2drop # <char* end> <char*> <bool> <number>
     if { = 45 read_mem_byte over } {
         # negative
-        while { lazy_and { rot 2dip { dup } } > 2dup } {
-            dip {
-                + 1 # <char*> <bool> <number>
-                if { and bi { <= 48 } { > 58 } read_mem_byte dup } {
-                    keep {
-                        and
-                        dip { checked_add * -1 + -48 read_mem_byte }
-                        swap
-                    } # <char*> <bool> <number>
-                    dip { checked_mul 10 drop }
-                } {
-                    dip { false drop }
+        if { = 2dup } {
+            2dip { false drop } # single "-" case
+        } {
+            while { lazy_and { rot 2dip { dup } } > 2dup } {
+                dip {
+                    + 1 # <char*> <bool> <number>
+                    if { and bi { <= 48 } { > 58 } read_mem_byte dup } {
+                        keep {
+                            and
+                            dip { checked_add * -1 + -48 read_mem_byte }
+                            swap
+                        } # <char*> <bool> <number>
+                        dip { checked_mul 10 drop }
+                    } {
+                        dip { false drop }
+                    }
                 }
             }
         }
@@ -718,6 +741,37 @@ constant "obj_i64_add_instruction" {
     obj_i64_add lisp_value_stack_peek 1 lisp_value_stack_peek 0
 } ;
 
+constant "obj_i64_sub_instruction" {
+    lisp_value_stack_push
+    drop lisp_value_stack_pop
+    drop lisp_value_stack_pop
+    alloc_i64 - bi@ { obj_i64_get_value }
+    bi@ { assert "'sub' args are i64" = i64_obj_type_id obj_get_type_id } 2dup
+    lisp_value_stack_peek 0 lisp_value_stack_peek 1
+} ;
+
+constant "obj_i64_mul_instruction" {
+    lisp_value_stack_push
+    drop lisp_value_stack_pop
+    drop lisp_value_stack_pop
+    alloc_i64 * bi@ { obj_i64_get_value }
+    bi@ { assert "'mul' args are i64" = i64_obj_type_id obj_get_type_id } 2dup
+    lisp_value_stack_peek 1 lisp_value_stack_peek 0
+} ;
+
+constant "obj_i64_gt_instruction" {
+    lisp_value_stack_push
+    drop lisp_value_stack_pop
+    drop lisp_value_stack_pop
+    if { > bi@ { obj_i64_get_value } } {
+        obj_bool_true
+    } {
+        obj_bool_false
+    }
+    bi@ { assert "'gt' args are i64" = i64_obj_type_id obj_get_type_id } 2dup
+    lisp_value_stack_peek 0 lisp_value_stack_peek 1
+} ;
+
 constant "literal_instruction" {
     lisp_value_stack_push lisp_program_stack_pop
 } ;
@@ -745,9 +799,8 @@ constant "make_lambda_instruction" {
         lisp_value_stack_peek 0 # local env
         lisp_value_stack_peek 1 # arg list
         lisp_value_stack_peek 2 # body
-    assert "local env is list" lisp_value_stack_peek 0 # local env
-    assert "arg list is list" lisp_value_stack_peek 1 # arg list
-    assert "body is list" lisp_value_stack_peek 2 # body
+    assert "local env is env" = env_obj_type_id obj_get_type_id lisp_value_stack_peek 0 # local env
+    assert "arg list is list" obj_is_list lisp_value_stack_peek 1 # arg list
 } ;
 
 constant "call_instruction" {
@@ -797,6 +850,17 @@ constant "call_instruction" {
     } { }
 } ;
 
+constant "if_instruction" {
+    if { = obj_bool_true lisp_value_stack_pop } {
+        lisp_value_stack_push
+        drop lisp_value_stack_pop
+        lisp_value_stack_pop
+    } {
+        drop lisp_value_stack_pop
+    }
+    assert "if_instruction: boolean value" = bool_obj_type_id obj_get_type_id lisp_value_stack_peek_top
+} ;
+
 constant "lisp_local_env" array_list_new ;
 
 # <symbol> <value>
@@ -814,11 +878,24 @@ def "lisp_local_env_set_saved_env" {
 } ;
 
 constant "lisp_plus_symbol" get_or_create_symbol "+" ;
+constant "lisp_minus_symbol" get_or_create_symbol "-" ;
+constant "lisp_mul_symbol" get_or_create_symbol "*" ;
+constant "lisp_gt_symbol" get_or_create_symbol ">" ;
 constant "lisp_define_symbol" get_or_create_symbol "define" ;
 constant "lisp_lambda_symbol" get_or_create_symbol "lambda" ;
+constant "lisp_if_symbol" get_or_create_symbol "if" ;
 
 # <obj> ->
 def "lisp_compile_list_switch"
+    when { = lisp_gt_symbol obj_pair_car dup } then {
+        drop
+        lisp_compile_expression obj_pair_car dup
+        obj_pair_cdr
+        lisp_compile_expression obj_pair_car dup
+        obj_pair_cdr
+        lisp_program_stack_push obj_i64_gt_instruction
+        assert "> takes 2 args" = 3 obj_list_length dup
+    } otherwise
     when { = lisp_plus_symbol obj_pair_car dup } then {
         drop
         lisp_compile_expression obj_pair_car dup
@@ -827,6 +904,24 @@ def "lisp_compile_list_switch"
         obj_pair_cdr
         lisp_program_stack_push obj_i64_add_instruction
         assert "+ takes 2 args" = 3 obj_list_length dup
+    } otherwise
+    when { = lisp_minus_symbol obj_pair_car dup } then {
+        drop
+        lisp_compile_expression obj_pair_car dup
+        obj_pair_cdr
+        lisp_compile_expression obj_pair_car dup
+        obj_pair_cdr
+        lisp_program_stack_push obj_i64_sub_instruction
+        assert "- takes 2 args" = 3 obj_list_length dup
+    } otherwise
+    when { = lisp_mul_symbol obj_pair_car dup } then {
+        drop
+        lisp_compile_expression obj_pair_car dup
+        obj_pair_cdr
+        lisp_compile_expression obj_pair_car dup
+        obj_pair_cdr
+        lisp_program_stack_push obj_i64_mul_instruction
+        assert "* takes 2 args" = 3 obj_list_length dup
     } otherwise
     when { = lisp_define_symbol obj_pair_car dup } then {
         lisp_program_stack_push literal_instruction
@@ -852,6 +947,36 @@ def "lisp_compile_list_switch"
         lisp_program_stack_push make_lambda_instruction
         obj_pair_cdr
         assert "lambda takes 2 args" = 3 obj_list_length dup
+    } otherwise
+    when { = lisp_if_symbol obj_pair_car dup } then {
+        drop
+
+        lisp_program_stack_push literal_instruction
+        lisp_program_stack_push obj_pair_car dup # else
+        lisp_program_stack_push literal_instruction
+        lisp_program_stack_push 0 # arg list
+        lisp_program_stack_push literal_instruction
+        lisp_program_stack_push alloc_env array_list_clone lisp_local_env
+        lisp_program_stack_push make_lambda_instruction
+
+        obj_pair_cdr
+
+        lisp_program_stack_push literal_instruction
+        lisp_program_stack_push obj_pair_car dup # then
+        lisp_program_stack_push literal_instruction
+        lisp_program_stack_push 0 # arg list
+        lisp_program_stack_push literal_instruction
+        lisp_program_stack_push alloc_env array_list_clone lisp_local_env
+        lisp_program_stack_push make_lambda_instruction
+
+        obj_pair_cdr
+
+        lisp_compile_expression obj_pair_car dup # compile cond
+        lisp_program_stack_push if_instruction
+        lisp_program_stack_push call_instruction
+        lisp_program_stack_push 0 # arg count
+        obj_pair_cdr
+        assert "if takes 3 args" = 4 obj_list_length dup
     } otherwise
     {
         drop
@@ -932,3 +1057,12 @@ while { true } { assert "value stack is empty" array_list_is_empty lisp_value_st
 ((adder a) b)
 (define first-arg (lambda (f s) f))
 (first-arg 1 2)
+(if false 1 (+ 100 1))
+1111111
+(- 100 1)
+111111
+(define factorial (lambda (n)
+    (if (> n 0)
+        (* (factorial (- n 1)) n)
+        1)))
+(factorial 5)
