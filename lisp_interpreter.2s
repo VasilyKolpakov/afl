@@ -1043,6 +1043,10 @@ constant "if_instruction" {
     assert "if_instruction: boolean value" = bool_obj_type_id obj_get_type_id lisp_value_stack_peek_top
 } ;
 
+constant "eval_instruction" {
+    lisp_compile_expression lisp_value_stack_pop
+} ;
+
 constant "lisp_local_env" array_list_new ;
 
 # <symbol> <value>
@@ -1067,6 +1071,7 @@ constant "lisp_define_symbol" get_or_create_symbol "define" ;
 constant "lisp_lambda_symbol" get_or_create_symbol "lambda" ;
 constant "lisp_if_symbol" get_or_create_symbol "if" ;
 constant "lisp_quote_symbol" get_or_create_symbol "quote" ;
+constant "lisp_eval_symbol" get_or_create_symbol "eval" ;
 
 # <obj> ->
 def "lisp_compile_list"
@@ -1163,7 +1168,13 @@ def "lisp_compile_list"
     } otherwise
     when { = lisp_quote_symbol obj_pair_car dup } then {
         lisp_program_stack_push literal_instruction
-        lisp_program_stack_push obj_pair_cdr
+        lisp_program_stack_push obj_pair_car obj_pair_cdr
+        assert "quote takes 1 arg" = 2 obj_list_length dup
+    } otherwise
+    when { = lisp_eval_symbol obj_pair_car dup } then {
+        lisp_compile_expression obj_pair_car obj_pair_cdr
+        lisp_program_stack_push eval_instruction
+        assert "eval takes 1 arg" = 2 obj_list_length dup
     } otherwise
     {
         drop
@@ -1214,7 +1225,7 @@ def "lisp_eval" {
     while { not array_list_is_empty lisp_program_stack } {
         call lisp_program_stack_pop
     }
-    lisp_compile_expression lisp_value_stack_pop 0
+    lisp_compile_expression lisp_value_stack_pop
 } ;
 
 
