@@ -85,6 +85,13 @@ def "array_list_get" {
     assert "array_list_get out of range" > array_list_get_size 2dup
 } ;
 
+# <list> <index> <value> ->
+def "array_list_set" {
+    write_mem_i64 + array_list_get_array dip { * 8 }
+    assert "array_list_set out of range" <= 0 over
+    assert "array_list_set out of range" > array_list_get_size 2dup
+} ;
+
 # <list> -> <value>
 def "array_list_get_last" {
     bi { array_list_get } { + -1 array_list_get_size }

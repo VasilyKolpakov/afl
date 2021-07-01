@@ -5,6 +5,8 @@
 # import switch_stmt.2s
 # import lib.2s
 
+#se_enable ;
+
 def "string_first_char" {
     byte_vector_get dip { 0 }
 } ;
@@ -15,6 +17,7 @@ constant "close_paren_char" string_first_char ")" ;
 constant "space_char" string_first_char " " ;
 constant "tab_char" string_first_char "\t" ;
 constant "newline_char" string_first_char "\n" ;
+constant "semicolon_char" string_first_char ";" ;
 constant "double_quote_char" 34 ;
 constant "single_quote_char" 39 ;
 constant "backslash_char" 92 ;
@@ -29,12 +32,16 @@ def "is_paren_char" {
     or bi { = open_paren_char } { = close_paren_char }
 } ;
 
-def "skip_whitespace" {
-    while { is_whitespace_char } {
-        buffered_stdin_peek_byte
-        drop buffered_stdin_read_byte
+def "skip_whitespace_and_comments" {
+    while { lazy_or { = semicolon_char scanner_peek } is_whitespace_char scanner_peek } {
+        if { = semicolon_char scanner_peek } {
+            while { not = newline_char scanner_peek } { # skip line comment
+                scanner_advance
+            }
+        } {
+            scanner_advance # skip whitespace
+        }
     }
-    buffered_stdin_peek_byte
 } ;
 
 constant "token_open_paren_type"            0 ;
@@ -174,7 +181,7 @@ def "read_next_token_switch"
 # -> <token>
 def "read_next_token" {
     read_next_token_switch
-    skip_whitespace
+    skip_whitespace_and_comments
 } ;
 se_check_last_defined_function ;
 
@@ -232,7 +239,7 @@ constant "i64_obj_type_id" 1 ;
 constant "pair_obj_type_id" 2 ;
 constant "lambda_obj_type_id" 3 ;
 constant "env_obj_type_id" 4 ;
-constant "bool_obj_type_id" 4 ;
+constant "bool_obj_type_id" 5 ;
 
 constant "obj_header_size" 16 ;
 
@@ -355,10 +362,12 @@ se_check_last_defined_function ;
 
 # <number> -> <obj>
 def "alloc_i64" {
+    keep { lisp_gc_ref_list_append }
     keep { write_mem_i64 + obj_header_size }
     keep { obj_set_gc_marked_flag swap 0 }
     keep { obj_set_type_id swap i64_obj_type_id }
     malloc + 8 obj_header_size
+    lisp_run_gc
 } ;
 
 # <obj> -> <value>
@@ -368,11 +377,13 @@ def "obj_i64_get_value" {
 
 # <car obj> <cdr obj> -> <pair obj>
 def "alloc_pair" {
+    keep { lisp_gc_ref_list_append }
     keep { write_mem_i64 + 8 + obj_header_size }
     keep { write_mem_i64 + obj_header_size }
     keep { obj_set_gc_marked_flag swap 0 }
     keep { obj_set_type_id swap pair_obj_type_id }
     malloc + 16 obj_header_size
+    lisp_run_gc
 } ;
 
 # <obj> -> <value>
@@ -384,6 +395,12 @@ def "obj_pair_car" {
 def "obj_pair_cdr" {
     read_mem_i64 + 8 + obj_header_size
 } ;
+
+def "obj_pair_invalidate" {
+    write_mem_i64 swap -1 + 8 + obj_header_size
+    write_mem_i64 swap -1 + obj_header_size dup
+} ;
+se_check_last_defined_function ;
 
 # <obj> -> <bool>
 def "obj_is_pair" {
@@ -423,24 +440,35 @@ def "print_list" {
 
 # <local env stack> <arg list> <body> -> <lambda>
 def "alloc_lambda" {
+    keep { lisp_gc_ref_list_append }
     keep { write_mem_i64 + 16 + obj_header_size }
     keep { write_mem_i64 + 8 + obj_header_size }
     keep { write_mem_i64 + obj_header_size }
     keep { obj_set_gc_marked_flag swap 0 }
     keep { obj_set_type_id swap lambda_obj_type_id }
     malloc + 24 obj_header_size
+    lisp_run_gc
 } ;
 
 def "obj_lambda_get_local_env" { read_mem_i64 + obj_header_size } ;
 def "obj_lambda_get_arg_list" { read_mem_i64 + 8 + obj_header_size } ;
 def "obj_lambda_get_body" { read_mem_i64 + 16 + obj_header_size } ;
 
+def "obj_lambda_invalidate" {
+    write_mem_i64 swap -1 + 16 + obj_header_size
+    write_mem_i64 swap -1 + 8 + obj_header_size dup
+    write_mem_i64 swap -1 + obj_header_size dup
+} ;
+se_check_last_defined_function ;
+
 # <bindings list> ->
 def "alloc_env" {
+    keep { lisp_gc_ref_list_append }
     keep { write_mem_i64 + obj_header_size } # bindings list is set here
     keep { obj_set_gc_marked_flag swap 0 }
     keep { obj_set_type_id swap env_obj_type_id }
     malloc + 8 obj_header_size
+    lisp_run_gc
 } ;
 
 def "obj_env_get_bindings" { read_mem_i64 + obj_header_size } ;
@@ -454,20 +482,8 @@ def "obj_env_add_binding" {
 } ;
 se_check_last_defined_function ;
 
-# <env> <symbol> -> <found bool> <value>
-def "obj_env_lookup" {
-    if { <= 0 dup } {
-        true
-        dip { drop }
-        array_list_get swap + -1
-    } {
-        false 0 3drop
-    }
-    while { lazy_and { not = array_list_get swap 3dup } <= 0 dup } {
-        + -2
-    }
-    + -1 array_list_get_size dup
-    obj_env_get_bindings
+def "obj_env_invalidate" {
+    write_mem_i64 swap -1 + obj_header_size
 } ;
 se_check_last_defined_function ;
 
@@ -490,7 +506,7 @@ def "print_obj_switch"
     when { = obj_bool_true dup } then { print_string "true" drop } otherwise
     when { = obj_bool_false dup } then { print_string "false" drop } otherwise
     when { obj_is_list dup } then { print_list } otherwise
-    when { = symbol_obj_type_id obj_get_type_id dup } then { print_string "`" print_buffer bi { symbol_get_buffer } { symbol_get_size } print_string "`" } otherwise
+    when { = symbol_obj_type_id obj_get_type_id dup } then { print_buffer bi { symbol_get_buffer } { symbol_get_size } print_string "'" } otherwise
     when { = i64_obj_type_id obj_get_type_id dup } then { . obj_i64_get_value } otherwise
     when { obj_is_list dup } then { print_list } otherwise
     when { = pair_obj_type_id obj_get_type_id dup } then {
@@ -531,7 +547,7 @@ def "print_obj_switch"
         obj_env_get_bindings
         print_string "(env "
     } otherwise
-    { assert "suppoted obj type" false print_newline . obj_get_type_id }
+    { assert "OK" false print_newline . obj_get_type_id print_string "print_obj_switch: unsuppoted obj type: " }
 ;
 
 def "print_obj" {
@@ -541,6 +557,30 @@ def "print_obj" {
         print_obj_switch
     }
 } ;
+se_check_last_defined_function ;
+
+# <obj> ->
+def "destroy_obj"
+    when { = bool_obj_type_id obj_get_type_id dup } then { drop } otherwise
+    when { = symbol_obj_type_id obj_get_type_id dup } then { drop } otherwise
+    when { = i64_obj_type_id obj_get_type_id dup } then {
+        free
+    } otherwise
+    when { = pair_obj_type_id obj_get_type_id dup } then {
+        free
+        obj_pair_invalidate dup
+    } otherwise
+    when { = lambda_obj_type_id obj_get_type_id dup } then {
+        free
+        obj_lambda_invalidate dup
+    } otherwise
+    when { = env_obj_type_id obj_get_type_id dup } then {
+        free
+        obj_env_invalidate dup
+        array_list_destroy obj_env_get_bindings dup
+    } otherwise
+    { assert "suppoted obj type" false print_newline . obj_get_type_id }
+;
 se_check_last_defined_function ;
 
 constant "current_token_ptr" malloc 8 ;
@@ -679,6 +719,146 @@ def "lisp_value_stack_peek" {
     array_list_peek lisp_value_stack
 } ;
 
+constant "lisp_program_stack" array_list_new ;
+
+def "lisp_program_stack_push" {
+    array_list_append lisp_program_stack
+} ;
+
+def "lisp_program_stack_pop" {
+    array_list_pop_last lisp_program_stack
+} ;
+
+constant "lisp_gc_logging_enabled_pointer" malloc 8 ;
+write_mem_i64 lisp_gc_logging_enabled_pointer false ;
+def "lisp_gc_logging_is_enabled" { read_mem_i64 lisp_gc_logging_enabled_pointer } ;
+def "lisp_gc_logging_enable" { write_mem_i64 lisp_gc_logging_enabled_pointer true } ;
+
+constant "lisp_gc_ref_list" array_list_new ;
+def "lisp_gc_ref_list_append" {
+    array_list_append lisp_gc_ref_list
+    if { lisp_gc_logging_is_enabled } {
+        print_newline print_obj print_string "allocation: " dup
+        print_newline . array_list_get_size lisp_gc_ref_list print_string "allocation: number of alive objs: "
+    } { }
+} ;
+
+constant "lisp_gc_marker_stack" array_list_new ;
+
+# <obj> ->
+def "lisp_gc_marker_stack_push" {
+    if { lazy_or { obj_get_gc_marked_flag dup } = 0 dup } {
+        drop # do nothing, obj was marked
+    } {
+        array_list_append lisp_gc_marker_stack
+    }
+} ;
+
+def "lisp_gc_push_roots_to_stack" {
+    lisp_gc_marker_stack_push get_temp_lambda_ptr
+    drop while { < 0 dup } {
+        if { symbol_has_binding dup } {
+            lisp_gc_marker_stack_push symbol_get_binding # push bindings
+        } { drop }
+        array_list_get symbol_list dup
+        + -1
+    } array_list_get_size symbol_list
+    drop while { < 0 dup } {
+        if { = call_instruction dup } {
+            + -1 # skip arg count
+            drop
+        } {
+            if { = literal_instruction } {
+                lisp_gc_marker_stack_push array_list_get lisp_program_stack dup # push literal obj
+                + -1
+            } {
+                # do nothing
+            }
+        }
+        array_list_get lisp_program_stack dup
+        + -1
+    } array_list_get_size lisp_program_stack
+    drop while { < 0 dup } {
+        lisp_gc_marker_stack_push array_list_get lisp_value_stack dup # push value stack
+        + -1
+    } array_list_get_size lisp_value_stack
+} ;
+
+# <obj> ->
+def "lisp_gc_mark_push_refs_switch" 
+    when { = bool_obj_type_id obj_get_type_id dup } then {
+        drop # do nothing
+    } otherwise
+    when { = symbol_obj_type_id obj_get_type_id dup } then {
+        if { symbol_has_binding dup } {
+            lisp_gc_marker_stack_push symbol_get_binding 
+        } {
+            drop
+        }
+    } otherwise
+    when { = i64_obj_type_id obj_get_type_id dup } then {
+        drop
+    } otherwise
+    when { = pair_obj_type_id obj_get_type_id dup } then {
+        lisp_gc_marker_stack_push obj_pair_cdr
+        lisp_gc_marker_stack_push obj_pair_car dup
+    } otherwise
+    when { = env_obj_type_id obj_get_type_id dup } then {
+        2drop while { < 0 dup } {
+            lisp_gc_marker_stack_push array_list_get swap 2dup
+            + -2
+        } array_list_get_size dup
+        obj_env_get_bindings
+    } otherwise
+    when { = lambda_obj_type_id obj_get_type_id dup } then {
+        lisp_gc_marker_stack_push obj_lambda_get_body
+        lisp_gc_marker_stack_push obj_lambda_get_arg_list dup
+        lisp_gc_marker_stack_push obj_lambda_get_local_env dup
+    } otherwise
+    { exit 1 print_newline . obj_get_type_id print_string "gc mark: bad object, obj type:" }
+;
+se_check_last_defined_function ;
+
+def "lisp_gc_mark" {
+    while { not array_list_is_empty lisp_gc_marker_stack } {
+        lisp_gc_mark_push_refs_switch
+        obj_set_gc_marked_flag swap true dup
+        array_list_pop_last lisp_gc_marker_stack
+    }
+    lisp_gc_push_roots_to_stack 
+} ;
+
+def "lisp_gc_sweep" {
+    drop while { < 0 dup } {
+        if { not obj_get_gc_marked_flag array_list_get lisp_gc_ref_list dup } {
+            if { = + -1 array_list_get_size lisp_gc_ref_list dup } { # if last in ref list
+                destroy_obj array_list_pop_last lisp_gc_ref_list
+            } {
+                array_list_set lisp_gc_ref_list dip { array_list_pop_last lisp_gc_ref_list } dup # replace destroyed obj with last from ref list 
+                destroy_obj array_list_get lisp_gc_ref_list dup
+            }
+        } {
+            obj_set_gc_marked_flag swap false array_list_get lisp_gc_ref_list dup
+        }
+        + -1
+    } array_list_get_size lisp_gc_ref_list
+    if { lisp_gc_logging_is_enabled } {
+        drop while { < 0 dup } {
+            if { not obj_get_gc_marked_flag dup } {
+                print_newline print_obj print_string "gc: will remove "
+            } { drop }
+            array_list_get lisp_gc_ref_list dup
+            + -1
+        } array_list_get_size lisp_gc_ref_list
+    } { }
+} ;
+se_check_last_defined_function ;
+
+def "lisp_run_gc" {
+    lisp_gc_sweep
+    lisp_gc_mark
+} ;
+
 def "read_next_expression_switch"
     when { = token_open_paren_type token_get_type_id token_scanner_peek } then {
         drop
@@ -716,16 +896,6 @@ def "read_next_expression" {
 } ;
 
 se_check_last_defined_function ;
-
-constant "lisp_program_stack" array_list_new ;
-
-def "lisp_program_stack_push" {
-    array_list_append lisp_program_stack
-} ;
-
-def "lisp_program_stack_pop" {
-    array_list_pop_last lisp_program_stack
-} ;
 
 # <obj> <obj> -> <obj>
 def "obj_i64_add" {
@@ -803,14 +973,27 @@ constant "make_lambda_instruction" {
     assert "arg list is list" obj_is_list lisp_value_stack_peek 1 # arg list
 } ;
 
+constant "temp_lambda_ptr" malloc 8 ;
+
+def "set_temp_lambda_ptr" {
+    write_mem_i64 temp_lambda_ptr
+} ;
+
+def "get_temp_lambda_ptr" {
+    read_mem_i64 temp_lambda_ptr
+} ;
+set_temp_lambda_ptr 0 ;
+
 constant "call_instruction" {
+    # TODO: remove lisp_local_env ???
+    array_list_clear lisp_local_env
     drop while { < 0 dup } {
         + -1
         symbol_unbind array_list_get lisp_local_env dup
         + -1
-    }
-    array_list_get_size lisp_local_env
-    lisp_compile_expression obj_lambda_get_body
+    } array_list_get_size lisp_local_env
+    set_temp_lambda_ptr 0
+    lisp_compile_expression obj_lambda_get_body get_temp_lambda_ptr
     drop while { < 0 dup } {
         symbol_bind bi { array_list_get lisp_local_env + 1 } { array_list_get lisp_local_env } dup
         + -2
@@ -824,11 +1007,9 @@ constant "call_instruction" {
             # <symbol> <value> <arg list>
             dip { lisp_value_stack_pop } obj_pair_car dup
         }
-        obj_lambda_get_arg_list
+        obj_lambda_get_arg_list get_temp_lambda_ptr
     }
-    lisp_local_env_set_saved_env obj_lambda_get_local_env dup
-    # <lambda>
-    lisp_value_stack_pop
+    lisp_local_env_set_saved_env obj_lambda_get_local_env get_temp_lambda_ptr
     if { not = 2dup } {
         exit 1
         print_newline
@@ -839,7 +1020,8 @@ constant "call_instruction" {
         .
         print_string "wrong number of arguments: expected "
     } { 2drop }
-    obj_list_length obj_lambda_get_arg_list lisp_value_stack_peek 0
+    obj_list_length obj_lambda_get_arg_list get_temp_lambda_ptr
+    set_temp_lambda_ptr lisp_value_stack_pop
     # <arg count>
     lisp_program_stack_pop
     if { not = lambda_obj_type_id obj_get_type_id lisp_value_stack_peek_top } {
@@ -884,9 +1066,10 @@ constant "lisp_gt_symbol" get_or_create_symbol ">" ;
 constant "lisp_define_symbol" get_or_create_symbol "define" ;
 constant "lisp_lambda_symbol" get_or_create_symbol "lambda" ;
 constant "lisp_if_symbol" get_or_create_symbol "if" ;
+constant "lisp_quote_symbol" get_or_create_symbol "quote" ;
 
 # <obj> ->
-def "lisp_compile_list_switch"
+def "lisp_compile_list"
     when { = lisp_gt_symbol obj_pair_car dup } then {
         drop
         lisp_compile_expression obj_pair_car dup
@@ -978,6 +1161,10 @@ def "lisp_compile_list_switch"
         obj_pair_cdr
         assert "if takes 3 args" = 4 obj_list_length dup
     } otherwise
+    when { = lisp_quote_symbol obj_pair_car dup } then {
+        lisp_program_stack_push literal_instruction
+        lisp_program_stack_push obj_pair_cdr
+    } otherwise
     {
         drop
         while { not = 0 dup } {
@@ -990,10 +1177,6 @@ def "lisp_compile_list_switch"
         lisp_program_stack_push + -1 obj_list_length dup # push arg count
     }
 ;
-
-def "lisp_compile_list" {
-    lisp_compile_list_switch
-} ;
 
 # <obj> ->
 def "lisp_compile_expression_switch" 
@@ -1020,7 +1203,9 @@ def "lisp_compile_expression_switch"
 
 # <obj> <local env> ->
 def "lisp_compile_expression" {
+    drop lisp_value_stack_pop
     lisp_compile_expression_switch
+    lisp_value_stack_push dup
 } ;
 #se_check_last_defined_function ;
 
@@ -1036,33 +1221,15 @@ def "lisp_eval" {
 def "define_instruction_func" { call define_instruction } ;
 se_check_last_defined_function ;
 def "call_instruction_func" { call call_instruction } ;
-se_check_function_by_name "symbol_bind" ;
-
 se_check_last_defined_function ;
-print_newline
-print_obj print_newline print_bool obj_env_lookup swap get_or_create_symbol
-"a"
-keep { obj_env_add_binding dip { get_or_create_symbol "a" alloc_i64 42 } }
-keep { obj_env_add_binding dip { get_or_create_symbol "c" alloc_i64 2 } }
-keep { obj_env_add_binding dip { get_or_create_symbol "b" alloc_i64 1 } }
-keep { obj_env_add_binding dip { get_or_create_symbol "a" alloc_i64 0 } }
-alloc_env array_list_new ;
+
+se_check_function_by_name "symbol_bind" ;
+se_check_function_by_name "lisp_gc_push_roots_to_stack" ;
+
+
+
+
 #while { true } { print_newline token_print read_next_token } ;
 #while { true } { print_newline print_obj lisp_value_stack_pop read_next_expression } ;
 while { true } { assert "value stack is empty" array_list_is_empty lisp_value_stack  print_newline print_obj lisp_value_stack_pop lisp_eval read_next_expression } ;
-(define a 42)
-(define b (+ 1 1))
-(define adder (lambda (x)
-    (lambda (y) (+ x y))))
-((adder a) b)
-(define first-arg (lambda (f s) f))
-(first-arg 1 2)
-(if false 1 (+ 100 1))
-1111111
-(- 100 1)
-111111
-(define factorial (lambda (n)
-    (if (> n 0)
-        (* (factorial (- n 1)) n)
-        1)))
-(factorial 5)
+

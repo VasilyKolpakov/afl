@@ -32,7 +32,7 @@ def "stacktrace_word_def_is_function" {
 def "stacktrace_get_func_instruction_count" {
     + 1
     drop
-    while { not = return_instruction_code read_mem_i64 dup } {
+    while { lazy_and { not = jmp_instruction_code read_mem_i64 dup } not = return_instruction_code read_mem_i64 dup } {
         swap + 1 swap
         + -8
     } # <func> <count>
@@ -48,20 +48,26 @@ def "stacktrace_get_func_first_pointer" {
 # <i pointer> -> <func name or "#?#">
 def "stacktrace_print_func_name_by_instruction_pointer" {
     if { not = 0 dup } {
-        drop print_string stacktrace_dict_record_name # <record> <i pointer>
-    } {  drop print_string "?" drop }
+        print_string stacktrace_dict_record_name # <record> <i pointer>
+    } { print_string "?" drop }
+    drop swap
     while {
-        cond_end
-        cond_default { false }
-        cond_when { > stacktrace_get_func_first_pointer stacktrace_word_def_address stacktrace_dict_record_word_def 2dup } { true } # first func addr > i pointer
-        cond_when { < stacktrace_word_def_address stacktrace_dict_record_word_def 2dup } { true } # func < i pointer
-        cond_when { not stacktrace_word_def_is_function stacktrace_dict_record_word_def dup } { true }
-        cond_when { = 0 dup } { false }
-        cond_start
+        lazy_and {
+            not lazy_and { stacktrace_instruction_pointer_is_in_function stacktrace_word_def_address stacktrace_dict_record_word_def 2dup }
+            stacktrace_word_def_is_function stacktrace_dict_record_word_def dup
+        }
+        not = 0 dup
     } {
         stacktrace_dict_record_next
-    } # <record> <i pointer>
-    stacktrace_def_list
+#        print_newline print_string stacktrace_dict_record_name print_string "func search loop:   " dup
+    } stacktrace_def_list 
+} ;
+
+# <function> <instruction pointer> -> <bool>
+def "stacktrace_instruction_pointer_is_in_function" {
+    and
+    dip { >= }
+    <= stacktrace_get_func_first_pointer 2dup
 } ;
 
 def "print_all_function_names_and_addresses" {

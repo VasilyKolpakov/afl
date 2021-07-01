@@ -2577,6 +2577,7 @@ f_tests: equ     $-8
 
                  
                     def_instruction_word 'i', i_indirect_call
+                    def_instruction_word 'j', i_indirect_jmp
                     def_instruction_word 'l', i_late_bind_and_call_word
 
                     def_function_word_2 '.','s', f_print_data_stack

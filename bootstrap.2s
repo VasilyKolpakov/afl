@@ -4,6 +4,7 @@ rename_word "d" "def" ;
 
 rename_word "l" "late_bind_and_call_word" ;
 rename_word "i" "call" ;
+rename_word "j" "jmp" ;
 rename_word "w" "while" ;
 rename_word "cs" "cond_start" ;
 rename_word "ce" "cond_end" ;
