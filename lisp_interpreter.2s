@@ -1295,7 +1295,7 @@ def "lisp_compile_list"
     } otherwise
     when { = lisp_read_syntax_symbol obj_pair_car dup } then {
         lisp_program_stack_push read_syntax_instruction
-        assert "read-syntax takes no args" = 1 obj_list_length dup
+        assert "read-syntax takes no args" = 1 obj_list_length
     } otherwise
     when { = lisp_cell_symbol obj_pair_car dup } then {
         lisp_compile_expression obj_pair_car obj_pair_cdr
@@ -1377,6 +1377,7 @@ se_enable ;
 se_check_last_defined_function ;
 
 se_check_function_by_name "symbol_bind" ;
+se_check_function_by_name "lisp_compile_expression" ;
 se_check_function_by_name "lisp_gc_push_roots_to_stack" ;
 
 
