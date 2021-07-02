@@ -1029,23 +1029,22 @@ constant "call_instruction" {
         symbol_unbind array_list_get lisp_local_env dup
         + -1
     } array_list_get_size lisp_local_env
+
     set_temp_lambda_ptr 0
     lisp_compile_expression obj_lambda_get_body get_temp_lambda_ptr
+
     drop while { < 0 dup } {
         symbol_bind bi { array_list_get lisp_local_env + 1 } { array_list_get lisp_local_env } dup
         + -2
-    }
-    array_list_get_size lisp_local_env
-    keep {
-        drop
-        while { not = 0 dup } {
-            obj_pair_cdr
-            lisp_local_env_add_binding
-            # <symbol> <value> <arg list>
-            dip { lisp_value_stack_pop } obj_pair_car dup
-        }
-        obj_lambda_get_arg_list get_temp_lambda_ptr
-    }
+    } array_list_get_size lisp_local_env
+
+    drop while { not = 0 dup } {
+        obj_pair_cdr
+        lisp_local_env_add_binding
+        # <symbol> <value> <arg list>
+        dip { lisp_value_stack_pop } obj_pair_car dup
+    } obj_lambda_get_arg_list get_temp_lambda_ptr
+
     lisp_local_env_set_saved_env obj_lambda_get_local_env get_temp_lambda_ptr
     if { not = 2dup } {
         exit 1
@@ -1373,7 +1372,6 @@ se_check_last_defined_function ;
 def "call_instruction_func" { call call_instruction } ;
 se_check_last_defined_function ;
 def "make_cell_instruction_func" { call make_cell_instruction } ;
-se_enable ;
 se_check_last_defined_function ;
 
 se_check_function_by_name "symbol_bind" ;
