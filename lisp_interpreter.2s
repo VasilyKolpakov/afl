@@ -389,11 +389,13 @@ def "alloc_pair" {
 # <obj> -> <value>
 def "obj_pair_car" {
     read_mem_i64 + obj_header_size
+    assert "car: obj is pair" = pair_obj_type_id obj_get_type_id dup
 } ;
 
 # <obj> -> <value>
 def "obj_pair_cdr" {
     read_mem_i64 + 8 + obj_header_size
+    assert "cdr: obj is pair" = pair_obj_type_id obj_get_type_id dup
 } ;
 
 def "obj_pair_invalidate" {
@@ -1047,6 +1049,21 @@ constant "eval_instruction" {
     lisp_compile_expression lisp_value_stack_pop
 } ;
 
+constant "car_instruction" {
+    lisp_value_stack_push obj_pair_car lisp_value_stack_pop
+} ;
+
+constant "cdr_instruction" {
+    lisp_value_stack_push obj_pair_cdr lisp_value_stack_pop
+} ;
+
+constant "cons_instruction" {
+    lisp_value_stack_push
+    drop lisp_value_stack_pop
+    drop lisp_value_stack_pop
+    alloc_pair lisp_value_stack_peek 0 lisp_value_stack_peek 1
+} ;
+
 constant "lisp_local_env" array_list_new ;
 
 # <symbol> <value>
@@ -1072,6 +1089,12 @@ constant "lisp_lambda_symbol" get_or_create_symbol "lambda" ;
 constant "lisp_if_symbol" get_or_create_symbol "if" ;
 constant "lisp_quote_symbol" get_or_create_symbol "quote" ;
 constant "lisp_eval_symbol" get_or_create_symbol "eval" ;
+constant "lisp_car_symbol" get_or_create_symbol "car" ;
+constant "lisp_cdr_symbol" get_or_create_symbol "cdr" ;
+constant "lisp_cons_symbol" get_or_create_symbol "cons" ;
+
+constant "lisp_nil_symbol" get_or_create_symbol "nil" ;
+symbol_bind lisp_nil_symbol 0 ;
 
 # <obj> ->
 def "lisp_compile_list"
@@ -1175,6 +1198,24 @@ def "lisp_compile_list"
         lisp_compile_expression obj_pair_car obj_pair_cdr
         lisp_program_stack_push eval_instruction
         assert "eval takes 1 arg" = 2 obj_list_length dup
+    } otherwise
+    when { = lisp_cons_symbol obj_pair_car dup } then {
+        lisp_compile_expression obj_pair_car
+        obj_pair_cdr
+        lisp_compile_expression obj_pair_car dup
+        obj_pair_cdr
+        lisp_program_stack_push cons_instruction
+        assert "cons takes 2 args" = 3 obj_list_length dup
+    } otherwise
+    when { = lisp_car_symbol obj_pair_car dup } then {
+        lisp_compile_expression obj_pair_car obj_pair_cdr
+        lisp_program_stack_push car_instruction
+        assert "car takes 1 arg" = 2 obj_list_length dup
+    } otherwise
+    when { = lisp_cdr_symbol obj_pair_car dup } then {
+        lisp_compile_expression obj_pair_car obj_pair_cdr
+        lisp_program_stack_push cdr_instruction
+        assert "cdr takes 1 arg" = 2 obj_list_length dup
     } otherwise
     {
         drop
