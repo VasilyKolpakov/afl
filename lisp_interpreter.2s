@@ -1117,6 +1117,12 @@ constant "cell_set_instruction" {
     obj_cell_set swap lisp_value_stack_pop lisp_value_stack_pop
 } ;
 
+constant "exit_instruction" {
+    lisp_value_stack_push 0
+    exit obj_i64_get_value lisp_value_stack_pop
+    assert "exit arg is i64" = i64_obj_type_id obj_get_type_id lisp_value_stack_peek_top
+} ;
+
 constant "lisp_local_env" array_list_new ;
 
 # <symbol> <value>
@@ -1154,6 +1160,8 @@ constant "lisp_read_syntax_symbol" get_or_create_symbol "read-syntax" ;
 constant "lisp_cell_symbol" get_or_create_symbol "cell" ;
 constant "lisp_cell_get_symbol" get_or_create_symbol "cell-get" ;
 constant "lisp_cell_set_symbol" get_or_create_symbol "cell-set" ;
+
+constant "lisp_exit_symbol" get_or_create_symbol "exit" ;
 
 # <obj> ->
 def "lisp_compile_list"
@@ -1313,6 +1321,11 @@ def "lisp_compile_list"
         lisp_program_stack_push cell_set_instruction
         obj_pair_cdr
         assert "cell-set takes 2 args" = 3 obj_list_length dup
+    } otherwise
+    when { = lisp_exit_symbol obj_pair_car dup } then {
+        lisp_compile_expression obj_pair_car obj_pair_cdr
+        lisp_program_stack_push exit_instruction
+        assert "exit takes 1 args" = 2 obj_list_length dup
     } otherwise
     {
         drop
