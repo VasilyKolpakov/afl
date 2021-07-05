@@ -617,6 +617,45 @@ def "destroy_obj"
 ;
 se_check_last_defined_function ;
 
+
+# <obj> <obj> -> <bool>
+def "obj_eq_switch"
+    when { = bool_obj_type_id obj_get_type_id dup } then { false 2drop } otherwise
+    when { = symbol_obj_type_id obj_get_type_id dup } then { false 2drop } otherwise
+    when { = i64_obj_type_id obj_get_type_id dup } then {
+        = bi@ { obj_i64_get_value }
+    } otherwise
+    when { = pair_obj_type_id obj_get_type_id dup } then {
+        dip { 2drop }
+        lazy_and { obj_eq bi@ { obj_pair_cdr } 2dup }
+        obj_eq bi@ { obj_pair_car } 2dup
+    } otherwise
+    when { = lambda_obj_type_id obj_get_type_id dup } then {
+        false 2drop
+    } otherwise
+    when { = env_obj_type_id obj_get_type_id dup } then {
+        false 2drop
+    } otherwise
+    when { = cell_obj_type_id obj_get_type_id dup } then {
+        obj_eq bi@ { obj_cell_get }
+    } otherwise
+    { false assert "suppoted obj type" false drop print_newline . obj_get_type_id }
+ ;
+
+# <obj> <obj> -> <bool>
+def "obj_eq" {
+    if { = 2dup } {
+        true 2drop
+    } {
+        if { lazy_and { = bi@ { obj_get_type_id } 2dup } and bi@ { not = 0 } 2dup } {
+            obj_eq_switch
+        } {
+            false 2drop
+        }
+    }
+} ;
+se_check_last_defined_function ;
+
 constant "current_token_ptr" malloc 8 ;
 
 def "token_scanner_advance" {
@@ -1141,6 +1180,14 @@ constant "exit_instruction" {
     assert "exit arg is i64" = i64_obj_type_id obj_get_type_id lisp_value_stack_peek_top
 } ;
 
+constant "equals_instruction" {
+    if { obj_eq lisp_value_stack_pop lisp_value_stack_pop } {
+        lisp_value_stack_push obj_bool_true
+    } {
+        lisp_value_stack_push obj_bool_false
+    }
+} ;
+
 constant "lisp_local_env" array_list_new ;
 
 # <symbol> <value>
@@ -1161,6 +1208,8 @@ constant "lisp_plus_symbol" get_or_create_symbol "+" ;
 constant "lisp_minus_symbol" get_or_create_symbol "-" ;
 constant "lisp_mul_symbol" get_or_create_symbol "*" ;
 constant "lisp_div_symbol" get_or_create_symbol "/" ;
+
+constant "lisp_eq_symbol" get_or_create_symbol "eq?" ;
 constant "lisp_gt_symbol" get_or_create_symbol ">" ;
 
 constant "lisp_define_symbol" get_or_create_symbol "define" ;
@@ -1190,6 +1239,15 @@ constant "lisp_exit_symbol" get_or_create_symbol "exit" ;
 
 # <obj> ->
 def "lisp_compile_list"
+    when { = lisp_eq_symbol obj_pair_car dup } then {
+        drop
+        lisp_compile_expression obj_pair_car dup
+        obj_pair_cdr
+        lisp_compile_expression obj_pair_car dup
+        obj_pair_cdr
+        lisp_program_stack_push equals_instruction
+        assert "eq? takes 2 args" = 3 obj_list_length dup
+    } otherwise
     when { = lisp_gt_symbol obj_pair_car dup } then {
         drop
         lisp_compile_expression obj_pair_car dup
