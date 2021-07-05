@@ -966,6 +966,15 @@ constant "obj_i64_mul_instruction" {
     lisp_value_stack_peek 1 lisp_value_stack_peek 0
 } ;
 
+constant "obj_i64_div_instruction" {
+    lisp_value_stack_push
+    drop lisp_value_stack_pop
+    drop lisp_value_stack_pop
+    alloc_i64 * bi@ { obj_i64_get_value }
+    bi@ { assert "'div' args are i64" = i64_obj_type_id obj_get_type_id } 2dup
+    lisp_value_stack_peek 0 lisp_value_stack_peek 1
+} ;
+
 constant "obj_i64_gt_instruction" {
     lisp_value_stack_push
     drop lisp_value_stack_pop
@@ -981,6 +990,10 @@ constant "obj_i64_gt_instruction" {
 
 constant "literal_instruction" {
     lisp_value_stack_push lisp_program_stack_pop
+} ;
+
+constant "drop_instruction" {
+    drop lisp_value_stack_pop
 } ;
 
 constant "define_instruction" {
@@ -1102,6 +1115,11 @@ constant "read_syntax_instruction" {
     read_next_expression
 } ;
 
+constant "print_instruction" {
+    lisp_value_stack_push 0
+    print_newline print_obj lisp_value_stack_pop
+} ;
+
 constant "make_cell_instruction" {
     lisp_value_stack_push
     drop lisp_value_stack_pop
@@ -1142,10 +1160,14 @@ def "lisp_local_env_set_saved_env" {
 constant "lisp_plus_symbol" get_or_create_symbol "+" ;
 constant "lisp_minus_symbol" get_or_create_symbol "-" ;
 constant "lisp_mul_symbol" get_or_create_symbol "*" ;
+constant "lisp_div_symbol" get_or_create_symbol "/" ;
 constant "lisp_gt_symbol" get_or_create_symbol ">" ;
+
 constant "lisp_define_symbol" get_or_create_symbol "define" ;
 constant "lisp_lambda_symbol" get_or_create_symbol "lambda" ;
 constant "lisp_if_symbol" get_or_create_symbol "if" ;
+constant "lisp_begin_symbol" get_or_create_symbol "begin" ;
+
 constant "lisp_quote_symbol" get_or_create_symbol "quote" ;
 constant "lisp_eval_symbol" get_or_create_symbol "eval" ;
 constant "lisp_car_symbol" get_or_create_symbol "car" ;
@@ -1156,7 +1178,10 @@ constant "lisp_nil_symbol" get_or_create_symbol "nil" ;
 symbol_bind lisp_nil_symbol 0 ;
 
 constant "lisp_list_symbol" get_or_create_symbol "list" ;
+
 constant "lisp_read_syntax_symbol" get_or_create_symbol "read-syntax" ;
+constant "lisp_print_symbol" get_or_create_symbol "print" ;
+
 constant "lisp_cell_symbol" get_or_create_symbol "cell" ;
 constant "lisp_cell_get_symbol" get_or_create_symbol "cell-get" ;
 constant "lisp_cell_set_symbol" get_or_create_symbol "cell-set" ;
@@ -1200,6 +1225,15 @@ def "lisp_compile_list"
         obj_pair_cdr
         lisp_program_stack_push obj_i64_mul_instruction
         assert "* takes 2 args" = 3 obj_list_length dup
+    } otherwise
+    when { = lisp_div_symbol obj_pair_car dup } then {
+        drop
+        lisp_compile_expression obj_pair_car dup
+        obj_pair_cdr
+        lisp_compile_expression obj_pair_car dup
+        obj_pair_cdr
+        lisp_program_stack_push obj_i64_div_instruction
+        assert "/ takes 2 args" = 3 obj_list_length dup
     } otherwise
     when { = lisp_define_symbol obj_pair_car dup } then {
         lisp_program_stack_push literal_instruction
@@ -1256,6 +1290,24 @@ def "lisp_compile_list"
         obj_pair_cdr
         assert "if takes 3 args" = 4 obj_list_length dup
     } otherwise
+    when { = lisp_begin_symbol obj_pair_car dup } then {
+        drop while { < 0 dup } {
+            if { not = 0 dup } {
+                lisp_program_stack_push drop_instruction
+            } { }
+            lisp_compile_expression lisp_value_stack_pop
+            + -1
+        }
+        dip {
+            drop while { not = 0 dup } {
+                obj_pair_cdr
+                lisp_value_stack_push obj_pair_car dup
+            }
+        }
+        obj_list_length dup
+        obj_pair_cdr
+        assert "begin takes at least 1 arg" < 1 obj_list_length dup
+    } otherwise
     when { = lisp_quote_symbol obj_pair_car dup } then {
         lisp_program_stack_push literal_instruction
         lisp_program_stack_push obj_pair_car obj_pair_cdr
@@ -1303,6 +1355,11 @@ def "lisp_compile_list"
     when { = lisp_read_syntax_symbol obj_pair_car dup } then {
         lisp_program_stack_push read_syntax_instruction
         assert "read-syntax takes no args" = 1 obj_list_length
+    } otherwise
+    when { = lisp_print_symbol obj_pair_car dup } then {
+        lisp_compile_expression obj_pair_car obj_pair_cdr
+        lisp_program_stack_push print_instruction
+        assert "print takes 1 arg" = 2 obj_list_length dup
     } otherwise
     when { = lisp_cell_symbol obj_pair_car dup } then {
         lisp_compile_expression obj_pair_car obj_pair_cdr
@@ -1388,7 +1445,9 @@ def "make_cell_instruction_func" { call make_cell_instruction } ;
 se_check_last_defined_function ;
 
 se_check_function_by_name "symbol_bind" ;
+#se_enable ;
 se_check_function_by_name "lisp_compile_expression" ;
+#se_disable ;
 se_check_function_by_name "lisp_gc_push_roots_to_stack" ;
 
 
