@@ -127,7 +127,6 @@ def "is_double_quote_or_newline" { or bi { = double_quote_char } { = newline_cha
 
 # -> <token>
 def "read_next_token_double_quote" {
-    assert "whitespace after string literal" is_whitespace_char scanner_peek
     token_create token_string_literal_type
     scanner_advance
     assert "no newline in string literals" not = newline_char scanner_peek
@@ -241,6 +240,7 @@ constant "lambda_obj_type_id"   3 ;
 constant "env_obj_type_id"      4 ;
 constant "bool_obj_type_id"     5 ;
 constant "cell_obj_type_id"     6 ;
+constant "string_obj_type_id"   7 ;
 
 constant "obj_header_size" 16 ;
 
@@ -527,6 +527,43 @@ def "obj_cell_invalidate" {
     write_mem_i64 swap -1 + obj_header_size
 } ;
 
+# <string> -> <obj>
+def "alloc_string" {
+    keep {
+        memcopy swap dip { bi { byte_vector_get_array } { byte_vector_get_size } }
+        + 8
+        write_mem_i64 dip { byte_vector_get_size } 2dup
+        + obj_header_size
+    }
+    keep { obj_set_gc_marked_flag swap false }
+    keep { obj_set_type_id swap string_obj_type_id }
+    # <string obj ptr> <string>
+    malloc + 8 + obj_header_size byte_vector_get_size dup
+} ;
+
+# <string obj> -> <i64>
+def "obj_string_get_size" {
+    read_mem_i64 + obj_header_size
+} ;
+
+# <string obj> -> <buffer>
+def "obj_string_get_buffer" {
+    + 8 + obj_header_size
+} ;
+
+# <string obj> <string obj> -> <bool>
+def "obj_string_eq" {
+    dip { 2drop }
+    lazy_and {
+        = 0
+        memcmp 
+        dip { bi@ { obj_string_get_buffer } }
+        obj_string_get_size dup 
+        2dup
+    } = bi@ { obj_string_get_size } 2dup
+    assert "string-equals args are strings" and bi@ { = string_obj_type_id obj_get_type_id } 2dup
+} ;
+
 def "print_obj_switch"
     when { = obj_bool_true dup } then { print_string "true" drop } otherwise
     when { = obj_bool_false dup } then { print_string "false" drop } otherwise
@@ -576,6 +613,11 @@ def "print_obj_switch"
         print_string ")"
         print_obj obj_cell_get
         print_string "(cell "
+    } otherwise
+    when { = string_obj_type_id obj_get_type_id dup } then {
+        write_byte_to_stdout double_quote_char
+        print_buffer bi { obj_string_get_buffer } { obj_string_get_size }
+        write_byte_to_stdout double_quote_char
     } otherwise
     { assert "OK" false print_newline . obj_get_type_id print_string "print_obj_switch: unsuppoted obj type: " }
 ;
@@ -638,6 +680,9 @@ def "obj_eq_switch"
     } otherwise
     when { = cell_obj_type_id obj_get_type_id dup } then {
         obj_eq bi@ { obj_cell_get }
+    } otherwise
+    when { = string_obj_type_id obj_get_type_id dup } then {
+        obj_string_eq
     } otherwise
     { false assert "suppoted obj type" false drop print_newline . obj_get_type_id }
  ;
@@ -891,6 +936,9 @@ def "lisp_gc_mark_push_refs_switch"
     when { = cell_obj_type_id obj_get_type_id dup } then {
         lisp_gc_marker_stack_push obj_cell_get
     } otherwise
+    when { = string_obj_type_id obj_get_type_id dup } then {
+        drop
+    } otherwise
     { exit 1 print_newline . obj_get_type_id print_string "gc mark: bad object, obj type:" }
 ;
 se_check_last_defined_function ;
@@ -964,6 +1012,11 @@ def "read_next_expression_switch"
         }
         parse_i64_string token_get_value token_scanner_peek
     } otherwise
+    when { = token_string_literal_type token_get_type_id token_scanner_peek } then {
+        token_scanner_advance
+        token_destroy token_scanner_peek
+        lisp_value_stack_push alloc_string token_get_value token_scanner_peek
+    } otherwise
     { assert "suppoted literal type" false print_newline . token_get_type_id token_scanner_peek }
 ;
 
@@ -971,14 +1024,11 @@ def "read_next_expression" {
     read_next_expression_switch
 } ;
 
-se_check_last_defined_function ;
-
 # <obj> <obj> -> <obj>
 def "obj_i64_add" {
     alloc_i64 + bi@ { obj_i64_get_value }
     bi@ { assert "'add' args are i64" = i64_obj_type_id obj_get_type_id } 2dup
 } ;
-se_check_last_defined_function ;
 
 constant "obj_i64_add_instruction" {
     lisp_value_stack_push
@@ -1471,11 +1521,10 @@ def "lisp_compile_expression_switch"
             print_string "undefined symbol: "
         }
     } otherwise
-    when { = i64_obj_type_id obj_get_type_id dup } then {
+    {
         lisp_program_stack_push literal_instruction
         lisp_program_stack_push
-    } otherwise
-    { assert "supported expression" false print_newline print_obj }
+    }
 ;
 
 # <obj> <local env> ->
@@ -1483,8 +1532,8 @@ def "lisp_compile_expression" {
     drop lisp_value_stack_pop
     lisp_compile_expression_switch
     lisp_value_stack_push dup
+    assert "obj type id is OK" and bi { <= 0 } { >= 7 } obj_get_type_id dup
 } ;
-se_check_last_defined_function ;
 
 # -> # expects expression to be on the top of lisp_value_stack
 def "lisp_eval" {
@@ -1507,6 +1556,7 @@ se_check_function_by_name "symbol_bind" ;
 se_check_function_by_name "lisp_compile_expression" ;
 #se_disable ;
 se_check_function_by_name "lisp_gc_push_roots_to_stack" ;
+se_check_function_by_name "read_next_expression" ;
 
 
 
