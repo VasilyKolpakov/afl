@@ -661,7 +661,7 @@ se_check_last_defined_function ;
 
 
 # <obj> <obj> -> <bool>
-def "obj_eq_switch"
+def "obj_equal_switch"
     when { = bool_obj_type_id obj_get_type_id dup } then { false 2drop } otherwise
     when { = symbol_obj_type_id obj_get_type_id dup } then { false 2drop } otherwise
     when { = i64_obj_type_id obj_get_type_id dup } then {
@@ -669,8 +669,8 @@ def "obj_eq_switch"
     } otherwise
     when { = pair_obj_type_id obj_get_type_id dup } then {
         dip { 2drop }
-        lazy_and { obj_eq bi@ { obj_pair_cdr } 2dup }
-        obj_eq bi@ { obj_pair_car } 2dup
+        lazy_and { obj_equal bi@ { obj_pair_cdr } 2dup }
+        obj_equal bi@ { obj_pair_car } 2dup
     } otherwise
     when { = lambda_obj_type_id obj_get_type_id dup } then {
         false 2drop
@@ -679,7 +679,7 @@ def "obj_eq_switch"
         false 2drop
     } otherwise
     when { = cell_obj_type_id obj_get_type_id dup } then {
-        obj_eq bi@ { obj_cell_get }
+        obj_equal bi@ { obj_cell_get }
     } otherwise
     when { = string_obj_type_id obj_get_type_id dup } then {
         obj_string_eq
@@ -688,12 +688,12 @@ def "obj_eq_switch"
  ;
 
 # <obj> <obj> -> <bool>
-def "obj_eq" {
+def "obj_equal" {
     if { = 2dup } {
         true 2drop
     } {
         if { lazy_and { = bi@ { obj_get_type_id } 2dup } and bi@ { not = 0 } 2dup } {
-            obj_eq_switch
+            obj_equal_switch
         } {
             false 2drop
         }
@@ -1059,7 +1059,7 @@ constant "obj_i64_div_instruction" {
     lisp_value_stack_push
     drop lisp_value_stack_pop
     drop lisp_value_stack_pop
-    alloc_i64 * bi@ { obj_i64_get_value }
+    alloc_i64 / bi@ { obj_i64_get_value }
     bi@ { assert "'div' args are i64" = i64_obj_type_id obj_get_type_id } 2dup
     lisp_value_stack_peek 0 lisp_value_stack_peek 1
 } ;
@@ -1231,7 +1231,7 @@ constant "exit_instruction" {
 } ;
 
 constant "equals_instruction" {
-    if { obj_eq lisp_value_stack_pop lisp_value_stack_pop } {
+    if { obj_equal lisp_value_stack_pop lisp_value_stack_pop } {
         lisp_value_stack_push obj_bool_true
     } {
         lisp_value_stack_push obj_bool_false
@@ -1259,7 +1259,7 @@ constant "lisp_minus_symbol" get_or_create_symbol "-" ;
 constant "lisp_mul_symbol" get_or_create_symbol "*" ;
 constant "lisp_div_symbol" get_or_create_symbol "/" ;
 
-constant "lisp_eq_symbol" get_or_create_symbol "eq?" ;
+constant "lisp_equal_symbol" get_or_create_symbol "equal?" ;
 constant "lisp_gt_symbol" get_or_create_symbol ">" ;
 
 constant "lisp_define_symbol" get_or_create_symbol "define" ;
@@ -1289,7 +1289,7 @@ constant "lisp_exit_symbol" get_or_create_symbol "exit" ;
 
 # <obj> ->
 def "lisp_compile_list"
-    when { = lisp_eq_symbol obj_pair_car dup } then {
+    when { = lisp_equal_symbol obj_pair_car dup } then {
         drop
         lisp_compile_expression obj_pair_car dup
         obj_pair_cdr
