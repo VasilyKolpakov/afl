@@ -391,12 +391,14 @@ def "alloc_pair" {
 def "obj_pair_car" {
     read_mem_i64 + obj_header_size
     assert "car: obj is pair" = pair_obj_type_id obj_get_type_id dup
+    assert "car: obj is not nil" not = 0 dup
 } ;
 
 # <obj> -> <value>
 def "obj_pair_cdr" {
     read_mem_i64 + 8 + obj_header_size
     assert "cdr: obj is pair" = pair_obj_type_id obj_get_type_id dup
+    assert "cdr: obj is not nil" not = 0 dup
 } ;
 
 def "obj_pair_invalidate" {
