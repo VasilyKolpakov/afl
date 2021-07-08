@@ -21,3 +21,6 @@ true
 false
 "quote"
 ('lambda ('x) ('+ 'x 'x))
+"list"
+false
+true

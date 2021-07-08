@@ -1240,6 +1240,14 @@ constant "equals_instruction" {
     }
 } ;
 
+constant "list_q_instruction" {
+    if { obj_is_list lisp_value_stack_pop } {
+        lisp_value_stack_push obj_bool_true
+    } {
+        lisp_value_stack_push obj_bool_false
+    }
+} ;
+
 constant "lisp_local_env" array_list_new ;
 
 # <symbol> <value>
@@ -1278,6 +1286,8 @@ constant "lisp_cons_symbol" get_or_create_symbol "cons" ;
 constant "lisp_nil_symbol" get_or_create_symbol "nil" ;
 symbol_bind lisp_nil_symbol 0 ;
 
+constant "lisp_list_q_symbol" get_or_create_symbol "list?" ;
+
 constant "lisp_list_symbol" get_or_create_symbol "list" ;
 
 constant "lisp_read_syntax_symbol" get_or_create_symbol "read-syntax" ;
@@ -1291,6 +1301,12 @@ constant "lisp_exit_symbol" get_or_create_symbol "exit" ;
 
 # <obj> ->
 def "lisp_compile_list"
+    when { = lisp_list_q_symbol obj_pair_car dup } then {
+        lisp_compile_expression obj_pair_car
+        obj_pair_cdr
+        lisp_program_stack_push list_q_instruction
+        assert "list? takes 1 arg" = 2 obj_list_length dup
+    } otherwise
     when { = lisp_equal_symbol obj_pair_car dup } then {
         drop
         lisp_compile_expression obj_pair_car dup

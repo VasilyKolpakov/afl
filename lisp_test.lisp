@@ -33,4 +33,8 @@
 "quote"
 (quote (lambda (x) (+ x x)))
 
+"list"
+(list? 1)
+(list? (list 1 2 3))
+
 (exit 0)
