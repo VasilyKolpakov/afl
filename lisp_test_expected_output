@@ -1,3 +1,4 @@
+nil
 "arithmetic"
 3
 4
@@ -24,3 +25,11 @@ false
 "list"
 false
 true
+"let expression"
+11
+"memory operations and syscalls"
+nil
+nil
+42
+nil
+100

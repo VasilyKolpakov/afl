@@ -1,4 +1,6 @@
-; import lisp_interpreter.2s
+; import core.lisp
+
+(enable-REPL-print)
 
 "arithmetic"
 (+ 1 2)
@@ -36,5 +38,17 @@
 "list"
 (list? 1)
 (list? (list 1 2 3))
+
+"let expression"
+(let ((x 1)
+      (y 10))
+  (+ x y))
+
+"memory operations and syscalls"
+(define buffer (syscall-mmap-anon 10))
+(write-mem-i64 buffer 42)
+(read-mem-i64 buffer)
+(write-mem-byte buffer 100)
+(read-mem-byte buffer)
 
 (exit 0)

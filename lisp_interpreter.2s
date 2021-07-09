@@ -1248,6 +1248,69 @@ constant "list_q_instruction" {
     }
 } ;
 
+def "syscall_pop_i64" {
+    obj_i64_get_value lisp_value_stack_pop
+    assert "syscall arg is i64" = i64_obj_type_id obj_get_type_id lisp_value_stack_peek_top
+} ;
+
+constant "syscall_instruction" {
+    lisp_value_stack_push alloc_i64 syscall
+    dip {
+    dip {
+    dip {
+    dip {
+    dip {
+    dip {
+    syscall_pop_i64
+    }
+    syscall_pop_i64
+    }
+    syscall_pop_i64
+    }
+    syscall_pop_i64
+    }
+    syscall_pop_i64
+    }
+    syscall_pop_i64
+    }
+    syscall_pop_i64
+} ;
+
+constant "read_mem_i64_instruction" {
+    lisp_value_stack_push
+    alloc_i64 read_mem_i64 obj_i64_get_value
+    assert "read-mem-i64 arg is i64" = i64_obj_type_id obj_get_type_id dup
+    lisp_value_stack_pop
+} ;
+
+constant "write_mem_i64_instruction" {
+    lisp_value_stack_push 0
+    write_mem_i64 bi@ { obj_i64_get_value }
+    assert "write-mem-i64 args are i64" and bi@ { = i64_obj_type_id obj_get_type_id } 2dup
+    swap lisp_value_stack_pop lisp_value_stack_pop
+} ;
+
+constant "read_mem_byte_instruction" {
+    lisp_value_stack_push
+    alloc_i64 read_mem_byte obj_i64_get_value
+    assert "read-mem-byte arg is i64" = i64_obj_type_id obj_get_type_id dup
+    lisp_value_stack_pop
+} ;
+
+constant "write_mem_byte_instruction" {
+    lisp_value_stack_push 0
+    write_mem_byte bi@ { obj_i64_get_value }
+    assert "write-mem-byte args are i64" and bi@ { = i64_obj_type_id obj_get_type_id } 2dup
+    swap lisp_value_stack_pop lisp_value_stack_pop
+} ;
+
+constant "bitwise_ior_instruction" {
+    lisp_value_stack_push
+    alloc_i64 bit_or bi@ { obj_i64_get_value }
+    assert "bitwise-ior args are i64" and bi@ { = i64_obj_type_id obj_get_type_id } 2dup
+    swap lisp_value_stack_pop lisp_value_stack_pop
+} ;
+
 constant "lisp_local_env" array_list_new ;
 
 # <symbol> <value>
@@ -1298,6 +1361,14 @@ constant "lisp_cell_get_symbol" get_or_create_symbol "cell-get" ;
 constant "lisp_cell_set_symbol" get_or_create_symbol "cell-set" ;
 
 constant "lisp_exit_symbol" get_or_create_symbol "exit" ;
+constant "lisp_syscall_symbol" get_or_create_symbol "syscall" ;
+
+constant "lisp_read_mem_i64_symbol" get_or_create_symbol "read-mem-i64" ;
+constant "lisp_write_mem_i64_symbol" get_or_create_symbol "write-mem-i64" ;
+constant "lisp_read_mem_byte_symbol" get_or_create_symbol "read-mem-byte" ;
+constant "lisp_write_mem_byte_symbol" get_or_create_symbol "write-mem-byte" ;
+
+constant "lisp_bitwise_ior_symbol" get_or_create_symbol "bitwise-ior" ;
 
 # <obj> ->
 def "lisp_compile_list"
@@ -1510,6 +1581,59 @@ def "lisp_compile_list"
         lisp_program_stack_push exit_instruction
         assert "exit takes 1 args" = 2 obj_list_length dup
     } otherwise
+    when { = lisp_syscall_symbol obj_pair_car dup } then {
+        drop
+        lisp_compile_expression obj_pair_car dup
+        obj_pair_cdr
+        lisp_compile_expression obj_pair_car dup
+        obj_pair_cdr
+        lisp_compile_expression obj_pair_car dup
+        obj_pair_cdr
+        lisp_compile_expression obj_pair_car dup
+        obj_pair_cdr
+        lisp_compile_expression obj_pair_car dup
+        obj_pair_cdr
+        lisp_compile_expression obj_pair_car dup
+        obj_pair_cdr
+        lisp_compile_expression obj_pair_car dup
+        obj_pair_cdr
+        lisp_program_stack_push syscall_instruction
+        assert "syscall takes 7 args" = 8 obj_list_length dup
+    } otherwise
+    when { = lisp_read_mem_i64_symbol obj_pair_car dup } then {
+        lisp_compile_expression obj_pair_car obj_pair_cdr
+        lisp_program_stack_push read_mem_i64_instruction
+        assert "read-mem-i64 takes 1 arg" = 2 obj_list_length dup
+    } otherwise
+    when { = lisp_write_mem_i64_symbol obj_pair_car dup } then {
+        lisp_compile_expression obj_pair_car
+        obj_pair_cdr
+        lisp_compile_expression obj_pair_car dup
+        obj_pair_cdr
+        lisp_program_stack_push write_mem_i64_instruction
+        assert "write-mem-i64 takes 2 args" = 3 obj_list_length dup
+    } otherwise
+    when { = lisp_read_mem_byte_symbol obj_pair_car dup } then {
+        lisp_compile_expression obj_pair_car obj_pair_cdr
+        lisp_program_stack_push read_mem_byte_instruction
+        assert "read-mem-byte takes 1 arg" = 2 obj_list_length dup
+    } otherwise
+    when { = lisp_write_mem_byte_symbol obj_pair_car dup } then {
+        lisp_compile_expression obj_pair_car
+        obj_pair_cdr
+        lisp_compile_expression obj_pair_car dup
+        obj_pair_cdr
+        lisp_program_stack_push write_mem_byte_instruction
+        assert "write-mem-byte takes 2 args" = 3 obj_list_length dup
+    } otherwise
+    when { = lisp_bitwise_ior_symbol obj_pair_car dup } then {
+        lisp_compile_expression obj_pair_car
+        obj_pair_cdr
+        lisp_compile_expression obj_pair_car dup
+        obj_pair_cdr
+        lisp_program_stack_push bitwise_ior_instruction
+        assert "bitwise-ior takes 2 args" = 3 obj_list_length dup
+    } otherwise
     {
         drop
         while { not = 0 dup } {
@@ -1569,6 +1693,17 @@ se_check_last_defined_function ;
 def "make_cell_instruction_func" { call make_cell_instruction } ;
 se_check_last_defined_function ;
 
+def "read_mem_i64_instruction_func" { call read_mem_i64_instruction } ;
+se_check_last_defined_function ;
+def "read_mem_byte_instruction_func" { call read_mem_byte_instruction } ;
+se_check_last_defined_function ;
+def "write_mem_i64_instruction_func" { call write_mem_i64_instruction } ;
+se_check_last_defined_function ;
+def "write_mem_byte_instruction_func" { call write_mem_byte_instruction } ;
+se_check_last_defined_function ;
+def "bitwise_ior_instruction_func" { call bitwise_ior_instruction } ;
+se_check_last_defined_function ;
+
 se_check_function_by_name "symbol_bind" ;
 #se_enable ;
 se_check_function_by_name "lisp_compile_expression" ;
@@ -1581,5 +1716,5 @@ se_check_function_by_name "read_next_expression" ;
 
 #while { true } { print_newline token_print read_next_token } ;
 #while { true } { print_newline print_obj lisp_value_stack_pop read_next_expression } ;
-while { true } { assert "value stack is empty" array_list_is_empty lisp_value_stack  print_newline print_obj lisp_value_stack_pop lisp_eval read_next_expression } ;
+while { true } { assert "value stack is empty" array_list_is_empty lisp_value_stack drop lisp_value_stack_pop lisp_eval read_next_expression } ;
 
