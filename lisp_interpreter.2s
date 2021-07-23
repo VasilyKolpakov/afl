@@ -1311,6 +1311,25 @@ constant "bitwise_ior_instruction" {
     swap lisp_value_stack_pop lisp_value_stack_pop
 } ;
 
+constant "string_length_instruction" {
+    lisp_value_stack_push
+    alloc_i64 obj_string_get_size
+    assert "string-length arg is string" = string_obj_type_id obj_get_type_id dup
+    lisp_value_stack_pop
+} ;
+
+constant "string_get_byte_instruction" {
+    lisp_value_stack_push
+    alloc_i64 read_mem_byte + bi* { obj_string_get_buffer } { obj_i64_get_value } 2dup
+    2drop
+    assert "string-get-byte: in range" lazy_and { > 2dup } <= 0 over 
+    bi* { obj_string_get_size } { obj_i64_get_value } 2dup
+    # <string obj> <i64 obj>
+    swap lisp_value_stack_pop lisp_value_stack_pop
+    assert "string-get-byte second arg is i64" = i64_obj_type_id obj_get_type_id lisp_value_stack_peek 1
+    assert "string-get-byte first arg is string" = string_obj_type_id obj_get_type_id lisp_value_stack_peek 0
+} ;
+
 constant "lisp_local_env" array_list_new ;
 
 # <symbol> <value>
@@ -1369,6 +1388,9 @@ constant "lisp_read_mem_byte_symbol" get_or_create_symbol "read-mem-byte" ;
 constant "lisp_write_mem_byte_symbol" get_or_create_symbol "write-mem-byte" ;
 
 constant "lisp_bitwise_ior_symbol" get_or_create_symbol "bitwise-ior" ;
+
+constant "lisp_string_length_symbol" get_or_create_symbol "string-length" ;
+constant "lisp_string_get_byte_symbol" get_or_create_symbol "string-get-byte" ;
 
 # <obj> ->
 def "lisp_compile_list"
@@ -1633,6 +1655,20 @@ def "lisp_compile_list"
         obj_pair_cdr
         lisp_program_stack_push bitwise_ior_instruction
         assert "bitwise-ior takes 2 args" = 3 obj_list_length dup
+    } otherwise
+    when { = lisp_string_length_symbol obj_pair_car dup } then {
+        lisp_compile_expression obj_pair_car
+        obj_pair_cdr
+        lisp_program_stack_push string_length_instruction
+        assert "stirng-length takes 1 arg" = 2 obj_list_length dup
+    } otherwise
+    when { = lisp_string_get_byte_symbol obj_pair_car dup } then {
+        lisp_compile_expression obj_pair_car
+        obj_pair_cdr
+        lisp_compile_expression obj_pair_car dup
+        obj_pair_cdr
+        lisp_program_stack_push string_get_byte_instruction
+        assert "stirng-get-byte takes 2 args" = 3 obj_list_length dup
     } otherwise
     {
         drop
