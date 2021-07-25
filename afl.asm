@@ -439,6 +439,18 @@ i_indirect_call:
         mov         r14, rax                ; jump to callee
         jmp iloop
 
+i_native_indirect_call:
+        drop_data_stack 1
+        mov         rax, [r12]              ; top of the data stack is the native instruciton pointer
+        call        rax
+        add         r12, 8
+        mov         [r12 - 8*1], rax        ; write return value to data stack
+        jmp iloop
+
+native_indirect_call_test:
+        mov         rax, 2323
+        ret
+
 i_late_bind_and_call_word:
         bump_return_stack 1
         mov         rax, [r14]              ; next word is a [dict, name] struct
@@ -2577,6 +2589,8 @@ f_tests: equ     $-8
 
                  
                     def_instruction_word 'i', i_indirect_call
+                    def_instruction_word_2 'n','i', i_native_indirect_call
+                    def_instruction_word_2 'n','t', native_indirect_call_test
                     def_instruction_word 'j', i_indirect_jmp
                     def_instruction_word 'l', i_late_bind_and_call_word
 
