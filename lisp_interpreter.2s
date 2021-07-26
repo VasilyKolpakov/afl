@@ -980,9 +980,20 @@ def "lisp_gc_sweep" {
 } ;
 se_check_last_defined_function ;
 
+def "lisp_obj_count" { array_list_get_size lisp_gc_ref_list } ;
+
+constant "lisp_previous_obj_count_ptr" malloc 8 ;
+def "lisp_previous_obj_count" { read_mem_i64 lisp_previous_obj_count_ptr } ;
+def "lisp_previous_obj_count_set" { write_mem_i64 lisp_previous_obj_count_ptr } ;
+
+lisp_previous_obj_count_set 0 ;
+
 def "lisp_run_gc" {
-    lisp_gc_sweep
-    lisp_gc_mark
+    if { < * 2 lisp_previous_obj_count lisp_obj_count } {
+        lisp_previous_obj_count_set lisp_obj_count
+        lisp_gc_sweep
+        lisp_gc_mark
+    } { }
 } ;
 
 def "read_next_expression_switch"
