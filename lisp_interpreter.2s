@@ -1079,6 +1079,19 @@ constant "obj_i64_gt_instruction" {
     lisp_value_stack_peek 0 lisp_value_stack_peek 1
 } ;
 
+constant "obj_i64_lt_instruction" {
+    lisp_value_stack_push
+    drop lisp_value_stack_pop
+    drop lisp_value_stack_pop
+    if { < bi@ { obj_i64_get_value } } {
+        obj_bool_true
+    } {
+        obj_bool_false
+    }
+    bi@ { assert "'lt' args are i64" = i64_obj_type_id obj_get_type_id } 2dup
+    lisp_value_stack_peek 0 lisp_value_stack_peek 1
+} ;
+
 constant "literal_instruction" {
     lisp_value_stack_push lisp_program_stack_pop
 } ;
@@ -1353,6 +1366,7 @@ constant "lisp_div_symbol" get_or_create_symbol "/" ;
 
 constant "lisp_equal_symbol" get_or_create_symbol "equal?" ;
 constant "lisp_gt_symbol" get_or_create_symbol ">" ;
+constant "lisp_lt_symbol" get_or_create_symbol "<" ;
 
 constant "lisp_define_symbol" get_or_create_symbol "define" ;
 constant "lisp_lambda_symbol" get_or_create_symbol "lambda" ;
@@ -1417,6 +1431,15 @@ def "lisp_compile_list"
         obj_pair_cdr
         lisp_program_stack_push obj_i64_gt_instruction
         assert "> takes 2 args" = 3 obj_list_length dup
+    } otherwise
+    when { = lisp_lt_symbol obj_pair_car dup } then {
+        drop
+        lisp_compile_expression obj_pair_car dup
+        obj_pair_cdr
+        lisp_compile_expression obj_pair_car dup
+        obj_pair_cdr
+        lisp_program_stack_push obj_i64_lt_instruction
+        assert "< takes 2 args" = 3 obj_list_length dup
     } otherwise
     when { = lisp_plus_symbol obj_pair_car dup } then {
         drop
