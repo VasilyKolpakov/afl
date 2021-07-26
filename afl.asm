@@ -448,7 +448,10 @@ i_native_indirect_call:
         jmp iloop
 
 native_indirect_call_test:
-        mov         rax, 2323
+        mov         rbx, -9223372036854775808
+        mov         rdx, -9223372036854775808
+        mov         rcx, -9223372036854775808
+        mov         rax, -9223372036854775808
         ret
 
 i_late_bind_and_call_word:

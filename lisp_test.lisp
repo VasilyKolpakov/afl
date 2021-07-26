@@ -51,4 +51,8 @@
 (write-mem-byte buffer 100)
 (read-mem-byte buffer)
 
+"string operations"
+(string-length "123456789")
+(string-get-byte "a" 0)
+
 (exit 0)
