@@ -1334,6 +1334,13 @@ constant "syscall_instruction" {
     syscall_pop_i64
 } ;
 
+constant "native_call_instruction" {
+    lisp_value_stack_push
+    alloc_i64 native_call obj_i64_get_value
+    assert "native-call arg is i64" = i64_obj_type_id obj_get_type_id dup
+    lisp_value_stack_pop
+} ;
+
 constant "read_mem_i64_instruction" {
     lisp_value_stack_push
     alloc_i64 read_mem_i64 obj_i64_get_value
@@ -1441,6 +1448,7 @@ constant "lisp_cell_set_symbol" get_or_create_symbol "cell-set" ;
 
 constant "lisp_exit_symbol" get_or_create_symbol "exit" ;
 constant "lisp_syscall_symbol" get_or_create_symbol "syscall" ;
+constant "lisp_native_call_symbol" get_or_create_symbol "native-call" ;
 
 constant "lisp_read_mem_i64_symbol" get_or_create_symbol "read-mem-i64" ;
 constant "lisp_write_mem_i64_symbol" get_or_create_symbol "write-mem-i64" ;
@@ -1695,6 +1703,11 @@ def "lisp_compile_list"
         obj_pair_cdr
         lisp_program_stack_push syscall_instruction
         assert "syscall takes 7 args" = 8 obj_list_length dup
+    } otherwise
+    when { = lisp_native_call_symbol obj_pair_car dup } then {
+        lisp_compile_expression obj_pair_car obj_pair_cdr
+        lisp_program_stack_push native_call_instruction
+        assert "native-call takes 1 arg" = 2 obj_list_length dup
     } otherwise
     when { = lisp_read_mem_i64_symbol obj_pair_car dup } then {
         lisp_compile_expression obj_pair_car obj_pair_cdr
