@@ -15,6 +15,8 @@ se_check_last_defined_function ;
 constant "open_paren_char" string_first_char "(" ;
 constant "close_paren_char" string_first_char ")" ;
 constant "space_char" string_first_char " " ;
+constant "t_char" string_first_char "t" ;
+constant "n_char" string_first_char "n" ;
 constant "tab_char" string_first_char "\t" ;
 constant "newline_char" string_first_char "\n" ;
 constant "semicolon_char" string_first_char ";" ;
@@ -1232,7 +1234,39 @@ constant "read_syntax_instruction" {
 
 constant "print_instruction" {
     lisp_value_stack_push 0
-    print_newline print_obj lisp_value_stack_pop
+    print_obj lisp_value_stack_pop
+} ;
+
+# <char> -> <char>
+def "unescape_string_char"
+    when { = t_char dup } then {
+        tab_char drop
+    } otherwise
+    when { = n_char dup } then {
+        newline_char drop
+    } otherwise
+    { 0 exit 1 write_byte_to_stdout print_string "bad char in string: " }
+;
+se_check_last_defined_function ;
+
+constant "print_string_instruction" {
+    lisp_value_stack_push 0
+    3drop
+    while { > 2dup } {
+        dip {
+            + 1
+            if { = backslash_char read_mem_byte + 2dup } {
+                write_byte_to_stdout unescape_string_char read_mem_byte + 2dup
+                + 1
+            } {
+                write_byte_to_stdout read_mem_byte + 2dup
+            }
+        }
+    } # <size> <index> <buffer>
+    dip { 0 }
+    bi { obj_string_get_size } { obj_string_get_buffer }
+    lisp_value_stack_pop
+    assert "print-string arg is string" = string_obj_type_id obj_get_type_id lisp_value_stack_peek_top
 } ;
 
 constant "make_cell_instruction" {
@@ -1399,6 +1433,7 @@ constant "lisp_list_symbol" get_or_create_symbol "list" ;
 
 constant "lisp_read_syntax_symbol" get_or_create_symbol "read-syntax" ;
 constant "lisp_print_symbol" get_or_create_symbol "print" ;
+constant "lisp_print_string_symbol" get_or_create_symbol "print-string" ;
 
 constant "lisp_cell_symbol" get_or_create_symbol "cell" ;
 constant "lisp_cell_get_symbol" get_or_create_symbol "cell-get" ;
@@ -1614,6 +1649,11 @@ def "lisp_compile_list"
         lisp_program_stack_push print_instruction
         assert "print takes 1 arg" = 2 obj_list_length dup
     } otherwise
+    when { = lisp_print_string_symbol obj_pair_car dup } then {
+        lisp_compile_expression obj_pair_car obj_pair_cdr
+        lisp_program_stack_push print_string_instruction
+        assert "print-string takes 1 arg" = 2 obj_list_length dup
+    } otherwise
     when { = lisp_cell_symbol obj_pair_car dup } then {
         lisp_compile_expression obj_pair_car obj_pair_cdr
         lisp_program_stack_push make_cell_instruction
@@ -1772,6 +1812,8 @@ se_check_last_defined_function ;
 def "write_mem_byte_instruction_func" { call write_mem_byte_instruction } ;
 se_check_last_defined_function ;
 def "bitwise_ior_instruction_func" { call bitwise_ior_instruction } ;
+se_check_last_defined_function ;
+def "print_string_instruction_func" { call print_string_instruction } ;
 se_check_last_defined_function ;
 
 se_check_function_by_name "symbol_bind" ;

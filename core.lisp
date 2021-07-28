@@ -1,5 +1,10 @@
 ; import lisp_interpreter.2s
 
+(define println (lambda (obj)
+    (begin
+        (print obj)
+        (print-string "\n"))))
+
 (define map (lambda (f l)
     (if (equal? l nil)
       nil
@@ -27,7 +32,7 @@
 (define REPL-print-value
   (lambda (value)
     (if (cell-get REPL-print-enabled)
-      (print value)
+      (println value)
       nil)))
 
 (define enable-REPL-print
@@ -61,3 +66,4 @@
              syscall-mmap-ABSENT-FD
              0 ; offset
              )))
+
