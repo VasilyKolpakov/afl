@@ -17,7 +17,9 @@ constant "close_paren_char" string_first_char ")" ;
 constant "space_char" string_first_char " " ;
 constant "t_char" string_first_char "t" ;
 constant "n_char" string_first_char "n" ;
+constant "x_char" string_first_char "x" ;
 constant "tab_char" string_first_char "\t" ;
+constant "hash_char" string_first_char "#" ;
 constant "newline_char" string_first_char "\n" ;
 constant "semicolon_char" string_first_char ";" ;
 constant "double_quote_char" 34 ;
@@ -823,6 +825,64 @@ def "parse_i64_string" {
     parse_i64 bi { byte_vector_get_array } { byte_vector_get_size }
 } ;
 
+# <byte> -> <bool>
+def "is_hex_digit" {
+    drop r>
+    or
+        and > 103 r@ <= 97 r@
+        and > 58 r@ <= 48 r@
+    >r
+} ;
+
+# <byte> -> <number>
+def "parse_hex_digit" {
+    if { > 58 dup } {
+        + -48
+    } {
+        + -87
+    }
+} ;
+
+# <char*> <size> -> <bool> <number>
+def "parse_hex_i64" {
+    if { lazy_and { <= 3 over } >= 18 over } {
+        if { lazy_and { = hash_char read_mem_byte dup } = x_char read_mem_byte + 1 dup } {
+            2drop
+            while { lazy_and { rot 2dip { dup } } > 2dup } {
+                dip {
+                    + 1
+                    keep {
+                        if { is_hex_digit read_mem_byte dup } {
+                            true
+                            + parse_hex_digit read_mem_byte
+                            dip { * 16 }
+                        } {
+                            false drop
+                        }
+                    }
+                    # <current char*> <number>
+                    dip { drop }
+                }
+            }
+            # <end char*> <current char*> <bool> <number>
+            2dip { true 0 }
+            swap
+            + 2 # skip prefix
+            keep { + }
+        } {
+            false 0 2drop # wrong prefix
+        }
+    } {
+        false 0 2drop # wrong size
+    }
+} ;
+
+
+def "parse_hex_i64_string" {
+    parse_hex_i64 bi { byte_vector_get_array } { byte_vector_get_size }
+} ;
+se_check_last_defined_function ;
+
 constant "lisp_value_stack" array_list_new ;
 
 def "lisp_value_stack_push" {
@@ -1023,7 +1083,13 @@ def "read_next_expression_switch"
         if { } {
             lisp_value_stack_push alloc_i64
         } {
-            lisp_value_stack_push get_or_create_symbol token_get_value token_scanner_peek drop
+            if { } {
+                lisp_value_stack_push alloc_i64
+            } {
+                lisp_value_stack_push get_or_create_symbol token_get_value token_scanner_peek drop
+            }
+            parse_hex_i64_string token_get_value token_scanner_peek
+            drop
         }
         parse_i64_string token_get_value token_scanner_peek
     } otherwise
