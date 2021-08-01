@@ -49,6 +49,7 @@
 (define syscall-mmap 9)
 (define syscall-mmap-PROT-READ 1)
 (define syscall-mmap-PROT-WRITE 2)
+(define syscall-mmap-PROT-EXEC 4)
 (define syscall-mmap-PROT-NONE 0)
 
 (define syscall-mmap-MAP-ANONYMOUS 32)
