@@ -937,7 +937,7 @@ def "lisp_gc_marker_stack_push" {
 } ;
 
 def "lisp_gc_push_roots_to_stack" {
-    lisp_gc_marker_stack_push get_temp_lambda_ptr
+    lisp_gc_marker_stack_push get_temp_lambda
     drop while { < 0 dup } {
         if { symbol_has_binding dup } {
             lisp_gc_marker_stack_push symbol_get_binding # push bindings
@@ -1208,14 +1208,14 @@ constant "make_lambda_instruction" {
 
 constant "temp_lambda_ptr" malloc 8 ;
 
-def "set_temp_lambda_ptr" {
+def "set_temp_lambda" {
     write_mem_i64 temp_lambda_ptr
 } ;
 
-def "get_temp_lambda_ptr" {
+def "get_temp_lambda" {
     read_mem_i64 temp_lambda_ptr
 } ;
-set_temp_lambda_ptr 0 ;
+set_temp_lambda 0 ;
 
 constant "call_instruction" {
     # TODO: remove lisp_local_env ???
@@ -1226,8 +1226,8 @@ constant "call_instruction" {
         + -1
     } array_list_get_size lisp_local_env
 
-    set_temp_lambda_ptr 0
-    lisp_compile_expression obj_lambda_get_body get_temp_lambda_ptr
+    set_temp_lambda 0
+    lisp_compile_expression obj_lambda_get_body get_temp_lambda
 
     drop while { < 0 dup } {
         symbol_bind bi { array_list_get lisp_local_env + 1 } { array_list_get lisp_local_env } dup
@@ -1239,21 +1239,21 @@ constant "call_instruction" {
         lisp_local_env_add_binding
         # <symbol> <value> <arg list>
         dip { lisp_value_stack_pop } obj_pair_car dup
-    } obj_lambda_get_arg_list get_temp_lambda_ptr
+    } obj_lambda_get_arg_list get_temp_lambda
 
-    lisp_local_env_set_saved_env obj_lambda_get_local_env get_temp_lambda_ptr
+    lisp_local_env_set_saved_env obj_lambda_get_local_env get_temp_lambda
     if { not = 2dup } {
         exit 1
         print_newline
-        print_obj lisp_value_stack_peek 0
+        print_obj get_temp_lambda
         print_string ", when calling "
         .
         print_string ", got "
         .
         print_string "wrong number of arguments: expected "
     } { 2drop }
-    obj_list_length obj_lambda_get_arg_list get_temp_lambda_ptr
-    set_temp_lambda_ptr lisp_value_stack_pop
+    obj_list_length obj_lambda_get_arg_list get_temp_lambda
+    set_temp_lambda lisp_value_stack_pop
     # <arg count>
     lisp_program_stack_pop
     if { not = lambda_obj_type_id obj_get_type_id lisp_value_stack_peek_top } {
