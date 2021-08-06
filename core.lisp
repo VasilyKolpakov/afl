@@ -68,3 +68,12 @@
              0 ; offset
              )))
 
+(define foldl
+  (lambda (l f z)
+    (if (equal? l nil)
+      z
+      (foldl (cdr l) f (f (car l) z)))))
+
+(define reverse
+  (lambda (l)
+    (foldl l cons nil)))

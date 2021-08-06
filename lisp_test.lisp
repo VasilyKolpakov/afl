@@ -55,4 +55,7 @@
 (string-length "123456789")
 (string-get-byte "a" 0)
 
+"reverse"
+(reverse (list 1 2 3 4))
+
 (exit 0)

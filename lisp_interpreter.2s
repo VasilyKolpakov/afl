@@ -245,6 +245,7 @@ constant "env_obj_type_id"      4 ;
 constant "bool_obj_type_id"     5 ;
 constant "cell_obj_type_id"     6 ;
 constant "string_obj_type_id"   7 ;
+constant "builtin_func_obj_type_id"   8 ;
 
 constant "obj_header_size" 16 ;
 
@@ -570,6 +571,33 @@ def "obj_string_eq" {
     assert "string-equals args are strings" and bi@ { = string_obj_type_id obj_get_type_id } 2dup
 } ;
 
+# <name> <arg count> <instruction>
+def "alloc_builtin_func" {
+    keep { lisp_gc_ref_list_append }
+    keep { write_mem_i64 + 16 + obj_header_size }
+    keep { write_mem_i64 + 8 + obj_header_size }
+    keep { write_mem_i64 + obj_header_size }
+    keep { obj_set_gc_marked_flag swap 0 }
+    keep { obj_set_type_id swap builtin_func_obj_type_id }
+    malloc + 24 obj_header_size
+    lisp_run_gc
+} ;
+
+# <obj> -> <value>
+def "obj_builtin_get_name" {
+    read_mem_i64 + obj_header_size
+} ;
+
+# <obj> -> <value>
+def "obj_builtin_get_arg_count" {
+    read_mem_i64 + 8 + obj_header_size
+} ;
+
+# <obj> -> <value>
+def "obj_builtin_get_instruction" {
+    read_mem_i64 + 16 + obj_header_size
+} ;
+
 def "print_obj_switch"
     when { = obj_bool_true dup } then { print_string "true" drop } otherwise
     when { = obj_bool_false dup } then { print_string "false" drop } otherwise
@@ -625,6 +653,11 @@ def "print_obj_switch"
         print_buffer bi { obj_string_get_buffer } { obj_string_get_size }
         write_byte_to_stdout double_quote_char
     } otherwise
+    when { = builtin_func_obj_type_id obj_get_type_id dup } then {
+        print_string ">"
+        print_string obj_builtin_get_name
+        print_string "<builtin function "
+    } otherwise
     { assert "OK" false print_newline . obj_get_type_id print_string "print_obj_switch: unsuppoted obj type: " }
 ;
 
@@ -661,6 +694,7 @@ def "destroy_obj"
         free
         obj_cell_invalidate dup
     } otherwise
+    when { = builtin_func_obj_type_id obj_get_type_id dup } then { drop } otherwise
     { assert "suppoted obj type" false print_newline . obj_get_type_id }
 ;
 se_check_last_defined_function ;
@@ -668,8 +702,8 @@ se_check_last_defined_function ;
 
 # <obj> <obj> -> <bool>
 def "obj_equal_switch"
-    when { = bool_obj_type_id obj_get_type_id dup } then { false 2drop } otherwise
-    when { = symbol_obj_type_id obj_get_type_id dup } then { false 2drop } otherwise
+    when { = bool_obj_type_id obj_get_type_id dup } then { = } otherwise
+    when { = symbol_obj_type_id obj_get_type_id dup } then { = } otherwise
     when { = i64_obj_type_id obj_get_type_id dup } then {
         = bi@ { obj_i64_get_value }
     } otherwise
@@ -678,18 +712,15 @@ def "obj_equal_switch"
         lazy_and { obj_equal bi@ { obj_pair_cdr } 2dup }
         obj_equal bi@ { obj_pair_car } 2dup
     } otherwise
-    when { = lambda_obj_type_id obj_get_type_id dup } then {
-        false 2drop
-    } otherwise
-    when { = env_obj_type_id obj_get_type_id dup } then {
-        false 2drop
-    } otherwise
+    when { = lambda_obj_type_id obj_get_type_id dup } then { = } otherwise
+    when { = env_obj_type_id obj_get_type_id dup } then { = } otherwise
     when { = cell_obj_type_id obj_get_type_id dup } then {
         obj_equal bi@ { obj_cell_get }
     } otherwise
     when { = string_obj_type_id obj_get_type_id dup } then {
         obj_string_eq
     } otherwise
+    when { = builtin_func_obj_type_id obj_get_type_id dup } then { = } otherwise
     { false assert "suppoted obj type" false drop print_newline . obj_get_type_id }
  ;
 
@@ -1003,6 +1034,9 @@ def "lisp_gc_mark_push_refs_switch"
     when { = string_obj_type_id obj_get_type_id dup } then {
         drop
     } otherwise
+    when { = builtin_func_obj_type_id obj_get_type_id dup } then {
+        drop
+    } otherwise
     { exit 1 print_newline . obj_get_type_id print_string "gc mark: bad object, obj type:" }
 ;
 se_check_last_defined_function ;
@@ -1217,7 +1251,7 @@ def "get_temp_lambda" {
 } ;
 set_temp_lambda 0 ;
 
-constant "call_instruction" {
+def "call_lambda" {
     # TODO: remove lisp_local_env ???
     array_list_clear lisp_local_env
     drop while { < 0 dup } {
@@ -1256,7 +1290,29 @@ constant "call_instruction" {
     set_temp_lambda lisp_value_stack_pop
     # <arg count>
     lisp_program_stack_pop
-    if { not = lambda_obj_type_id obj_get_type_id lisp_value_stack_peek_top } {
+} ;
+
+constant "call_instruction" {
+    if { = lambda_obj_type_id obj_get_type_id lisp_value_stack_peek_top } {
+        call_lambda
+    } {
+        call obj_builtin_get_instruction lisp_value_stack_pop
+#        drop lisp_value_stack_pop
+        if { not = 2dup } {
+            exit 1
+            print_newline
+            print_obj lisp_value_stack_peek_top
+            print_string ", when calling "
+            .
+            print_string ", got "
+            .
+            print_string "wrong number of arguments: expected "
+        } { 2drop }
+        # arg count
+        obj_builtin_get_arg_count lisp_value_stack_peek_top 
+        lisp_program_stack_pop
+    }
+    if { not or bi { = lambda_obj_type_id } { = builtin_func_obj_type_id } obj_get_type_id lisp_value_stack_peek_top } {
         exit 1
         print_newline
         print_obj lisp_value_stack_peek_top
@@ -1496,6 +1552,7 @@ constant "lisp_eval_symbol" get_or_create_symbol "eval" ;
 constant "lisp_car_symbol" get_or_create_symbol "car" ;
 constant "lisp_cdr_symbol" get_or_create_symbol "cdr" ;
 constant "lisp_cons_symbol" get_or_create_symbol "cons" ;
+symbol_bind lisp_cons_symbol alloc_builtin_func "cons" 2 cons_instruction
 
 constant "lisp_nil_symbol" get_or_create_symbol "nil" ;
 symbol_bind lisp_nil_symbol 0 ;
@@ -1895,6 +1952,7 @@ se_check_last_defined_function ;
 def "print_string_instruction_func" { call print_string_instruction } ;
 se_check_last_defined_function ;
 
+se_check_function_by_name "call_lambda" ;
 se_check_function_by_name "symbol_bind" ;
 #se_enable ;
 se_check_function_by_name "lisp_compile_expression" ;
