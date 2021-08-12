@@ -24,6 +24,7 @@ constant "newline_char" string_first_char "\n" ;
 constant "semicolon_char" string_first_char ";" ;
 constant "double_quote_char" 34 ;
 constant "single_quote_char" 39 ;
+constant "backquote_char" string_first_char "`" ;
 constant "backslash_char" 92 ;
 
 # <char> -> <bool>
@@ -53,6 +54,7 @@ constant "token_close_paren_type"           1 ;
 constant "token_symbol_or_i64_literal_type" 2 ;
 constant "token_string_literal_type"        3 ;
 constant "token_char_literal_type"          4 ;
+constant "token_backquote_type"             5 ;
 
 # <expr type id> <value> -> <token>
 def "token_create" {
@@ -168,6 +170,10 @@ def "read_next_token_single_quote" {
 
 # -> <token> # scanner on the char's position
 def "read_next_token_switch"
+    when { = backquote_char scanner_peek } then {
+        token_create token_backquote_type 0
+        scanner_advance
+    } otherwise
     when { = open_paren_char scanner_peek } then {
         token_create token_open_paren_type 0
         scanner_advance
@@ -1093,6 +1099,14 @@ def "lisp_run_gc" {
 } ;
 
 def "read_next_expression_switch"
+    when { = token_backquote_type token_get_type_id token_scanner_peek } then {
+        lisp_value_stack_push drop lisp_value_stack_pop
+        alloc_pair lisp_quote_symbol lisp_value_stack_peek_top
+        lisp_value_stack_push drop lisp_value_stack_pop
+        alloc_pair lisp_value_stack_peek_top 0
+        read_next_expression
+        token_scanner_advance
+    } otherwise
     when { = token_open_paren_type token_get_type_id token_scanner_peek } then {
         drop
         while { < 0 dup } {
@@ -1935,7 +1949,7 @@ def "lisp_eval" {
 def "define_instruction_func" { call define_instruction } ;
 se_check_last_defined_function ;
 def "call_instruction_func" { call call_instruction } ;
-se_check_last_defined_function ;
+# se_check_last_defined_function ;
 def "make_cell_instruction_func" { call make_cell_instruction } ;
 se_check_last_defined_function ;
 
