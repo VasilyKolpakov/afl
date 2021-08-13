@@ -148,29 +148,9 @@ def "read_next_token_double_quote" {
     byte_vector_new
 } ;
 
-def "is_single_quote_or_newline" { or bi { = single_quote_char } { = newline_char } } ;
-
-# -> <token>
-def "read_next_token_single_quote" {
-    assert "whitespace after char literal" is_whitespace_char scanner_peek
-    token_create token_char_literal_type
-    scanner_advance
-    assert "no newline in char literals" not = newline_char scanner_peek
-    while { not is_single_quote_or_newline scanner_peek } {
-        scanner_advance
-        if { = backslash_char scanner_peek } {
-            keep { byte_vector_append dip { scanner_peek } } 
-            scanner_advance
-        } { }
-        keep { byte_vector_append dip { scanner_peek } } 
-    }
-    scanner_advance
-    byte_vector_new
-} ;
-
 # -> <token> # scanner on the char's position
 def "read_next_token_switch"
-    when { = backquote_char scanner_peek } then {
+    when { = single_quote_char scanner_peek } then {
         token_create token_backquote_type 0
         scanner_advance
     } otherwise
@@ -183,7 +163,6 @@ def "read_next_token_switch"
         scanner_advance
     } otherwise
     when { = double_quote_char scanner_peek } then { read_next_token_double_quote } otherwise
-    when { = single_quote_char scanner_peek } then { read_next_token_single_quote } otherwise
     { read_next_token_symbol_or_number }
 ;
 

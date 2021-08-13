@@ -58,8 +58,8 @@
 "reverse"
 (reverse (list 1 2 3 4))
 
-"backquote"
-`(+ 1 2)
-`symbol
+"single quote"
+'(+ 1 2)
+'symbol
 
 (exit 0)
