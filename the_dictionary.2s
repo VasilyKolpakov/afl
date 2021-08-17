@@ -1,0 +1,45 @@
+def "the_dictionary_def_list" { 
+    read_mem_i64 the_dictionary
+} ;
+
+# <record> -> <name>
+def "the_dictionary_dict_record_name" {
+    read_mem_i64
+} ;
+
+# <record> -> <word_def>
+def "the_dictionary_dict_record_word_def" {
+    read_mem_i64 + 8
+} ;
+
+# <record> -> <next>
+def "the_dictionary_dict_record_next" {
+    read_mem_i64 + 16
+} ;
+
+# <word def> -> <address>
+def "the_dictionary_word_def_address" {
+    read_mem_i64
+} ;
+
+# <word def> -> <is function>
+def "the_dictionary_word_def_is_function" {
+    read_mem_i64 + 8
+} ;
+
+def "print_all_function_names_and_addresses" {
+    while { not = 0 dup } {
+        the_dictionary_dict_record_next
+        if {
+            the_dictionary_word_def_is_function the_dictionary_dict_record_word_def dup
+        } {
+            print_newline
+            . the_dictionary_word_def_address the_dictionary_dict_record_word_def dup
+            print_string ", address: "
+            print_string the_dictionary_dict_record_name dup
+            print_string "name: "
+        } { }
+    }
+    the_dictionary_def_list
+} ;
+
