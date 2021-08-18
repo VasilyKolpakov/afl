@@ -1680,6 +1680,7 @@ constant "lisp_nil_symbol" get_or_create_symbol "nil" ;
 symbol_bind lisp_nil_symbol 0 ;
 
 constant "lisp_list_q_symbol" get_or_create_symbol "list?" ;
+symbol_bind lisp_list_q_symbol alloc_builtin_func "list?" 1 list_q_instruction
 
 constant "lisp_list_symbol" get_or_create_symbol "list" ;
 
@@ -1709,20 +1710,14 @@ constant "lisp_print_stack_trace_symbol" get_or_create_symbol "print-stack-trace
 symbol_bind lisp_print_stack_trace_symbol alloc_builtin_func "print-stack-trace" 0 {
     lisp_value_stack_push 0
     lisp_call_stack_print
-    print_newline
-    lisp_program_stack_print
-    print_newline
-    lisp_value_stack_print
+    #print_newline
+    #lisp_program_stack_print
+    #print_newline
+    #lisp_value_stack_print
 }
 
 # <obj> ->
 def "lisp_compile_list"
-    when { = lisp_list_q_symbol obj_pair_car dup } then {
-        lisp_compile_expression obj_pair_car
-        obj_pair_cdr
-        lisp_program_stack_push list_q_instruction
-        assert "list? takes 1 arg" = 2 obj_list_length dup
-    } otherwise
     when { = lisp_equal_symbol obj_pair_car dup } then {
         drop
         lisp_compile_expression obj_pair_car dup
