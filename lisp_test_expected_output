@@ -21,7 +21,7 @@ false
 true
 false
 "quote"
-('lambda ('x) ('+ 'x 'x))
+'(lambda (x) (+ x x))
 "list"
 false
 true
@@ -37,7 +37,7 @@ nil
 9
 97
 "reverse"
-(4 3 2 1)
+'(4 3 2 1)
 "single quote"
-('+ 1 2)
+'(+ 1 2)
 'symbol

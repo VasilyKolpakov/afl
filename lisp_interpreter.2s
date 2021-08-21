@@ -421,18 +421,6 @@ def "obj_list_length" {
     assert "obj is list" obj_is_list dup
 } ;
 
-def "print_list" {
-    print_string ")"
-    drop
-    while { not = 0 dup } {
-        if { not = 0 dup } { print_string " " } { }
-        obj_pair_cdr
-        print_obj obj_pair_car dup
-    }
-    print_string "("
-    assert "is list" obj_is_list dup
-} ;
-
 # lambda layout [header, local env, arg list, body, id]
 # <local env stack> <arg list> <body> -> <lambda>
 def "alloc_lambda" {
@@ -589,13 +577,27 @@ def "obj_builtin_get_instruction" {
     read_mem_i64 + 16 + obj_header_size
 } ;
 
-def "print_obj_switch"
+def "print_obj_quoted"
+    when { = 0 dup } then { print_string "nil" drop } otherwise
     when { = obj_bool_true dup } then { print_string "true" drop } otherwise
     when { = obj_bool_false dup } then { print_string "false" drop } otherwise
-    when { obj_is_list dup } then { print_list } otherwise
-    when { = symbol_obj_type_id obj_get_type_id dup } then { print_buffer bi { symbol_get_buffer } { symbol_get_size } print_string "'" } otherwise
+    when { obj_is_list dup } then {
+        if { lazy_and { = lisp_quote_symbol obj_pair_car dup } = 2 obj_list_length dup } {
+            print_obj_quoted obj_pair_car obj_pair_cdr
+            print_string "'"
+        } {
+            print_string ")"
+            drop
+            while { not = 0 dup } {
+                if { not = 0 dup } { print_string " " } { }
+                obj_pair_cdr
+                print_obj_quoted obj_pair_car dup
+            }
+            print_string "("
+        }
+    } otherwise
+    when { = symbol_obj_type_id obj_get_type_id dup } then { print_buffer bi { symbol_get_buffer } { symbol_get_size } } otherwise
     when { = i64_obj_type_id obj_get_type_id dup } then { . obj_i64_get_value } otherwise
-    when { obj_is_list dup } then { print_list } otherwise
     when { = pair_obj_type_id obj_get_type_id dup } then {
         print_string ")"
         print_obj obj_pair_cdr
@@ -649,17 +651,19 @@ def "print_obj_switch"
         print_string obj_builtin_get_name
         print_string "<builtin function "
     } otherwise
-    { assert "OK" false print_newline . obj_get_type_id print_string "print_obj_switch: unsuppoted obj type: " }
+    { assert "OK" false print_newline . obj_get_type_id print_string "print_obj_quoted: unsuppoted obj type: " }
 ;
 
-def "print_obj" {
-    if { = 0 dup } {
-        print_string "nil" drop
-    } {
-        print_obj_switch
-    }
-} ;
-se_check_last_defined_function ;
+def "print_obj"
+    when { = 0 dup } then { print_string "nil" drop } otherwise
+    when { = symbol_obj_type_id obj_get_type_id dup } then {
+        print_obj_quoted print_string "'"
+    } otherwise
+    when { obj_is_list dup } then {
+        print_obj_quoted print_string "'"
+    } otherwise
+    { print_obj_quoted }
+;
 
 # <obj> ->
 def "destroy_obj"
@@ -2087,6 +2091,7 @@ se_check_function_by_name "lisp_compile_expression" ;
 se_check_function_by_name "lisp_gc_push_roots_to_stack" ;
 se_check_function_by_name "read_next_expression" ;
 se_check_function_by_name "lisp_program_stack_print" ;
+se_check_function_by_name "print_obj" ;
 
 
 #while { true } { print_newline token_print read_next_token } ;
