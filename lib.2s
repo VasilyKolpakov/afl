@@ -90,7 +90,7 @@ def "memset" {
     rot
 } ;
 
-# <src address> <dest address> <count> ->
+# <count> <src address> <dest address> ->
 def "memcopy" {
     2drop
     do_n_times swap {
@@ -100,7 +100,6 @@ def "memcopy" {
         read_mem_byte
         2dup
     }
-    rot
 } ;
 
 # <size> <pointer 1> <pointer 2> -> <-1 or 0 or 1>

@@ -257,7 +257,7 @@ def "obj_get_gc_marked_flag" {
 # <string> -> <symbol>
 def "alloc_symbol" {
     keep {
-        memcopy swap dip { bi { byte_vector_get_array } { byte_vector_get_size } }
+        memcopy bi { byte_vector_get_size } { byte_vector_get_array } swap # <symbol_obj_buf ptr> <string>
         + 24
         write_mem_i64 dip { byte_vector_get_size } 2dup
         + obj_header_size
@@ -516,7 +516,7 @@ def "obj_cell_invalidate" {
 # <string> -> <obj>
 def "alloc_string" {
     keep {
-        memcopy swap dip { bi { byte_vector_get_array } { byte_vector_get_size } }
+        memcopy bi { byte_vector_get_size } { byte_vector_get_array } swap # <string_obj_buf ptr> <string>
         + 8
         write_mem_i64 dip { byte_vector_get_size } 2dup
         + obj_header_size

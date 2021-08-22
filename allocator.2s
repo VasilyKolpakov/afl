@@ -167,7 +167,8 @@ def "realloc_actual_size" {
         #debug "after_block_alloc_free"
         rot swap -rot # <bool> <new addr> <new actual size>
         block_allocator_free r> # <new addr> <new actual size>
-        memcopy r@ over swap r> # <min size> <new actual size>
+        memcopy swap r@ swap # <new addr> <min size> <new addr> <new actual size>
+        over swap r> # <min size> <new actual size>
         min over swap # <new actual size> <old size>
         >r swap # <new actual size> <new addr> <old size>
         allocator_decrement_current_bytes_allocated dup # to avoid double counting # <new actual size> ...

@@ -95,9 +95,9 @@ def "byte_vector_destroy" {
 # <list src> <pointer to new list struct> ->
 def "byte_vector_clone_to" {
     byte_vector_set_array
-    keep { memcopy -rot bi { byte_vector_get_size } { byte_vector_get_array } } # <new list> <new array> <new array>
+    keep { memcopy bi { byte_vector_get_size } { byte_vector_get_array } } # <new list> <new array> <new array>
     keep { dup malloc byte_vector_get_capacity }
-    keep { memcopy -rot byte_vector_struct_size swap }
+    keep { memcopy byte_vector_struct_size swap }
     swap
 } ;
 

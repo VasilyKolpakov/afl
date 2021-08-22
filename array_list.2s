@@ -108,9 +108,9 @@ def "array_list_peek" {
 # <list src> <pointer to new list struct> ->
 def "array_list_clone_to" {
     array_list_set_array
-    keep { memcopy -rot bi { * 8 array_list_get_size } { array_list_get_array } } # <new list> <new array> <new array>
+    keep { memcopy bi { * 8 array_list_get_size } { array_list_get_array } } # <new list> <new array> <new array>
     keep { dup malloc * 8 array_list_get_capacity }
-    keep { memcopy -rot array_list_struct_size swap }
+    keep { memcopy array_list_struct_size swap }
     swap
 } ;
 
