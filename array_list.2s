@@ -51,7 +51,7 @@ def "array_list_ensure_capacity" {
         array_list_set_capacity 2dup # <list> <cap>
         keep {
             drop swap
-            while { <= 2dup } { * 2 }
+            while { < 2dup } { * 2 }
             # <old cap> <new cap>
             array_list_get_capacity
         }

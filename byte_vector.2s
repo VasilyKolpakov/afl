@@ -49,7 +49,7 @@ def "byte_vector_ensure_capacity" {
         byte_vector_set_capacity 2dup # <list> <cap>
         keep {
             drop swap
-            while { <= 2dup } { * 2 }
+            while { < 2dup } { * 2 }
             # <old cap> <new cap>
             byte_vector_get_capacity
         }
@@ -114,5 +114,18 @@ def "string_equals" {
         dip { bi@ { byte_vector_get_array } }
         byte_vector_get_size dup
     } { false 2drop }
+} ;
+
+# <str 1> <str 2> -> <str 3>
+def "string_concat" {
+    keep { byte_vector_set_size }
+    drop -rot
+    # <ser 3 size> <str 2> <str 3>
+    + bi* { byte_vector_get_size } { byte_vector_get_size } 2dup
+    memcopy dip { bi* { byte_vector_get_array } { + bi { byte_vector_get_array } { byte_vector_get_size } } 2dup }
+    # <str 2 size> <str 3> <str 1>
+    byte_vector_get_size dup swap
+    byte_vector_ensure_capacity over + bi@ { byte_vector_get_size } 2dup
+    byte_vector_clone
 } ;
 
