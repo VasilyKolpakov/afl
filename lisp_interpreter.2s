@@ -413,7 +413,7 @@ def "obj_is_list" {
 
 def "obj_list_length" {
     drop
-    while { obj_is_pair dup } {
+    while { not = 0 dup } {
         dip { + 1 }
         obj_pair_cdr
     }
@@ -485,8 +485,8 @@ def "alloc_bool" {
 constant "obj_bool_true" alloc_bool ;
 constant "obj_bool_false" alloc_bool ;
 
-constant "lisp_true_symbol" get_or_create_symbol "true" ;
-constant "lisp_false_symbol" get_or_create_symbol "false" ;
+constant "lisp_true_symbol" get_or_create_symbol "#t" ;
+constant "lisp_false_symbol" get_or_create_symbol "#f" ;
 
 symbol_bind lisp_true_symbol obj_bool_true ;
 symbol_bind lisp_false_symbol obj_bool_false ;
@@ -1048,6 +1048,14 @@ def "lisp_call_stack_print" {
 } ;
 se_check_last_defined_function ;
 
+def "lisp_print_stack_trace" {
+        lisp_call_stack_print
+        #print_newline
+        #lisp_program_stack_print
+        #print_newline
+        #lisp_value_stack_print
+} ;
+
 constant "lisp_gc_logging_enabled_pointer" malloc 8 ;
 write_mem_i64 lisp_gc_logging_enabled_pointer false ;
 def "lisp_gc_logging_is_enabled" { read_mem_i64 lisp_gc_logging_enabled_pointer } ;
@@ -1259,14 +1267,21 @@ def "obj_i64_add" {
     bi@ { assert "'add' args are i64" = i64_obj_type_id obj_get_type_id } 2dup
 } ;
 
-constant lisp_instruction_name_dict_add 2dup "obj_i64_add_instruction" {
+# <name> <func>
+def "register_lisp_instruction" {
+    def string_concat swap "_f"
+    constant 2dup
+    lisp_instruction_name_dict_add 2dup
+} ;
+
+register_lisp_instruction "obj_i64_add_instruction" {
     lisp_value_stack_push
     drop lisp_value_stack_pop
     drop lisp_value_stack_pop
     obj_i64_add lisp_value_stack_peek 1 lisp_value_stack_peek 0
 } ;
 
-constant lisp_instruction_name_dict_add 2dup "obj_i64_sub_instruction" {
+register_lisp_instruction "obj_i64_sub_instruction" {
     lisp_value_stack_push
     drop lisp_value_stack_pop
     drop lisp_value_stack_pop
@@ -1275,7 +1290,7 @@ constant lisp_instruction_name_dict_add 2dup "obj_i64_sub_instruction" {
     lisp_value_stack_peek 0 lisp_value_stack_peek 1
 } ;
 
-constant lisp_instruction_name_dict_add 2dup "obj_i64_mul_instruction" {
+register_lisp_instruction "obj_i64_mul_instruction" {
     lisp_value_stack_push
     drop lisp_value_stack_pop
     drop lisp_value_stack_pop
@@ -1284,7 +1299,7 @@ constant lisp_instruction_name_dict_add 2dup "obj_i64_mul_instruction" {
     lisp_value_stack_peek 1 lisp_value_stack_peek 0
 } ;
 
-constant lisp_instruction_name_dict_add 2dup "obj_i64_div_instruction" {
+register_lisp_instruction "obj_i64_div_instruction" {
     lisp_value_stack_push
     drop lisp_value_stack_pop
     drop lisp_value_stack_pop
@@ -1293,7 +1308,7 @@ constant lisp_instruction_name_dict_add 2dup "obj_i64_div_instruction" {
     lisp_value_stack_peek 0 lisp_value_stack_peek 1
 } ;
 
-constant lisp_instruction_name_dict_add 2dup "obj_i64_gt_instruction" {
+register_lisp_instruction "obj_i64_gt_instruction" {
     lisp_value_stack_push
     drop lisp_value_stack_pop
     drop lisp_value_stack_pop
@@ -1306,7 +1321,7 @@ constant lisp_instruction_name_dict_add 2dup "obj_i64_gt_instruction" {
     lisp_value_stack_peek 0 lisp_value_stack_peek 1
 } ;
 
-constant lisp_instruction_name_dict_add 2dup "obj_i64_lt_instruction" {
+register_lisp_instruction "obj_i64_lt_instruction" {
     lisp_value_stack_push
     drop lisp_value_stack_pop
     drop lisp_value_stack_pop
@@ -1319,15 +1334,15 @@ constant lisp_instruction_name_dict_add 2dup "obj_i64_lt_instruction" {
     lisp_value_stack_peek 0 lisp_value_stack_peek 1
 } ;
 
-constant lisp_instruction_name_dict_add 2dup "literal_instruction" {
+register_lisp_instruction "literal_instruction" {
     lisp_value_stack_push lisp_program_stack_pop
 } ;
 
-constant lisp_instruction_name_dict_add 2dup "drop_instruction" {
+register_lisp_instruction "drop_instruction" {
     drop lisp_value_stack_pop
 } ;
 
-constant lisp_instruction_name_dict_add 2dup "define_instruction" {
+register_lisp_instruction "define_instruction" {
     drop lisp_value_stack_pop
     drop lisp_value_stack_pop
     symbol_bind
@@ -1345,7 +1360,7 @@ constant lisp_instruction_name_dict_add 2dup "define_instruction" {
     } { }
 } ;
 
-constant lisp_instruction_name_dict_add 2dup "make_lambda_instruction" {
+register_lisp_instruction "make_lambda_instruction" {
     lisp_value_stack_push
     drop lisp_value_stack_pop
     drop lisp_value_stack_pop
@@ -1409,7 +1424,7 @@ def "call_lambda" {
     set_temp_lambda lisp_value_stack_pop
 } ;
 
-constant lisp_instruction_name_dict_add 2dup "call_instruction" {
+register_lisp_instruction "call_instruction" {
     if { = lambda_obj_type_id obj_get_type_id lisp_value_stack_peek_top } {
         call_lambda
     } {
@@ -1439,7 +1454,7 @@ constant lisp_instruction_name_dict_add 2dup "call_instruction" {
     } { }
 } ;
 
-constant lisp_instruction_name_dict_add 2dup "if_instruction" {
+register_lisp_instruction "if_instruction" {
     if { = obj_bool_true lisp_value_stack_pop } {
         lisp_value_stack_push
         drop lisp_value_stack_pop
@@ -1450,37 +1465,38 @@ constant lisp_instruction_name_dict_add 2dup "if_instruction" {
     assert "if_instruction: boolean value" = bool_obj_type_id obj_get_type_id lisp_value_stack_peek_top
 } ;
 
-constant lisp_instruction_name_dict_add 2dup "eval_instruction" {
+register_lisp_instruction "eval_instruction" {
     lisp_compile_expression lisp_value_stack_pop
     lisp_call_stack_push lisp_value_stack_peek_top
 } ;
 
-constant lisp_instruction_name_dict_add 2dup "car_instruction" {
-    if { = pair_obj_type_id obj_get_type_id lisp_value_stack_peek_top } {
+register_lisp_instruction "car_instruction" {
+    if { obj_is_pair lisp_value_stack_peek_top } {
         lisp_value_stack_push obj_pair_car lisp_value_stack_pop
     } {
         exit 1
+        lisp_print_stack_trace
         print_newline print_obj lisp_value_stack_peek_top
         print_string "error: car of obj: "
     }
 } ;
 
-constant lisp_instruction_name_dict_add 2dup "cdr_instruction" {
+register_lisp_instruction "cdr_instruction" {
     lisp_value_stack_push obj_pair_cdr lisp_value_stack_pop
 } ;
 
-constant lisp_instruction_name_dict_add 2dup "cons_instruction" {
+register_lisp_instruction "cons_instruction" {
     lisp_value_stack_push
     drop lisp_value_stack_pop
     drop lisp_value_stack_pop
     alloc_pair lisp_value_stack_peek 0 lisp_value_stack_peek 1
 } ;
 
-constant lisp_instruction_name_dict_add 2dup "read_syntax_instruction" {
+register_lisp_instruction "read_syntax_instruction" {
     read_next_expression
 } ;
 
-constant lisp_instruction_name_dict_add 2dup "print_instruction" {
+register_lisp_instruction "print_instruction" {
     lisp_value_stack_push 0
     print_obj lisp_value_stack_pop
 } ;
@@ -1497,7 +1513,7 @@ def "unescape_string_char"
 ;
 se_check_last_defined_function ;
 
-constant lisp_instruction_name_dict_add 2dup "print_string_instruction" {
+register_lisp_instruction "print_string_instruction" {
     lisp_value_stack_push 0
     3drop
     while { > 2dup } {
@@ -1517,28 +1533,28 @@ constant lisp_instruction_name_dict_add 2dup "print_string_instruction" {
     assert "print-string arg is string" = string_obj_type_id obj_get_type_id lisp_value_stack_peek_top
 } ;
 
-constant lisp_instruction_name_dict_add 2dup "make_cell_instruction" {
+register_lisp_instruction "make_cell_instruction" {
     lisp_value_stack_push
     drop lisp_value_stack_pop
     alloc_cell lisp_value_stack_peek_top
 } ;
 
-constant lisp_instruction_name_dict_add 2dup "cell_get_instruction" {
+register_lisp_instruction "cell_get_instruction" {
     lisp_value_stack_push obj_cell_get lisp_value_stack_pop
 } ;
 
-constant lisp_instruction_name_dict_add 2dup "cell_set_instruction" {
+register_lisp_instruction "cell_set_instruction" {
     lisp_value_stack_push 0
     obj_cell_set swap lisp_value_stack_pop lisp_value_stack_pop
 } ;
 
-constant lisp_instruction_name_dict_add 2dup "exit_instruction" {
+register_lisp_instruction "exit_instruction" {
     lisp_value_stack_push 0
     exit obj_i64_get_value lisp_value_stack_pop
     assert "exit arg is i64" = i64_obj_type_id obj_get_type_id lisp_value_stack_peek_top
 } ;
 
-constant lisp_instruction_name_dict_add 2dup "equals_instruction" {
+register_lisp_instruction "equals_instruction" {
     if { obj_equal lisp_value_stack_pop lisp_value_stack_pop } {
         lisp_value_stack_push obj_bool_true
     } {
@@ -1546,7 +1562,24 @@ constant lisp_instruction_name_dict_add 2dup "equals_instruction" {
     }
 } ;
 
-constant lisp_instruction_name_dict_add 2dup "list_q_instruction" {
+register_lisp_instruction "not_instruction" {
+    lisp_value_stack_push
+    if { = obj_bool_false } {
+        obj_bool_true
+    } {
+        obj_bool_false
+    }
+    if { not lazy_or { = obj_bool_true dup } = obj_bool_false dup } {
+        exit 1
+        lisp_print_stack_trace
+        print_newline
+        print_obj dup
+        print_string "'not' on non-boolean obj: "
+    } { }
+    lisp_value_stack_pop
+} ;
+
+register_lisp_instruction "list_q_instruction" {
     if { obj_is_list lisp_value_stack_pop } {
         lisp_value_stack_push obj_bool_true
     } {
@@ -1559,7 +1592,7 @@ def "syscall_pop_i64" {
     assert "syscall arg is i64" = i64_obj_type_id obj_get_type_id lisp_value_stack_peek_top
 } ;
 
-constant lisp_instruction_name_dict_add 2dup "syscall_instruction" {
+register_lisp_instruction "syscall_instruction" {
     lisp_value_stack_push alloc_i64 syscall
     dip {
     dip {
@@ -1582,56 +1615,56 @@ constant lisp_instruction_name_dict_add 2dup "syscall_instruction" {
     syscall_pop_i64
 } ;
 
-constant lisp_instruction_name_dict_add 2dup "native_call_instruction" {
+register_lisp_instruction "native_call_instruction" {
     lisp_value_stack_push
     alloc_i64 native_call obj_i64_get_value
     assert "native-call arg is i64" = i64_obj_type_id obj_get_type_id dup
     lisp_value_stack_pop
 } ;
 
-constant lisp_instruction_name_dict_add 2dup "read_mem_i64_instruction" {
+register_lisp_instruction "read_mem_i64_instruction" {
     lisp_value_stack_push
     alloc_i64 read_mem_i64 obj_i64_get_value
     assert "read-mem-i64 arg is i64" = i64_obj_type_id obj_get_type_id dup
     lisp_value_stack_pop
 } ;
 
-constant lisp_instruction_name_dict_add 2dup "write_mem_i64_instruction" {
+register_lisp_instruction "write_mem_i64_instruction" {
     lisp_value_stack_push 0
     write_mem_i64 bi@ { obj_i64_get_value }
     assert "write-mem-i64 args are i64" and bi@ { = i64_obj_type_id obj_get_type_id } 2dup
     swap lisp_value_stack_pop lisp_value_stack_pop
 } ;
 
-constant lisp_instruction_name_dict_add 2dup "read_mem_byte_instruction" {
+register_lisp_instruction "read_mem_byte_instruction" {
     lisp_value_stack_push
     alloc_i64 read_mem_byte obj_i64_get_value
     assert "read-mem-byte arg is i64" = i64_obj_type_id obj_get_type_id dup
     lisp_value_stack_pop
 } ;
 
-constant lisp_instruction_name_dict_add 2dup "write_mem_byte_instruction" {
+register_lisp_instruction "write_mem_byte_instruction" {
     lisp_value_stack_push 0
     write_mem_byte bi@ { obj_i64_get_value }
     assert "write-mem-byte args are i64" and bi@ { = i64_obj_type_id obj_get_type_id } 2dup
     swap lisp_value_stack_pop lisp_value_stack_pop
 } ;
 
-constant lisp_instruction_name_dict_add 2dup "bitwise_ior_instruction" {
+register_lisp_instruction "bitwise_ior_instruction" {
     lisp_value_stack_push
     alloc_i64 bit_or bi@ { obj_i64_get_value }
     assert "bitwise-ior args are i64" and bi@ { = i64_obj_type_id obj_get_type_id } 2dup
     swap lisp_value_stack_pop lisp_value_stack_pop
 } ;
 
-constant lisp_instruction_name_dict_add 2dup "string_length_instruction" {
+register_lisp_instruction "string_length_instruction" {
     lisp_value_stack_push
     alloc_i64 obj_string_get_size
     assert "string-length arg is string" = string_obj_type_id obj_get_type_id dup
     lisp_value_stack_pop
 } ;
 
-constant lisp_instruction_name_dict_add 2dup "string_get_byte_instruction" {
+register_lisp_instruction "string_get_byte_instruction" {
     lisp_value_stack_push
     alloc_i64 read_mem_byte + bi* { obj_string_get_buffer } { obj_i64_get_value } 2dup
     2drop
@@ -1664,6 +1697,7 @@ constant "lisp_minus_symbol" get_or_create_symbol "-" ;
 constant "lisp_mul_symbol" get_or_create_symbol "*" ;
 constant "lisp_div_symbol" get_or_create_symbol "/" ;
 
+constant "lisp_not_symbol" get_or_create_symbol "not" ;
 constant "lisp_equal_symbol" get_or_create_symbol "equal?" ;
 constant "lisp_gt_symbol" get_or_create_symbol ">" ;
 constant "lisp_lt_symbol" get_or_create_symbol "<" ;
@@ -1685,6 +1719,12 @@ symbol_bind lisp_nil_symbol 0 ;
 
 constant "lisp_list_q_symbol" get_or_create_symbol "list?" ;
 symbol_bind lisp_list_q_symbol alloc_builtin_func "list?" 1 list_q_instruction
+constant "lisp_length_symbol" get_or_create_symbol "length" ;
+symbol_bind lisp_length_symbol alloc_builtin_func "length" 1 {
+    lisp_value_stack_push
+    alloc_i64 obj_list_length
+    lisp_value_stack_pop
+}
 
 constant "lisp_list_symbol" get_or_create_symbol "list" ;
 
@@ -1713,15 +1753,18 @@ constant "lisp_string_get_byte_symbol" get_or_create_symbol "string-get-byte" ;
 constant "lisp_print_stack_trace_symbol" get_or_create_symbol "print-stack-trace" ;
 symbol_bind lisp_print_stack_trace_symbol alloc_builtin_func "print-stack-trace" 0 {
     lisp_value_stack_push 0
-    lisp_call_stack_print
-    #print_newline
-    #lisp_program_stack_print
-    #print_newline
-    #lisp_value_stack_print
+    lisp_print_stack_trace
 }
 
 # <obj> ->
 def "lisp_compile_list"
+    when { = lisp_not_symbol obj_pair_car dup } then {
+        drop
+        lisp_compile_expression obj_pair_car dup
+        obj_pair_cdr
+        lisp_program_stack_push not_instruction
+        assert "not takes 1 arg" = 2 obj_list_length dup
+    } otherwise
     when { = lisp_equal_symbol obj_pair_car dup } then {
         drop
         lisp_compile_expression obj_pair_car dup
@@ -2092,9 +2135,10 @@ se_check_function_by_name "lisp_gc_push_roots_to_stack" ;
 se_check_function_by_name "read_next_expression" ;
 se_check_function_by_name "lisp_program_stack_print" ;
 se_check_function_by_name "print_obj" ;
+se_check_function_by_name "not_instruction_f" ;
 
 
 #while { true } { print_newline token_print read_next_token } ;
 #while { true } { print_newline print_obj lisp_value_stack_pop read_next_expression } ;
 while { true } { assert "value stack is empty" array_list_is_empty lisp_value_stack drop lisp_value_stack_pop lisp_interpret read_next_expression } ;
-
+  

@@ -10,6 +10,12 @@
       nil
       (cons (f (car l)) (map f (cdr l))))))
 
+(define non-empty-list?
+  (lambda (l)
+    (if (list? l)
+      (not (equal? l nil))
+      #f)))
+
 (define assert
   (lambda (v p)
     (if (p v)
@@ -74,7 +80,7 @@
 
 (eval (transform-all-let-exprs '(define apply-all-macro
   (lambda (expr)
-    (if (list? expr)
+    (if (non-empty-list? expr)
       (let ((newexpr (map apply-all-macro expr)))
         (apply-single-macro newexpr))
       expr)))))
@@ -85,7 +91,7 @@
 
 (add-macro 'let transform-let-expr)
 
-(define REPL-print-enabled (cell false))
+(define REPL-print-enabled (cell #f))
 
 (define REPL-print-value
   (lambda (value)
@@ -94,7 +100,7 @@
       nil)))
 
 (define enable-REPL-print
-  (lambda () (cell-set REPL-print-enabled true)))
+  (lambda () (cell-set REPL-print-enabled #t)))
 
 (define REPL (lambda ()
     (begin

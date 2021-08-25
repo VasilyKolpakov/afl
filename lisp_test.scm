@@ -1,4 +1,4 @@
-; import core.lisp
+; import core.scm
 
 (enable-REPL-print)
 
@@ -14,8 +14,8 @@
 ((lambda (f s) f) 1 2)
 
 "if"
-(if true 1 2)
-(if false 1 2)
+(if #t 1 2)
+(if #f 1 2)
 
 "factorial"
 (define factorial (lambda (n)
@@ -35,9 +35,11 @@
 "quote"
 (quote (lambda (x) (+ x x)))
 
-"list"
+"list operations"
 (list? 1)
 (list? (list 1 2 3))
+(length '(1 2 3))
+(length '())
 
 "let expression"
 (let ((x 1)

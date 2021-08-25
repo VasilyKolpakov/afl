@@ -22,9 +22,11 @@ true
 false
 "quote"
 '(lambda (x) (+ x x))
-"list"
+"list operations"
 false
 true
+3
+0
 "let expression"
 11
 "memory operations and syscalls"
