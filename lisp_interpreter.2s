@@ -1448,6 +1448,7 @@ register_lisp_instruction "call_instruction" {
     lisp_program_stack_pop
     if { not or bi { = lambda_obj_type_id } { = builtin_func_obj_type_id } obj_get_type_id lisp_value_stack_peek_top } {
         exit 1
+        lisp_print_stack_trace
         print_newline
         print_obj lisp_value_stack_peek_top
         print_string "trying to call non-callable obj: "
