@@ -513,18 +513,24 @@ def "obj_cell_invalidate" {
     write_mem_i64 swap -1 + obj_header_size
 } ;
 
-# <string> -> <obj>
-def "alloc_string" {
+# <length> <buffer> -> <obj>
+def "alloc_string_from_buffer" {
     keep {
-        memcopy bi { byte_vector_get_size } { byte_vector_get_array } swap # <string_obj_buf ptr> <string>
+        memcopy -rot
         + 8
-        write_mem_i64 dip { byte_vector_get_size } 2dup
+        write_mem_i64 2dup
         + obj_header_size
+        # <string obj> <length> <buffer>
     }
     keep { obj_set_gc_marked_flag swap false }
     keep { obj_set_type_id swap string_obj_type_id }
     # <string obj ptr> <string>
-    malloc + 8 + obj_header_size byte_vector_get_size dup
+    malloc + 8 + obj_header_size dup
+} ;
+
+# <string> -> <obj>
+def "alloc_string" {
+    alloc_string_from_buffer bi { byte_vector_get_size } { byte_vector_get_array }
 } ;
 
 # <string obj> -> <i64>
@@ -1046,7 +1052,6 @@ def "lisp_call_stack_print" {
     } + -2 array_list_get_size lisp_call_stack
     print_string "call stack:\n"
 } ;
-se_check_last_defined_function ;
 
 def "lisp_print_stack_trace" {
         lisp_call_stack_print
@@ -1188,7 +1193,6 @@ def "lisp_gc_sweep" {
         } array_list_get_size lisp_gc_ref_list
     } { }
 } ;
-se_check_last_defined_function ;
 
 def "lisp_obj_count" { array_list_get_size lisp_gc_ref_list } ;
 
@@ -1588,9 +1592,16 @@ register_lisp_instruction "list_q_instruction" {
     }
 } ;
 
+# <obj> -> <bool>
+def "lisp_obj_is_i64" {
+    drop swap
+    lazy_and { = i64_obj_type_id obj_get_type_id dup } not = 0 dup
+} ;
+se_check_last_defined_function ;
+
 def "syscall_pop_i64" {
     obj_i64_get_value lisp_value_stack_pop
-    assert "syscall arg is i64" = i64_obj_type_id obj_get_type_id lisp_value_stack_peek_top
+    assert "syscall arg is i64" lisp_obj_is_i64 lisp_value_stack_peek_top
 } ;
 
 register_lisp_instruction "syscall_instruction" {
@@ -1750,6 +1761,15 @@ constant "lisp_bitwise_ior_symbol" get_or_create_symbol "bitwise-ior" ;
 
 constant "lisp_string_length_symbol" get_or_create_symbol "string-length" ;
 constant "lisp_string_get_byte_symbol" get_or_create_symbol "string-get-byte" ;
+constant "lisp_string_from_native_buffer_symbol" get_or_create_symbol "string-from-native-buffer" ;
+symbol_bind lisp_string_from_native_buffer_symbol alloc_builtin_func "string-from-native-buffer" 2 {
+    lisp_value_stack_push alloc_string_from_buffer
+    # <length> <buffer>
+    obj_i64_get_value
+    assert "length is i64" lisp_obj_is_i64 dup lisp_value_stack_pop
+    obj_i64_get_value
+    assert "native-buffer is i64" lisp_obj_is_i64 dup lisp_value_stack_pop
+}
 
 constant "lisp_print_stack_trace_symbol" get_or_create_symbol "print-stack-trace" ;
 symbol_bind lisp_print_stack_trace_symbol alloc_builtin_func "print-stack-trace" 0 {
@@ -2135,8 +2155,10 @@ se_check_function_by_name "lisp_compile_expression" ;
 se_check_function_by_name "lisp_gc_push_roots_to_stack" ;
 se_check_function_by_name "read_next_expression" ;
 se_check_function_by_name "lisp_program_stack_print" ;
+se_check_function_by_name "lisp_call_stack_print" ;
 se_check_function_by_name "print_obj" ;
 se_check_function_by_name "not_instruction_f" ;
+se_check_function_by_name "lisp_gc_sweep" ;
 
 
 #while { true } { print_newline token_print read_next_token } ;
