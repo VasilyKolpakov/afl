@@ -115,12 +115,14 @@
           (body (car (cdr expr-args))))
       (list 'lambda args body))))
 
-(add-macro 'defun
+(add-macro 'define
            (lambda (expr-args)
-             (let ((lam (extract-defun-lambda expr-args)))
-               (list 'define (car (car expr-args)) lam))))
+             (if (list? (car expr-args))
+               (let ((lam (extract-defun-lambda expr-args)))
+                 (list 'define (car (car expr-args)) lam))
+               (cons 'define expr-args))))
 
-(defun (transform-let-star bindings body)
+(define (transform-let-star bindings body)
   (if (empty? bindings)
     body
     (list
@@ -128,7 +130,7 @@
       (list (car bindings))
       (transform-let-star (cdr bindings) body))))
 
-(defun (transform-let-star-expr let-args)
+(define (transform-let-star-expr let-args)
   (transform-let-star (car let-args) (car (cdr let-args))))
 
 (add-macro 'let* transform-let-star-expr)
