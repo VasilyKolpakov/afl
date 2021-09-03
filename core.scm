@@ -120,6 +120,19 @@
              (let ((lam (extract-defun-lambda expr-args)))
                (list 'define (car (car expr-args)) lam))))
 
+(defun (transform-let-star bindings body)
+  (if (empty? bindings)
+    body
+    (list
+      'let
+      (list (car bindings))
+      (transform-let-star (cdr bindings) body))))
+
+(defun (transform-let-star-expr let-args)
+  (transform-let-star (car let-args) (car (cdr let-args))))
+
+(add-macro 'let* transform-let-star-expr)
+
 
 (define syscall-mmap 9)
 (define syscall-mmap-PROT-READ 1)
