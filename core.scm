@@ -122,8 +122,10 @@
                  (list 'define (car (car expr-args)) lam))
                (cons 'define expr-args))))
 
+(define (nil? lst) (equal? lst nil))
+
 (define (transform-let-star bindings body)
-  (if (empty? bindings)
+  (if (nil? bindings)
     body
     (list
       'let
