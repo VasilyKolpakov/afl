@@ -222,15 +222,32 @@ se_check_last_defined_function ;
 #   Symbols
 #       Symbols are interned strings and are not freed by GC
 
+constant "obj_type_names" array_list_new ;
+
 constant "symbol_obj_type_id"   0 ;
+array_list_append obj_type_names "symbol" ;
 constant "i64_obj_type_id"      1 ;
+array_list_append obj_type_names "i64" ;
 constant "pair_obj_type_id"     2 ;
+array_list_append obj_type_names "pair" ;
 constant "lambda_obj_type_id"   3 ;
+array_list_append obj_type_names "lambda" ;
 constant "env_obj_type_id"      4 ;
+array_list_append obj_type_names "env" ;
 constant "bool_obj_type_id"     5 ;
+array_list_append obj_type_names "bool" ;
 constant "cell_obj_type_id"     6 ;
+array_list_append obj_type_names "cell" ;
 constant "string_obj_type_id"   7 ;
+array_list_append obj_type_names "string" ;
 constant "builtin_func_obj_type_id"   8 ;
+array_list_append obj_type_names "builtin_func" ;
+
+
+# <type id> -> <string>
+def "obj_type_name" {
+    array_list_get obj_type_names
+} ;
 
 constant "obj_header_size" 16 ;
 
@@ -1061,6 +1078,28 @@ def "lisp_print_stack_trace" {
         #lisp_value_stack_print
 } ;
 
+# <description str> <type id> <obj>
+def "lisp_assert_type" {
+    if { lazy_and { = obj_get_type_id 2dup } not = 0 dup } {
+        drop 2drop
+    } {
+        exit 1
+        lisp_print_stack_trace
+        print_newline
+        print_obj
+        print_string " but was "
+        print_string obj_type_name
+        print_string ": type assertion failed, expected "
+        print_string
+        rot
+        # <type id> <obj> <str>
+        swap
+    }
+    # <obj> <type id> <str>
+    swap
+    -rot
+} ;
+
 constant "lisp_gc_logging_enabled_pointer" malloc 8 ;
 write_mem_i64 lisp_gc_logging_enabled_pointer false ;
 def "lisp_gc_logging_is_enabled" { read_mem_i64 lisp_gc_logging_enabled_pointer } ;
@@ -1257,6 +1296,10 @@ def "read_next_expression_switch"
         token_scanner_advance
         token_destroy token_scanner_peek
         lisp_value_stack_push alloc_string token_get_value token_scanner_peek
+    } otherwise
+    when { = token_close_paren_type token_get_type_id token_scanner_peek } then {
+        exit 1
+        print_string "parsing error: unexpected close paren\n"
     } otherwise
     { assert "suppoted literal type" false print_newline . token_get_type_id token_scanner_peek }
 ;
@@ -1637,21 +1680,21 @@ register_lisp_instruction "native_call_instruction" {
 register_lisp_instruction "read_mem_i64_instruction" {
     lisp_value_stack_push
     alloc_i64 read_mem_i64 obj_i64_get_value
-    assert "read-mem-i64 arg is i64" = i64_obj_type_id obj_get_type_id dup
+    lisp_assert_type "read-mem-i64" i64_obj_type_id dup
     lisp_value_stack_pop
 } ;
 
 register_lisp_instruction "write_mem_i64_instruction" {
     lisp_value_stack_push 0
     write_mem_i64 bi@ { obj_i64_get_value }
-    assert "write-mem-i64 args are i64" and bi@ { = i64_obj_type_id obj_get_type_id } 2dup
+    bi@ { lisp_assert_type "write-mem-i64" i64_obj_type_id } 2dup
     swap lisp_value_stack_pop lisp_value_stack_pop
 } ;
 
 register_lisp_instruction "read_mem_byte_instruction" {
     lisp_value_stack_push
     alloc_i64 read_mem_byte obj_i64_get_value
-    assert "read-mem-byte arg is i64" = i64_obj_type_id obj_get_type_id dup
+    lisp_assert_type "read-mem-byte" i64_obj_type_id dup
     lisp_value_stack_pop
 } ;
 
@@ -1724,7 +1767,7 @@ constant "lisp_eval_symbol" get_or_create_symbol "eval" ;
 constant "lisp_car_symbol" get_or_create_symbol "car" ;
 constant "lisp_cdr_symbol" get_or_create_symbol "cdr" ;
 constant "lisp_cons_symbol" get_or_create_symbol "cons" ;
-symbol_bind lisp_cons_symbol alloc_builtin_func "cons" 2 cons_instruction
+symbol_bind lisp_cons_symbol alloc_builtin_func "cons" 2 cons_instruction ;
 
 constant "lisp_nil_symbol" get_or_create_symbol "nil" ;
 symbol_bind lisp_nil_symbol 0 ;
@@ -1736,7 +1779,7 @@ symbol_bind lisp_length_symbol alloc_builtin_func "length" 1 {
     lisp_value_stack_push
     alloc_i64 obj_list_length
     lisp_value_stack_pop
-}
+} ;
 
 constant "lisp_list_symbol" get_or_create_symbol "list" ;
 
@@ -1748,6 +1791,8 @@ constant "lisp_cell_symbol" get_or_create_symbol "cell" ;
 constant "lisp_cell_get_symbol" get_or_create_symbol "cell-get" ;
 constant "lisp_cell_set_symbol" get_or_create_symbol "cell-set" ;
 
+constant "lisp_the_s2_dictionaty_ptr_symbol" get_or_create_symbol "the-s2-dictionary-ptr" ;
+symbol_bind lisp_the_s2_dictionaty_ptr_symbol alloc_i64 the_dictionary ;
 constant "lisp_exit_symbol" get_or_create_symbol "exit" ;
 constant "lisp_syscall_symbol" get_or_create_symbol "syscall" ;
 constant "lisp_native_call_symbol" get_or_create_symbol "native-call" ;
@@ -1769,13 +1814,13 @@ symbol_bind lisp_string_from_native_buffer_symbol alloc_builtin_func "string-fro
     assert "length is i64" lisp_obj_is_i64 dup lisp_value_stack_pop
     obj_i64_get_value
     assert "native-buffer is i64" lisp_obj_is_i64 dup lisp_value_stack_pop
-}
+} ;
 
 constant "lisp_print_stack_trace_symbol" get_or_create_symbol "print-stack-trace" ;
 symbol_bind lisp_print_stack_trace_symbol alloc_builtin_func "print-stack-trace" 0 {
     lisp_value_stack_push 0
     lisp_print_stack_trace
-}
+} ;
 
 # <obj> ->
 def "lisp_compile_list"
@@ -2159,6 +2204,7 @@ se_check_function_by_name "lisp_call_stack_print" ;
 se_check_function_by_name "print_obj" ;
 se_check_function_by_name "not_instruction_f" ;
 se_check_function_by_name "lisp_gc_sweep" ;
+se_check_function_by_name "lisp_assert_type" ;
 
 
 #while { true } { print_newline token_print read_next_token } ;
