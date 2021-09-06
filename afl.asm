@@ -654,6 +654,7 @@ i_push_to_stack:
 _start: 
         mov         rax, f_default_sigsegv_handler
         mov         QWORD [sigsegv_handler_pointer], rax
+        mov         QWORD [the_dictionary], 0
         ; init segfault handler
         mov         rax, 13 ; sigaction syscall
         mov         rdi, 11 ; sigsegv signal
@@ -2621,7 +2622,7 @@ f_tests: equ     $-8
                     
                     def_constant_word_2 'h','p', sigsegv_handler_pointer    
 
-        dq          i_push_to_ret_stack, call(f_dictionary_make)
+        dq          i_push_to_ret_stack, val(the_dictionary)
 f_start: equ     $-8
 
 sigaction:
@@ -2634,4 +2635,6 @@ sigaction:
 data_stack:         resb    data_stack_size
 return_stack:       resb    return_stack_size
 sigsegv_handler_pointer:
+                    resq    1
+the_dictionary:
                     resq    1
