@@ -46,6 +46,8 @@ rename_word "o" "over" ;
 
 
 rename_word "rd" "return_stack_depth" ;
+rename_word "rt" "return_stack_top" ;
+rename_word "rs" "return_stack_bottom" ;
 
 rename_word "rp" "r_pick" ;
 

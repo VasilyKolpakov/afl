@@ -542,6 +542,11 @@ i_syscall:
         bump_data_stack 1
         jmp iloop
 
+i_ret_stack_top:
+        bump_data_stack 1
+        mov         [r12 - 8*1], r13
+        jmp iloop
+
 i_stack_depth:
         mov         rax, r12
         sub         rax, data_stack
@@ -2583,6 +2588,8 @@ f_tests: equ     $-8
                     def_instruction_word_2 'r', '@', i_peek_ret_stack_first
 
                     def_instruction_word_2 'r', 'd', i_ret_stack_depth
+                    def_instruction_word_2 'r', 't', i_ret_stack_top
+                    def_constant_word_2    'r', 's', return_stack
                     
                     def_instruction_word_2 'w', 'b', i_write_mem_byte
                     def_instruction_word_2 'r', 'b', i_read_mem_byte
