@@ -1793,6 +1793,8 @@ constant "lisp_cell_set_symbol" get_or_create_symbol "cell-set" ;
 
 constant "lisp_the_s2_dictionaty_ptr_symbol" get_or_create_symbol "the-s2-dictionary-ptr" ;
 symbol_bind lisp_the_s2_dictionaty_ptr_symbol alloc_i64 the_dictionary ;
+constant "lisp_s2_return_stack_ptr_symbol" get_or_create_symbol "s2-return-stack-ptr" ;
+symbol_bind lisp_s2_return_stack_ptr_symbol alloc_i64 return_stack_bottom ;
 constant "lisp_exit_symbol" get_or_create_symbol "exit" ;
 constant "lisp_syscall_symbol" get_or_create_symbol "syscall" ;
 constant "lisp_native_call_symbol" get_or_create_symbol "native-call" ;
