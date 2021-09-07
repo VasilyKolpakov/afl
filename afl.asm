@@ -1988,7 +1988,7 @@ f_read_and_compile_code__emit_code_for_num: equ     $-8
         dq          call(f_free), i_pop_from_ret_stack ; partially destroy sub vector [scanner] [code vector] [dict]
         dq          call(f_byte_vector_append_i64), i_swap, val(i_push_to_stack), i_over ; [scanner] [code vector] [dict]
         dq          call(f_byte_vector_append_i64), i_dup_n, val(3) ; [sub func pointer] [scanner] [code vector] [dict]
-        dq          i_add, val(-8)                              ; [sub func pointer + 8] [scanner] [code vector] [dict]
+        dq          i_add, val(-16)                              ; [sub func pointer + 16] [scanner] [code vector] [dict] ; code vector has function end pointer as the last element
         dq          i_add
         dq              call(f_byte_vector_pointer), i_peek_ret_stack, val(1)
         dq              call(f_byte_vector_size), i_peek_ret_stack, val(1)
@@ -2079,6 +2079,8 @@ f_read_and_compile_code__main: equ     $-8
         dq          i_not, call(f_is_semicolon_token), i_over       ; [ok bool] [token] [scanner] [code vector] [dict]
 f_read_and_compile_code__check_not_close_paren_and_fail_on_semicolon: equ     $-8
         dq          i_return        ; [ok bool] [code vector]
+        dq          i_swap, call(f_byte_vector_append_i64), i_swap, call(f_byte_vector_pointer), i_dup, i_dup    ; [code vector] [ok bool]
+        dq          i_swap          ; [ok bool] [code vector]
         dq          i_drop, i_rot   ; [ok bool] [code vector] [dict]
         dq          i_drop, i_swap  ; [ok bool] [scanner] [code vector] [dict]
         dq          call(f_byte_vector_destroy), i_swap     ; [ok bool] [token] [scanner] [code vector] [dict]
