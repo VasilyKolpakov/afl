@@ -635,6 +635,8 @@ def "print_obj_quoted"
         print_obj obj_lambda_get_arg_list dup
         print_string " "
         print_obj obj_lambda_get_local_env dup
+        print_string " "
+        print_obj obj_lambda_get_id dup
         print_string "(lambda "
     } otherwise
     when { = env_obj_type_id obj_get_type_id dup } then {
@@ -1381,6 +1383,32 @@ register_lisp_instruction "obj_i64_lt_instruction" {
     lisp_value_stack_peek 0 lisp_value_stack_peek 1
 } ;
 
+register_lisp_instruction "obj_i64_gte_instruction" {
+    lisp_value_stack_push
+    drop lisp_value_stack_pop
+    drop lisp_value_stack_pop
+    if { >= bi@ { obj_i64_get_value } } {
+        obj_bool_true
+    } {
+        obj_bool_false
+    }
+    bi@ { assert "'>=' args are i64" = i64_obj_type_id obj_get_type_id } 2dup
+    lisp_value_stack_peek 0 lisp_value_stack_peek 1
+} ;
+
+register_lisp_instruction "obj_i64_lte_instruction" {
+    lisp_value_stack_push
+    drop lisp_value_stack_pop
+    drop lisp_value_stack_pop
+    if { <= bi@ { obj_i64_get_value } } {
+        obj_bool_true
+    } {
+        obj_bool_false
+    }
+    bi@ { assert "'<=' args are i64" = i64_obj_type_id obj_get_type_id } 2dup
+    lisp_value_stack_peek 0 lisp_value_stack_peek 1
+} ;
+
 register_lisp_instruction "literal_instruction" {
     lisp_value_stack_push lisp_program_stack_pop
 } ;
@@ -1755,7 +1783,9 @@ constant "lisp_div_symbol" get_or_create_symbol "/" ;
 constant "lisp_not_symbol" get_or_create_symbol "not" ;
 constant "lisp_equal_symbol" get_or_create_symbol "equal?" ;
 constant "lisp_gt_symbol" get_or_create_symbol ">" ;
+constant "lisp_gte_symbol" get_or_create_symbol ">=" ;
 constant "lisp_lt_symbol" get_or_create_symbol "<" ;
+constant "lisp_lte_symbol" get_or_create_symbol "<=" ;
 
 constant "lisp_define_symbol" get_or_create_symbol "define" ;
 constant "lisp_lambda_symbol" get_or_create_symbol "lambda" ;
@@ -1841,6 +1871,24 @@ def "lisp_compile_list"
         obj_pair_cdr
         lisp_program_stack_push equals_instruction
         assert "eq? takes 2 args" = 3 obj_list_length dup
+    } otherwise
+    when { = lisp_gte_symbol obj_pair_car dup } then {
+        drop
+        lisp_compile_expression obj_pair_car dup
+        obj_pair_cdr
+        lisp_compile_expression obj_pair_car dup
+        obj_pair_cdr
+        lisp_program_stack_push obj_i64_gte_instruction
+        assert ">= takes 2 args" = 3 obj_list_length dup
+    } otherwise
+    when { = lisp_lte_symbol obj_pair_car dup } then {
+        drop
+        lisp_compile_expression obj_pair_car dup
+        obj_pair_cdr
+        lisp_compile_expression obj_pair_car dup
+        obj_pair_cdr
+        lisp_program_stack_push obj_i64_lte_instruction
+        assert "<= takes 2 args" = 3 obj_list_length dup
     } otherwise
     when { = lisp_gt_symbol obj_pair_car dup } then {
         drop

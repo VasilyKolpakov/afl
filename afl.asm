@@ -733,6 +733,7 @@ f_default_sigsegv_handler: equ     $-8
 
 ; <bool function> <true function> <false function>
 ; if function
+f_if_end:
         dq          i_indirect_jmp
         dq          i_value_if
         dq          i_drop, i_pop_from_ret_stack                ; drop bool f
@@ -743,7 +744,7 @@ f_default_sigsegv_handler: equ     $-8
         dq          i_push_to_ret_stack                         ; true f -> ret stack
         dq          i_push_to_ret_stack                         ; bool f -> ret stack
 f_if: equ     $-8
-
+        dq          f_if_end
 
 ; cond_end [cond_default <func>] cond_when <bool func 1> <func 1> cond_when <bool func 2> <func 2> cond_when ... cond_start
 
@@ -796,6 +797,7 @@ f_cond_end: equ     $-8
 
 ; <cond function> <body function>
 ; while function
+f_while_first_ptr:
         dq          i_return,
         dq          i_drop, i_pop_from_ret_stack                ; drop cond f
         dq          i_drop                                      ; drop body f
@@ -812,7 +814,7 @@ f_while__loop:
         dq          i_push_to_ret_stack                         ; body f -> ret stack
         dq          i_push_to_ret_stack                         ; cond f -> ret stack
 f_while: equ     $-8
-
+        dq          f_while_first_ptr
 
 
 ; <buffer pointer> <length>
@@ -1765,12 +1767,14 @@ f_do_n_times: equ     $-8
 
 
 ; print boolean
+f_print_bool_end:
         dq          i_return, val(ss_false), val(ss_false_size)
 f_print_bool_false: equ     $-8
         dq          i_return, val(ss_true), val(ss_true_size)
 f_print_bool_true: equ     $-8
         dq          i_return, f_print_buffer, i_call, call(f_if), val(f_id), val(f_print_bool_true), val(f_print_bool_false)
 f_print_bool: equ     $-8
+        dq          f_print_bool_end
 
 ; print number
         dq              i_return
@@ -1805,6 +1809,7 @@ f_print_data_stack__is_not_equal: equ     $-8
         dq              call(f_print_number), i_dup_n,
         dq              i_dup, i_add, val(1)
 f_print_data_stack__print_number: equ     $-8
+f_print_data_stack_end:
         dq              i_return
         dq              i_drop, i_drop
         dq              call(f_write_byte_to_stdout), val(10),
@@ -1813,6 +1818,7 @@ f_print_data_stack__print_number: equ     $-8
         dq              val(2) ; <index> <stack depth>
         dq              i_add, val(2), i_stack_depth ; <stack depth>
 f_print_data_stack: equ     $-8
+        dq              f_print_data_stack_end
 
 ; make byte vector from bytes
 ; <n> <byte 0> <byte 1> .. <byte n-1> -> <vector>
@@ -1829,12 +1835,15 @@ f_byte_vector_from_bytes__append_one_byte: equ     $-8
 f_byte_vector_from_bytes: equ     $-8
 
 ; false function
+f_false_end:
         dq          i_return, val(0)
 f_false: equ     $-8
+        dq          f_false_end
 ; true function
+f_true_end:
         dq          i_return, val(1)
 f_true: equ     $-8
-
+        dq          f_true_end
 ; check print and exit
         dq          call(f_exit_0), call(f_print_bool), i_equal
 f_check: equ     $-8
@@ -1920,15 +1929,19 @@ f_echo_tokens_loop: equ     $-8
 f_echo_tokens: equ     $-8
 
 ; <value> -> <value func>
+f_capture_end:
         dq          i_return
         dq          i_add, val(16), i_pop_from_ret_stack
         dq          i_write_mem_i64, i_add, val(0), i_peek_ret_stack, val(1), val(i_return)
         dq          i_write_mem_i64, i_add, val(8), i_peek_ret_stack, val(1)
         dq          i_write_mem_i64, i_add, val(16), i_peek_ret_stack, val(1), val(i_push_to_stack)
-        dq          i_push_to_ret_stack, call(f_malloc), val(24)
+        dq          i_write_mem_i64, i_add, val(24), i_peek_ret_stack, val(1), i_peek_ret_stack, val(1) 
+        dq          i_push_to_ret_stack, call(f_malloc), val(32)
 f_capture: equ     $-8
+        dq          f_capture_end
 
 ; <func 1> <func 2> -> <func>
+f_func_concat_end:
         dq          i_return
         dq          i_add, val(8*4), i_pop_from_ret_stack
         dq          i_write_mem_i64, i_add, val(8*0), i_peek_ret_stack, val(1), val(i_return)
@@ -1936,9 +1949,11 @@ f_capture: equ     $-8
         dq          i_write_mem_i64, i_add, val(8*2), i_peek_ret_stack, val(1), val(i_call)
         dq          i_write_mem_i64, i_add, val(8*3), i_peek_ret_stack, val(1)
         dq          i_write_mem_i64, i_add, val(8*4), i_peek_ret_stack, val(1), val(i_call)
-        dq          i_push_to_ret_stack, call(f_malloc), val(8*5)
+        dq          i_write_mem_i64, i_add, val(8*5), i_peek_ret_stack, val(1), i_peek_ret_stack, val(1) 
+        dq          i_push_to_ret_stack, call(f_malloc), val(8*6)
         dq          i_swap
 f_func_concat: equ     $-8
+        dq          f_func_concat_end
 
 ; reads and compiles code
 ; <scanner> <dict> -> <ok bool> <code vector>
