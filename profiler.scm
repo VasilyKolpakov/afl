@@ -18,6 +18,14 @@
 
 (define range (lambda (n) (range-tailrec n nil)))
 
+(define filter
+  (lambda (f l)
+    (if (equal? l nil)
+      nil
+      (if (f (car l))
+        (cons (car l) (filter f (cdr l)))
+        (filter f (cdr l))))))
+
 (define sleep
   (let ((buf (syscall-mmap-anon 4096)))
     (lambda (millis)
@@ -142,14 +150,15 @@
       (let ((return-stack-byte-size (- (ptrace-get-reg pid 'r13) s2-return-stack-ptr))
             (process-dict (read-process-dict pid)))
         (begin
-          ;(read-process-mem pid s2-return-stack-ptr buf return-stack-byte-size)
-          (read-process-mem pid (- (ptrace-get-reg pid 'r13) 80) buf 80)
-          (map (lambda (i)
-                 (find-function-name-in-dict process-dict
-                               (read-mem-i64 (+ buf (* i 8)))))
-               (range 10)
-               ;(range (+ 1 (/ return-stack-byte-size 8)))
-               ))))))
+          (read-process-mem pid s2-return-stack-ptr buf return-stack-byte-size)
+          (write-mem-i64 (+ buf return-stack-byte-size) (ptrace-get-reg pid 'r14))
+          ;(read-process-mem pid (- (ptrace-get-reg pid 'r13) 80) buf 80)
+          (filter (lambda (item) (not (nil? item)))
+                  (map (lambda (i)
+                         (find-function-name-in-dict
+                           process-dict
+                           (read-mem-i64 (+ buf (* i 8)))))
+                       (range (+ 1 (/ return-stack-byte-size 8))))))))))
 
 (define (parent-code child-pid)
   (begin
@@ -166,7 +175,7 @@
               ;(read-process-mem child-pid buffer buffer 8)
               ;(println (read-mem-i64 buffer))
               ;(println (ptrace-get-reg child-pid 'r15))
-              (println (read-process-dict child-pid))
+              ;(println (read-process-dict child-pid))
               ;(println (length (read-process-dict child-pid)))
               (println (read-process-call-stack child-pid))
               ;(println (ptrace-peek child-pid buffer))

@@ -487,10 +487,8 @@ i_value_if__false_branch:
 ; <number>
 i_peek_ret_stack_first:
         bump_data_stack 1
-        drop_return_stack 1
-        mov         rax, [r13]              ; read value from return stack
+        mov         rax, [r13 - 8]          ; read value from return stack
         mov         [r12 - 8*1], rax        ; write value to data stack
-        add         r13, 8                  ; restore stack pointer
         jmp iloop
 
 ; peeks n-th value from return stack
@@ -748,6 +746,7 @@ f_if: equ     $-8
 
 ; cond_end [cond_default <func>] cond_when <bool func 1> <func 1> cond_when <bool func 2> <func 2> cond_when ... cond_start
 
+f_cond_when_end:
         dq          i_return,
         dq          val(0)  ; false
         dq          i_drop  ; drop <func>
@@ -777,6 +776,7 @@ f_cond_when__is_false: equ     $-8
         dq          call(f_if), val(f_cond_when__is_false), val(f_cond_when__run_branch), val(f_cond_when__drop_funcs) ; <branch was found bool>
         dq          i_rot                   ; <branch was found bool> <bool func> <func>
 f_cond_when: equ     $-8
+        dq          f_cond_when_end,
 
         dq          i_return,
         dq          i_not
@@ -786,13 +786,17 @@ f_cond_default__is_false: equ     $-8
         dq          call(f_if), val(f_cond_default__is_false), i_swap, val(f_id)
 f_cond_default: equ     $-8
 
+f_cond_start_end:
         dq          i_return,
         dq          val(0) ; false
 f_cond_start: equ     $-8
+        dq          f_cond_start_end
 
+f_cond_end_end:
         dq          i_return,
         dq          i_drop ; drop bool
 f_cond_end: equ     $-8
+        dq          f_cond_end_end,
 
 
 ; <cond function> <body function>
@@ -1105,12 +1109,14 @@ f_byte_vector_destroy: equ     $-8
 
 ; write byte vector to stdout
 ; <addr>
+f_print_byte_vector_end:
         dq          i_return
         dq          i_drop
         dq          call(f_print_buffer)
         dq          i_read_mem_i64, i_add, val(8*2), i_over ; <array pointer> <size> <addr>
         dq          call(f_byte_vector_size), i_dup       ; <size> <addr>
 f_print_byte_vector: equ     $-8
+        dq          f_print_newline_end
 
 ; atoi, string to int
 ; <addr> <size> -> <number>
@@ -1722,8 +1728,10 @@ f_panic_if__do_panic: equ     $-8
 f_panic_if: equ     $-8
 
 ; print newline
+f_print_newline_end:
         dq          i_return, f_print_buffer, i_call, val(ss_newline), val(ss_newline_size)
 f_print_newline: equ     $-8
+        dq          f_print_newline_end
 
 ; print "debug"
         dq          i_return, f_print_buffer, i_call, val(ss_debug), val(ss_debug_size)
@@ -1777,6 +1785,7 @@ f_print_bool: equ     $-8
         dq          f_print_bool_end
 
 ; print number
+f_print_number_end:
         dq              i_return
         dq              call(f_free), i_pop_from_ret_stack
         dq              call(f_print_buffer),
@@ -1787,8 +1796,10 @@ f_print_bool: equ     $-8
         dq                      val(20)
         dq              i_push_to_ret_stack, call(f_malloc), val(20)
 f_print_number: equ     $-8
+        dq              f_print_number
 
 ; print char (byte)
+f_write_byte_to_stdout_end:
         dq              i_return
         dq              call(f_free), i_pop_from_ret_stack
         dq              call(f_print_buffer),
@@ -1798,6 +1809,7 @@ f_print_number: equ     $-8
         dq                      i_peek_ret_stack, val(1)
         dq              i_push_to_ret_stack, call(f_malloc), val(1)
 f_write_byte_to_stdout: equ     $-8
+        dq              f_write_byte_to_stdout_end
 
 ; print stack
 ; loop invariant: <index> <stack depth>
@@ -2645,6 +2657,7 @@ f_tests: equ     $-8
                     def_function_word_2 'c','a', f_capture
                     
                     def_constant_word_2 'h','p', sigsegv_handler_pointer    
+                    def_constant_word_2 'i','j', i_jmp    
 
         dq          i_push_to_ret_stack, val(the_dictionary)
 f_start: equ     $-8

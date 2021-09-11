@@ -64,4 +64,5 @@ rename_word "fc" "func_compose" ; # <func1> <func2> -> <func that calls func2 fi
 rename_word "ca" "func_capture" ; # <value> -> <func that puts value on the stack>
 
 rename_word "hp" "sigsegv_handler_pointer"
+rename_word "ij" "jmp_instruction_code"
 

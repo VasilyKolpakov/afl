@@ -1,0 +1,44 @@
+# import stack_effect.2s
+
+# code_buffer is a "wrapper" of array_list
+
+def "code_buffer_new" {
+    array_list_new
+} ;
+
+# <code buffer> <func>
+def "code_buffer_emit_call" {
+    array_list_append
+    keep { array_list_append swap read_mem_i64 { . } }
+} ;
+
+# <code buffer> <func>
+def "code_buffer_emit_tail_call" {
+    array_list_append
+    keep { array_list_append swap jmp_instruction_code }
+} ;
+
+# <code buffer>
+def "code_buffer_make_function" {
+    +
+    # <first instruction byte index> <ptr>
+    * 8 + -1 array_list_get_size
+    write_mem_i64 + over
+    # <func size> <ptr> ...
+    * 8 array_list_get_size
+    2dup
+    # <cb> <ptr>
+    drop swap
+    drop while { < 0 dup } {
+        2keep {
+            keep { write_mem_i64 } swap
+            # <data> <ptr>
+            array_list_get swap
+        }
+        # <cb index> <cb> <ptr> <original ptr>
+        + -1 2dip { + 8 }
+    } array_list_get_size dup
+    # <cb> <ptr> <ptr>
+    keep { + -8 dup malloc * 8 + 1 array_list_get_size }
+} ;
+se_check_last_defined_function ;
