@@ -9,20 +9,18 @@ def "code_buffer_new" {
 # <code buffer> <func>
 def "code_buffer_emit_call" {
     array_list_append
-    keep { array_list_append swap read_mem_i64 { . } }
-} ;
-
-# <code buffer> <func>
-def "code_buffer_emit_tail_call" {
-    array_list_append
-    keep { array_list_append swap jmp_instruction_code }
+    keep { array_list_append swap call_instruction_code }
 } ;
 
 # <code buffer>
-def "code_buffer_make_function" {
-    +
-    # <first instruction byte index> <ptr>
-    * 8 + -1 array_list_get_size
+def "code_buffer_make_function_and_destroy" {
+    array_list_destroy
+    keep {
+        +
+        # <first instruction byte index> <ptr>
+        * 8 + -1 array_list_get_size
+    }
+    # <cb> <ptr>
     write_mem_i64 + over
     # <func size> <ptr> ...
     * 8 array_list_get_size
@@ -40,5 +38,8 @@ def "code_buffer_make_function" {
     } array_list_get_size dup
     # <cb> <ptr> <ptr>
     keep { + -8 dup malloc * 8 + 1 array_list_get_size }
+    bi { array_list_set 2dip { jmp_instruction_code } } { + -2 array_list_get_size } dup
+    assert "last instruction is a call" = call_instruction_code bi { array_list_get } { + -2 array_list_get_size } dup
 } ;
 se_check_last_defined_function ;
+
