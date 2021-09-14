@@ -47,7 +47,7 @@ def "stacktrace_instruction_pointer_is_in_function" {
 # <skip return stack slots> ->
 def "stacktrace_print_return_stack_except_n_slots" {
     drop
-    while { > + -11 return_stack_depth dup } {
+    while { > + -10 return_stack_depth dup } {
         + 1
         print_newline stacktrace_print_func_name_by_instruction_pointer r_pick dup
     } + 5

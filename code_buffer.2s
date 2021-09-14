@@ -12,6 +12,12 @@ def "code_buffer_emit_call" {
     keep { array_list_append swap call_instruction_code }
 } ;
 
+# <code buffer> <value>
+def "code_buffer_emit_literal" {
+    array_list_append
+    keep { array_list_append swap lit_instruction_code }
+} ;
+
 # <code buffer>
 def "code_buffer_make_function_and_destroy" {
     array_list_destroy
