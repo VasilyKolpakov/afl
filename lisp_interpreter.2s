@@ -4,6 +4,7 @@
 # import stack_effect.2s
 # import switch_stmt.2s
 # import lib.2s
+# import code_buffer.2s
 
 #se_enable ;
 
@@ -952,16 +953,6 @@ def "lisp_value_stack_peek" {
     array_list_peek lisp_value_stack
 } ;
 
-constant "lisp_program_stack" array_list_new ;
-
-def "lisp_program_stack_push" {
-    array_list_append lisp_program_stack
-} ;
-
-def "lisp_program_stack_pop" {
-    array_list_pop_last lisp_program_stack
-} ;
-
 def "lisp_value_stack_print" {
     print_string "value stack end\n"
     drop while { <= 0 dup } {
@@ -972,112 +963,10 @@ def "lisp_value_stack_print" {
     print_string "value stack:\n"
 } ;
 
-constant "lisp_instruction_name_dict" array_list_new ;
+constant "lisp_code_literal_list" array_list_new ;
 
-# <name> <instruction>
-def "lisp_instruction_name_dict_add" {
-    array_list_append lisp_instruction_name_dict
-    array_list_append lisp_instruction_name_dict
-} ;
-
-# <instruction> -> <found bool> <name>
-def "lisp_instruction_name_dict_lookup_name" {
-    if { } {
-        true array_list_get lisp_instruction_name_dict + -1
-    } {
-        false 0 drop
-    }
-    # <found bool> <index>
-    2dip { drop }
-    dip { + 2 }
-    while { lazy_and { <= 1 over } not dup } {
-        dip { + -2 }
-        = array_list_get lisp_instruction_name_dict 2dup
-        drop
-    }
-    # <found bool> <index> <instruction>
-    false
-    + -1 array_list_get_size lisp_instruction_name_dict
-} ;
-se_check_last_defined_function ;
-
-def "lisp_program_stack_print" {
-    print_string "program stack end\n"
-    drop while { <= 0 dup } {
-        + -1
-        if { = call_instruction array_list_get lisp_program_stack dup } {
-            print_string " arguments\n"
-            . array_list_get lisp_program_stack dup
-            + -1
-            print_string "call_instruction: "
-        } {
-            if { = literal_instruction array_list_get lisp_program_stack dup } {
-                print_newline
-                print_obj array_list_get lisp_program_stack dup
-                print_string "value: "
-                + -1
-                print_string "literal_instruction: "
-            } {
-                print_newline
-                print_string
-                if { } { } {
-                    exit 1
-                    print_string "lisp_program_stack_print: unknown instruction\n"
-                }
-                lisp_instruction_name_dict_lookup_name array_list_get lisp_program_stack dup
-            }
-        }
-        print_string "program stack> "
-    } + -1 array_list_get_size lisp_program_stack
-    print_string "program stack:\n"
-} ;
-
-constant "lisp_call_stack" array_list_new ;
-
-# <func id> ->
-def "lisp_call_stack_push" {
-    if { lazy_and { = array_list_get_last lisp_call_stack array_list_get_size lisp_program_stack } not array_list_is_empty lisp_call_stack } {
-        array_list_set lisp_call_stack
-            + -2 array_list_get_size lisp_call_stack
-    } {
-        array_list_append lisp_call_stack array_list_get_size lisp_program_stack
-        array_list_append lisp_call_stack
-    }
-} ;
-se_check_last_defined_function ;
-
-def "lisp_call_stack_pop_if_function_exited" {
-    if { = array_list_get_last lisp_call_stack array_list_get_size lisp_program_stack } {
-        drop array_list_pop_last lisp_call_stack
-        drop array_list_pop_last lisp_call_stack
-    } { }
-    #print_newline . array_list_get_size lisp_call_stack
-} ;
-se_check_last_defined_function ;
-
-def "lisp_call_stack_print" {
-    print_string "call stack end\n"
-    drop while { <= 0 dup } {
-        + -2
-        #print_newline . array_list_get lisp_call_stack + 1 dup
-        if { lazy_and { not = 0 obj_lambda_get_id dup } = lambda_obj_type_id obj_get_type_id dup } {
-            print_newline print_obj obj_lambda_get_id
-        } {
-            print_newline print_obj
-        }
-        # <func obj> <index>
-        array_list_get lisp_call_stack dup
-        print_string "call stack> "
-    } + -2 array_list_get_size lisp_call_stack
-    print_string "call stack:\n"
-} ;
-
-def "lisp_print_stack_trace" {
-        lisp_call_stack_print
-        #print_newline
-        #lisp_program_stack_print
-        #print_newline
-        #lisp_value_stack_print
+def "lisp_code_literal_list_add" {
+    array_list_append lisp_code_literal_list
 } ;
 
 # <description str> <type id> <obj>
@@ -1086,7 +975,6 @@ def "lisp_assert_type" {
         drop 2drop
     } {
         exit 1
-        lisp_print_stack_trace
         print_newline
         print_obj
         print_string " but was "
@@ -1137,20 +1025,9 @@ def "lisp_gc_push_roots_to_stack" {
         + -1
     } array_list_get_size symbol_list
     drop while { < 0 dup } {
-        if { = call_instruction dup } {
-            + -1 # skip arg count
-            drop
-        } {
-            if { = literal_instruction } {
-                lisp_gc_marker_stack_push array_list_get lisp_program_stack dup # push literal obj
-                + -1
-            } {
-                # do nothing
-            }
-        }
-        array_list_get lisp_program_stack dup
+        lisp_gc_marker_stack_push array_list_get lisp_code_literal_list dup # push code literals
         + -1
-    } array_list_get_size lisp_program_stack
+    } array_list_get_size lisp_code_literal_list
     drop while { < 0 dup } {
         lisp_gc_marker_stack_push array_list_get lisp_value_stack dup # push value stack
         + -1
@@ -1320,7 +1197,6 @@ def "obj_i64_add" {
 def "register_lisp_instruction" {
     def string_concat swap "_f"
     constant 2dup
-    lisp_instruction_name_dict_add 2dup
 } ;
 
 register_lisp_instruction "obj_i64_add_instruction" {
@@ -1459,92 +1335,6 @@ def "get_temp_lambda" {
 } ;
 set_temp_lambda 0 ;
 
-# <arg count> ->
-def "call_lambda" {
-    # TODO: remove lisp_local_env ???
-    array_list_clear lisp_local_env
-    drop while { < 0 dup } {
-        + -1
-        symbol_unbind array_list_get lisp_local_env dup
-        + -1
-    } array_list_get_size lisp_local_env
-
-    set_temp_lambda 0
-    lisp_compile_expression obj_lambda_get_body get_temp_lambda
-
-    drop while { < 0 dup } {
-        symbol_bind bi { array_list_get lisp_local_env + 1 } { array_list_get lisp_local_env } dup
-        + -2
-    } array_list_get_size lisp_local_env
-
-    drop while { not = 0 dup } {
-        obj_pair_cdr
-        lisp_local_env_add_binding
-        # <symbol> <value> <arg list>
-        dip { lisp_value_stack_pop } obj_pair_car dup
-    } obj_lambda_get_arg_list get_temp_lambda
-
-    lisp_local_env_set_saved_env obj_lambda_get_local_env get_temp_lambda
-    if { not = 2dup } {
-        exit 1
-        print_newline
-        print_obj get_temp_lambda
-        print_string ", when calling "
-        .
-        print_string ", got "
-        .
-        print_string "wrong number of arguments: expected "
-    } { 2drop }
-    obj_list_length obj_lambda_get_arg_list get_temp_lambda
-    set_temp_lambda lisp_value_stack_pop
-} ;
-
-register_lisp_instruction "call_instruction" {
-    if { = lambda_obj_type_id obj_get_type_id lisp_value_stack_peek_top } {
-        call_lambda
-    } {
-        call obj_builtin_get_instruction lisp_value_stack_pop
-#        drop lisp_value_stack_pop
-        if { not = 2dup } {
-            exit 1
-            print_newline
-            print_obj lisp_value_stack_peek_top
-            print_string ", when calling "
-            .
-            print_string ", got "
-            .
-            print_string "wrong number of arguments: expected "
-        } { 2drop }
-        # <builtin arg count> <call argcount>
-        obj_builtin_get_arg_count lisp_value_stack_peek_top 
-    }
-    lisp_call_stack_push lisp_value_stack_peek_top
-    # <arg count>
-    lisp_program_stack_pop
-    if { not or bi { = lambda_obj_type_id } { = builtin_func_obj_type_id } obj_get_type_id lisp_value_stack_peek_top } {
-        exit 1
-        lisp_print_stack_trace
-        print_newline
-        print_obj lisp_value_stack_peek_top
-        print_string "trying to call non-callable obj: "
-    } { }
-} ;
-
-register_lisp_instruction "if_instruction" {
-    if { = obj_bool_true lisp_value_stack_pop } {
-        lisp_value_stack_push
-        drop lisp_value_stack_pop
-        lisp_value_stack_pop
-    } {
-        drop lisp_value_stack_pop
-    }
-    assert "if_instruction: boolean value" = bool_obj_type_id obj_get_type_id lisp_value_stack_peek_top
-} ;
-
-register_lisp_instruction "eval_instruction" {
-    lisp_compile_expression lisp_value_stack_pop
-    lisp_call_stack_push lisp_value_stack_peek_top
-} ;
 
 register_lisp_instruction "car_instruction" {
     if { obj_is_pair lisp_value_stack_peek_top } {
@@ -1759,23 +1549,9 @@ register_lisp_instruction "string_get_byte_instruction" {
     assert "string-get-byte first arg is string" = string_obj_type_id obj_get_type_id lisp_value_stack_peek 0
 } ;
 
-constant "lisp_local_env" array_list_new ;
-
-# <symbol> <value>
-def "lisp_local_env_add_binding" {
-    array_list_append lisp_local_env
-    array_list_append lisp_local_env
-    swap
-} ;
-
-# <env obj> ->
-def "lisp_local_env_set_saved_env" {
-    array_list_append_all lisp_local_env obj_env_get_bindings
-    array_list_clear lisp_local_env
-    assert "env object" = env_obj_type_id obj_get_type_id dup
-} ;
 
 constant "lisp_plus_symbol" get_or_create_symbol "+" ;
+symbol_bind lisp_plus_symbol alloc_builtin_func "+" 2 obj_i64_add_instruction ;
 constant "lisp_minus_symbol" get_or_create_symbol "-" ;
 constant "lisp_mul_symbol" get_or_create_symbol "*" ;
 constant "lisp_div_symbol" get_or_create_symbol "/" ;
@@ -1851,378 +1627,70 @@ symbol_bind lisp_string_from_native_buffer_symbol alloc_builtin_func "string-fro
 constant "lisp_print_stack_trace_symbol" get_or_create_symbol "print-stack-trace" ;
 symbol_bind lisp_print_stack_trace_symbol alloc_builtin_func "print-stack-trace" 0 {
     lisp_value_stack_push 0
-    lisp_print_stack_trace
+    #lisp_print_stack_trace
 } ;
 
-# <obj> ->
-def "lisp_compile_list"
-    when { = lisp_not_symbol obj_pair_car dup } then {
-        drop
-        lisp_compile_expression obj_pair_car dup
-        obj_pair_cdr
-        lisp_program_stack_push not_instruction
-        assert "not takes 1 arg" = 2 obj_list_length dup
-    } otherwise
-    when { = lisp_equal_symbol obj_pair_car dup } then {
-        drop
-        lisp_compile_expression obj_pair_car dup
-        obj_pair_cdr
-        lisp_compile_expression obj_pair_car dup
-        obj_pair_cdr
-        lisp_program_stack_push equals_instruction
-        assert "eq? takes 2 args" = 3 obj_list_length dup
-    } otherwise
-    when { = lisp_gte_symbol obj_pair_car dup } then {
-        drop
-        lisp_compile_expression obj_pair_car dup
-        obj_pair_cdr
-        lisp_compile_expression obj_pair_car dup
-        obj_pair_cdr
-        lisp_program_stack_push obj_i64_gte_instruction
-        assert ">= takes 2 args" = 3 obj_list_length dup
-    } otherwise
-    when { = lisp_lte_symbol obj_pair_car dup } then {
-        drop
-        lisp_compile_expression obj_pair_car dup
-        obj_pair_cdr
-        lisp_compile_expression obj_pair_car dup
-        obj_pair_cdr
-        lisp_program_stack_push obj_i64_lte_instruction
-        assert "<= takes 2 args" = 3 obj_list_length dup
-    } otherwise
-    when { = lisp_gt_symbol obj_pair_car dup } then {
-        drop
-        lisp_compile_expression obj_pair_car dup
-        obj_pair_cdr
-        lisp_compile_expression obj_pair_car dup
-        obj_pair_cdr
-        lisp_program_stack_push obj_i64_gt_instruction
-        assert "> takes 2 args" = 3 obj_list_length dup
-    } otherwise
-    when { = lisp_lt_symbol obj_pair_car dup } then {
-        drop
-        lisp_compile_expression obj_pair_car dup
-        obj_pair_cdr
-        lisp_compile_expression obj_pair_car dup
-        obj_pair_cdr
-        lisp_program_stack_push obj_i64_lt_instruction
-        assert "< takes 2 args" = 3 obj_list_length dup
-    } otherwise
-    when { = lisp_plus_symbol obj_pair_car dup } then {
-        drop
-        lisp_compile_expression obj_pair_car dup
-        obj_pair_cdr
-        lisp_compile_expression obj_pair_car dup
-        obj_pair_cdr
-        lisp_program_stack_push obj_i64_add_instruction
-        assert "+ takes 2 args" = 3 obj_list_length dup
-    } otherwise
-    when { = lisp_minus_symbol obj_pair_car dup } then {
-        drop
-        lisp_compile_expression obj_pair_car dup
-        obj_pair_cdr
-        lisp_compile_expression obj_pair_car dup
-        obj_pair_cdr
-        lisp_program_stack_push obj_i64_sub_instruction
-        assert "- takes 2 args" = 3 obj_list_length dup
-    } otherwise
-    when { = lisp_mul_symbol obj_pair_car dup } then {
-        drop
-        lisp_compile_expression obj_pair_car dup
-        obj_pair_cdr
-        lisp_compile_expression obj_pair_car dup
-        obj_pair_cdr
-        lisp_program_stack_push obj_i64_mul_instruction
-        assert "* takes 2 args" = 3 obj_list_length dup
-    } otherwise
-    when { = lisp_div_symbol obj_pair_car dup } then {
-        drop
-        lisp_compile_expression obj_pair_car dup
-        obj_pair_cdr
-        lisp_compile_expression obj_pair_car dup
-        obj_pair_cdr
-        lisp_program_stack_push obj_i64_div_instruction
-        assert "/ takes 2 args" = 3 obj_list_length dup
-    } otherwise
-    when { = lisp_define_symbol obj_pair_car dup } then {
-        lisp_program_stack_push literal_instruction
-        lisp_program_stack_push 0
-        drop
-        lisp_compile_expression obj_pair_car dup
-        obj_pair_cdr
-        lisp_program_stack_push literal_instruction
-        lisp_program_stack_push obj_pair_car dup
-        obj_pair_cdr
-        lisp_program_stack_push define_instruction
-        assert "define takes 2 args" = 3 obj_list_length dup
-    } otherwise
-    when { = lisp_lambda_symbol obj_pair_car dup } then {
-        drop
-        lisp_program_stack_push literal_instruction
-        lisp_program_stack_push obj_pair_car dup
-        obj_pair_cdr
-        lisp_program_stack_push literal_instruction
-        lisp_program_stack_push obj_pair_car dup
-        lisp_program_stack_push literal_instruction
-        lisp_program_stack_push alloc_env array_list_clone lisp_local_env
-        lisp_program_stack_push make_lambda_instruction
-        obj_pair_cdr
-        assert "lambda takes 2 args" = 3 obj_list_length dup
-    } otherwise
-    when { = lisp_if_symbol obj_pair_car dup } then {
-        drop
+def "obj_is_symbol" { drop swap lazy_and { = symbol_obj_type_id obj_get_type_id dup } not = 0 dup } ;
+se_check_last_defined_function ;
 
-        lisp_program_stack_push literal_instruction
-        lisp_program_stack_push obj_pair_car dup # else
-        lisp_program_stack_push literal_instruction
-        lisp_program_stack_push 0 # arg list
-        lisp_program_stack_push literal_instruction
-        lisp_program_stack_push alloc_env array_list_clone lisp_local_env
-        lisp_program_stack_push make_lambda_instruction
+def "obj_is_builtin" { drop swap lazy_and { = builtin_func_obj_type_id obj_get_type_id dup } not = 0 dup } ;
+se_check_last_defined_function ;
 
-        obj_pair_cdr
+constant "code_buffer_stack" array_list_new ;
 
-        lisp_program_stack_push literal_instruction
-        lisp_program_stack_push obj_pair_car dup # then
-        lisp_program_stack_push literal_instruction
-        lisp_program_stack_push 0 # arg list
-        lisp_program_stack_push literal_instruction
-        lisp_program_stack_push alloc_env array_list_clone lisp_local_env
-        lisp_program_stack_push make_lambda_instruction
+def "code_buffer_stack_peek" { array_list_get_last code_buffer_stack } ;
+se_check_last_defined_function ;
+def "code_buffer_stack_push_new" { array_list_append code_buffer_stack code_buffer_new } ;
+se_check_last_defined_function ;
+def "code_buffer_stack_pop" { code_buffer_make_function_and_destroy array_list_pop_last code_buffer_stack } ;
+se_check_last_defined_function ;
 
-        obj_pair_cdr
+def "lisp_compile_emit_literal" { 
+    code_buffer_emit_literal code_buffer_stack_peek
+} ;
+se_check_last_defined_function ;
 
-        lisp_compile_expression obj_pair_car dup # compile cond
-        lisp_program_stack_push if_instruction
-        lisp_program_stack_push call_instruction
-        lisp_program_stack_push 0 # arg count
-        obj_pair_cdr
-        assert "if takes 3 args" = 4 obj_list_length dup
-    } otherwise
-    when { = lisp_begin_symbol obj_pair_car dup } then {
-        drop while { < 0 dup } {
-            if { not = 0 dup } {
-                lisp_program_stack_push drop_instruction
-            } { }
-            lisp_compile_expression lisp_value_stack_pop
-            + -1
-        }
-        dip {
+def "lisp_compile_emit_call" { 
+    code_buffer_emit_call code_buffer_stack_peek
+} ;
+se_check_last_defined_function ;
+
+def "lisp_compile_list" {
+    if { obj_is_symbol obj_pair_car dup } {
+        lisp_compile_emit_call obj_builtin_get_instruction symbol_get_binding obj_pair_car
+        keep {
             drop while { not = 0 dup } {
                 obj_pair_cdr
-                lisp_value_stack_push obj_pair_car dup
-            }
+                lisp_compile_expression obj_pair_car dup
+            } obj_pair_cdr
         }
-        obj_list_length dup
-        obj_pair_cdr
-        assert "begin takes at least 1 arg" < 1 obj_list_length dup
-    } otherwise
-    when { = lisp_quote_symbol obj_pair_car dup } then {
-        lisp_program_stack_push literal_instruction
-        lisp_program_stack_push obj_pair_car obj_pair_cdr
-        assert "quote takes 1 arg" = 2 obj_list_length dup
-    } otherwise
-    when { = lisp_eval_symbol obj_pair_car dup } then {
-        lisp_compile_expression obj_pair_car obj_pair_cdr
-        lisp_program_stack_push eval_instruction
-        assert "eval takes 1 arg" = 2 obj_list_length dup
-    } otherwise
-    when { = lisp_cons_symbol obj_pair_car dup } then {
-        lisp_compile_expression obj_pair_car
-        obj_pair_cdr
-        lisp_compile_expression obj_pair_car dup
-        obj_pair_cdr
-        lisp_program_stack_push cons_instruction
-        assert "cons takes 2 args" = 3 obj_list_length dup
-    } otherwise
-    when { = lisp_car_symbol obj_pair_car dup } then {
-        lisp_compile_expression obj_pair_car obj_pair_cdr
-        lisp_program_stack_push car_instruction
-        assert "car takes 1 arg" = 2 obj_list_length dup
-    } otherwise
-    when { = lisp_cdr_symbol obj_pair_car dup } then {
-        lisp_compile_expression obj_pair_car obj_pair_cdr
-        lisp_program_stack_push cdr_instruction
-        assert "cdr takes 1 arg" = 2 obj_list_length dup
-    } otherwise
-    when { = lisp_cdr_symbol obj_pair_car dup } then {
-        lisp_compile_expression obj_pair_car obj_pair_cdr
-        lisp_program_stack_push cdr_instruction
-        assert "cdr takes 1 arg" = 2 obj_list_length dup
-    } otherwise
-    when { = lisp_list_symbol obj_pair_car dup } then {
-        lisp_program_stack_push literal_instruction
-        lisp_program_stack_push 0
+        assert "arg count" = bi
+            { + 1 obj_builtin_get_arg_count symbol_get_binding obj_pair_car }
+            { obj_list_length }
+        dup
+        assert "binding is a builtin" obj_is_builtin symbol_get_binding obj_pair_car dup
+        assert "symbol has binding" symbol_has_binding obj_pair_car dup
+    } {
         drop
-        while { not = 0 dup } {
-            obj_pair_cdr
-            lisp_compile_expression obj_pair_car dup
-            lisp_program_stack_push cons_instruction
-        }
-        obj_pair_cdr
-    } otherwise
-    when { = lisp_read_syntax_symbol obj_pair_car dup } then {
-        lisp_program_stack_push read_syntax_instruction
-        assert "read-syntax takes no args" = 1 obj_list_length
-    } otherwise
-    when { = lisp_print_symbol obj_pair_car dup } then {
-        lisp_compile_expression obj_pair_car obj_pair_cdr
-        lisp_program_stack_push print_instruction
-        assert "print takes 1 arg" = 2 obj_list_length dup
-    } otherwise
-    when { = lisp_print_string_symbol obj_pair_car dup } then {
-        lisp_compile_expression obj_pair_car obj_pair_cdr
-        lisp_program_stack_push print_string_instruction
-        assert "print-string takes 1 arg" = 2 obj_list_length dup
-    } otherwise
-    when { = lisp_cell_symbol obj_pair_car dup } then {
-        lisp_compile_expression obj_pair_car obj_pair_cdr
-        lisp_program_stack_push make_cell_instruction
-        assert "cell takes 1 arg" = 2 obj_list_length dup
-    } otherwise
-    when { = lisp_cell_get_symbol obj_pair_car dup } then {
-        lisp_compile_expression obj_pair_car obj_pair_cdr
-        lisp_program_stack_push cell_get_instruction
-        assert "cell-get takes 1 arg" = 2 obj_list_length dup
-    } otherwise
-    when { = lisp_cell_set_symbol obj_pair_car dup } then {
-        lisp_compile_expression obj_pair_car
-        obj_pair_cdr
-        lisp_compile_expression obj_pair_car dup
-        lisp_program_stack_push cell_set_instruction
-        obj_pair_cdr
-        assert "cell-set takes 2 args" = 3 obj_list_length dup
-    } otherwise
-    when { = lisp_exit_symbol obj_pair_car dup } then {
-        lisp_compile_expression obj_pair_car obj_pair_cdr
-        lisp_program_stack_push exit_instruction
-        assert "exit takes 1 args" = 2 obj_list_length dup
-    } otherwise
-    when { = lisp_syscall_symbol obj_pair_car dup } then {
-        drop
-        lisp_compile_expression obj_pair_car dup
-        obj_pair_cdr
-        lisp_compile_expression obj_pair_car dup
-        obj_pair_cdr
-        lisp_compile_expression obj_pair_car dup
-        obj_pair_cdr
-        lisp_compile_expression obj_pair_car dup
-        obj_pair_cdr
-        lisp_compile_expression obj_pair_car dup
-        obj_pair_cdr
-        lisp_compile_expression obj_pair_car dup
-        obj_pair_cdr
-        lisp_compile_expression obj_pair_car dup
-        obj_pair_cdr
-        lisp_program_stack_push syscall_instruction
-        assert "syscall takes 7 args" = 8 obj_list_length dup
-    } otherwise
-    when { = lisp_native_call_symbol obj_pair_car dup } then {
-        lisp_compile_expression obj_pair_car obj_pair_cdr
-        lisp_program_stack_push native_call_instruction
-        assert "native-call takes 1 arg" = 2 obj_list_length dup
-    } otherwise
-    when { = lisp_read_mem_i64_symbol obj_pair_car dup } then {
-        lisp_compile_expression obj_pair_car obj_pair_cdr
-        lisp_program_stack_push read_mem_i64_instruction
-        assert "read-mem-i64 takes 1 arg" = 2 obj_list_length dup
-    } otherwise
-    when { = lisp_write_mem_i64_symbol obj_pair_car dup } then {
-        lisp_compile_expression obj_pair_car
-        obj_pair_cdr
-        lisp_compile_expression obj_pair_car dup
-        obj_pair_cdr
-        lisp_program_stack_push write_mem_i64_instruction
-        assert "write-mem-i64 takes 2 args" = 3 obj_list_length dup
-    } otherwise
-    when { = lisp_read_mem_byte_symbol obj_pair_car dup } then {
-        lisp_compile_expression obj_pair_car obj_pair_cdr
-        lisp_program_stack_push read_mem_byte_instruction
-        assert "read-mem-byte takes 1 arg" = 2 obj_list_length dup
-    } otherwise
-    when { = lisp_write_mem_byte_symbol obj_pair_car dup } then {
-        lisp_compile_expression obj_pair_car
-        obj_pair_cdr
-        lisp_compile_expression obj_pair_car dup
-        obj_pair_cdr
-        lisp_program_stack_push write_mem_byte_instruction
-        assert "write-mem-byte takes 2 args" = 3 obj_list_length dup
-    } otherwise
-    when { = lisp_bitwise_ior_symbol obj_pair_car dup } then {
-        lisp_compile_expression obj_pair_car
-        obj_pair_cdr
-        lisp_compile_expression obj_pair_car dup
-        obj_pair_cdr
-        lisp_program_stack_push bitwise_ior_instruction
-        assert "bitwise-ior takes 2 args" = 3 obj_list_length dup
-    } otherwise
-    when { = lisp_string_length_symbol obj_pair_car dup } then {
-        lisp_compile_expression obj_pair_car
-        obj_pair_cdr
-        lisp_program_stack_push string_length_instruction
-        assert "stirng-length takes 1 arg" = 2 obj_list_length dup
-    } otherwise
-    when { = lisp_string_get_byte_symbol obj_pair_car dup } then {
-        lisp_compile_expression obj_pair_car
-        obj_pair_cdr
-        lisp_compile_expression obj_pair_car dup
-        obj_pair_cdr
-        lisp_program_stack_push string_get_byte_instruction
-        assert "stirng-get-byte takes 2 args" = 3 obj_list_length dup
-    } otherwise
-    {
-        drop
-        while { not = 0 dup } {
-            obj_pair_cdr
-            lisp_compile_expression obj_pair_car dup # compile arg expressions
-        }
-        obj_pair_cdr
-        lisp_compile_expression obj_pair_car dup # push lambda generation code
-        lisp_program_stack_push call_instruction
-        lisp_program_stack_push + -1 obj_list_length dup # push arg count
+        assert "dead code" false
     }
-;
+} ;
 
-# <obj> ->
 def "lisp_compile_expression_switch" 
     when { obj_is_list dup } then {
         lisp_compile_list
     } otherwise
-    when { = symbol_obj_type_id obj_get_type_id dup } then {
-        if { symbol_has_binding dup } {
-            lisp_program_stack_push literal_instruction
-            lisp_program_stack_push symbol_get_binding
-        } {
-            exit 1
-            print_newline
-            print_obj
-            print_string "undefined symbol: "
-        }
-    } otherwise
     {
-        lisp_program_stack_push literal_instruction
-        lisp_program_stack_push
+        lisp_compile_emit_call { lisp_value_stack_push }
+        lisp_compile_emit_literal
+        lisp_code_literal_list_add dup
     }
 ;
 
-# <obj> <local env> ->
 def "lisp_compile_expression" {
-    drop lisp_value_stack_pop
     lisp_compile_expression_switch
-    lisp_value_stack_push dup
     assert "obj type id is OK" and bi { <= 0 } { >= 7 } obj_get_type_id dup
 } ;
-
-# -> # expects expression to be on the top of lisp_value_stack
-def "lisp_interpret" {
-    while { not array_list_is_empty lisp_program_stack } {
-        lisp_call_stack_pop_if_function_exited
-        call lisp_program_stack_pop
-    }
-    lisp_compile_expression lisp_value_stack_pop
-    lisp_call_stack_push lisp_eval_symbol
-} ;
-
 
 def "define_instruction_func" { call define_instruction } ;
 se_check_last_defined_function ;
@@ -2244,7 +1712,6 @@ se_check_last_defined_function ;
 def "print_string_instruction_func" { call print_string_instruction } ;
 se_check_last_defined_function ;
 
-se_check_function_by_name "call_lambda" ;
 se_check_function_by_name "symbol_bind" ;
 se_check_function_by_name "lisp_compile_expression" ;
 se_check_function_by_name "lisp_gc_push_roots_to_stack" ;
@@ -2259,5 +1726,9 @@ se_check_function_by_name "lisp_assert_type" ;
 
 #while { true } { print_newline token_print read_next_token } ;
 #while { true } { print_newline print_obj lisp_value_stack_pop read_next_expression } ;
-while { true } { assert "value stack is empty" array_list_is_empty lisp_value_stack drop lisp_value_stack_pop lisp_interpret read_next_expression } ;
-  
+while { true } { 
+    print_newline print_obj lisp_value_stack_pop
+    call code_buffer_stack_pop
+    lisp_compile_expression lisp_value_stack_pop read_next_expression
+    code_buffer_stack_push_new
+} ;
