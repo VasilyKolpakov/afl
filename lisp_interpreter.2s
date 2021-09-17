@@ -953,6 +953,20 @@ def "lisp_value_stack_peek" {
     array_list_peek lisp_value_stack
 } ;
 
+# <n> ->
+def "lisp_value_drop_swap_n_times" {
+    array_list_set_size lisp_value_stack - array_list_get_size lisp_value_stack 
+    array_list_set lisp_value_stack + -1 - array_list_get_size lisp_value_stack dip { lisp_value_stack_peek_top } dup
+} ;
+se_check_last_defined_function ;
+
+# <n> ->
+def "lisp_value_stack_peek_n_and_push" {
+    array_list_append lisp_value_stack
+    array_list_get lisp_value_stack + -1 - array_list_get_size lisp_value_stack 
+} ;
+se_check_last_defined_function ;
+
 def "lisp_value_stack_print" {
     print_string "value stack end\n"
     drop while { <= 0 dup } {
@@ -1553,8 +1567,11 @@ register_lisp_instruction "string_get_byte_instruction" {
 constant "lisp_plus_symbol" get_or_create_symbol "+" ;
 symbol_bind lisp_plus_symbol alloc_builtin_func "+" 2 obj_i64_add_instruction ;
 constant "lisp_minus_symbol" get_or_create_symbol "-" ;
+symbol_bind lisp_minus_symbol alloc_builtin_func "-" 2 obj_i64_sub_instruction ;
 constant "lisp_mul_symbol" get_or_create_symbol "*" ;
+symbol_bind lisp_mul_symbol alloc_builtin_func "*" 2 obj_i64_mul_instruction ;
 constant "lisp_div_symbol" get_or_create_symbol "/" ;
+symbol_bind lisp_div_symbol alloc_builtin_func "/" 2 obj_i64_div_instruction ;
 
 constant "lisp_not_symbol" get_or_create_symbol "not" ;
 constant "lisp_equal_symbol" get_or_create_symbol "equal?" ;
@@ -1565,6 +1582,7 @@ constant "lisp_lte_symbol" get_or_create_symbol "<=" ;
 
 constant "lisp_define_symbol" get_or_create_symbol "define" ;
 constant "lisp_lambda_symbol" get_or_create_symbol "lambda" ;
+constant "lisp_let_symbol" get_or_create_symbol "let" ;
 constant "lisp_if_symbol" get_or_create_symbol "if" ;
 constant "lisp_begin_symbol" get_or_create_symbol "begin" ;
 
@@ -1602,6 +1620,7 @@ symbol_bind lisp_the_s2_dictionaty_ptr_symbol alloc_i64 the_dictionary ;
 constant "lisp_s2_return_stack_ptr_symbol" get_or_create_symbol "s2-return-stack-ptr" ;
 symbol_bind lisp_s2_return_stack_ptr_symbol alloc_i64 return_stack_bottom ;
 constant "lisp_exit_symbol" get_or_create_symbol "exit" ;
+symbol_bind lisp_exit_symbol alloc_builtin_func "exit" 1 exit_instruction ;
 constant "lisp_syscall_symbol" get_or_create_symbol "syscall" ;
 constant "lisp_native_call_symbol" get_or_create_symbol "native-call" ;
 
@@ -1655,9 +1674,68 @@ def "lisp_compile_emit_call" {
 } ;
 se_check_last_defined_function ;
 
-def "lisp_compile_list" {
-    if { obj_is_symbol obj_pair_car dup } {
-        lisp_compile_emit_call obj_builtin_get_instruction symbol_get_binding obj_pair_car
+constant "stack_bindings" array_list_new ;
+
+def "stack_bindings_push_unnamed" {
+    array_list_append stack_bindings 0
+} ;
+
+# <symbol> ->
+def "stack_bindings_bind_top" {
+    array_list_set stack_bindings + -1 array_list_get_size stack_bindings 
+} ;
+se_check_last_defined_function ;
+
+# <num items to drop> ->
+def "stack_bindings_drop_n" {
+    array_list_set_size stack_bindings - array_list_get_size stack_bindings
+} ;
+se_check_last_defined_function ;
+
+# <num items to drop> ->
+def "stack_bindings_drop_swap_n_times" {
+    array_list_set_size stack_bindings - array_list_get_size stack_bindings 
+    array_list_set stack_bindings + -1 - array_list_get_size stack_bindings dip { array_list_get_last stack_bindings } dup
+} ;
+se_check_last_defined_function ;
+
+# <symbol> -> <found bool> <stack index>
+def "stack_bindings_find" {
+    if { = -1 dup } {
+        false
+    } {
+        true + -1 - array_list_get_size stack_bindings 
+    }
+    drop swap
+    while { lazy_and { not = array_list_get stack_bindings 2dup } <= 0 dup } { + -1 }
+    # <index> <symbol>
+    + -1 array_list_get_size stack_bindings
+} ;
+se_check_last_defined_function ;
+
+def "lisp_compile_list"
+    when { = lisp_let_symbol obj_pair_car dup } then {
+        drop
+        stack_bindings_drop_swap_n_times obj_list_length obj_pair_car dup
+        lisp_compile_emit_call { lisp_value_drop_swap_n_times }
+        lisp_compile_emit_literal obj_list_length obj_pair_car dup
+        lisp_compile_expression obj_pair_car obj_pair_cdr dup # compile 'let' body
+        keep {
+            drop while { not = 0 dup } {
+                obj_pair_cdr
+                stack_bindings_bind_top obj_pair_car obj_pair_car dup # bind stack slot to symbol
+                lisp_compile_expression obj_pair_car obj_pair_cdr obj_pair_car dup # compile binding body
+            }
+            obj_pair_car
+        }
+        assert "let has bindings list" obj_is_list obj_pair_car dup
+        assert "let has 2 args" = 2 obj_list_length dup
+        obj_pair_cdr
+    } otherwise
+    when { obj_is_symbol obj_pair_car dup } then {
+        stack_bindings_push_unnamed
+        stack_bindings_drop_n obj_builtin_get_arg_count symbol_get_binding obj_pair_car
+        lisp_compile_emit_call obj_builtin_get_instruction symbol_get_binding obj_pair_car dup
         keep {
             drop while { not = 0 dup } {
                 obj_pair_cdr
@@ -1670,17 +1748,35 @@ def "lisp_compile_list" {
         dup
         assert "binding is a builtin" obj_is_builtin symbol_get_binding obj_pair_car dup
         assert "symbol has binding" symbol_has_binding obj_pair_car dup
-    } {
+    } otherwise
+    {
         drop
         assert "dead code" false
+        print_obj
     }
-} ;
+;
 
 def "lisp_compile_expression_switch" 
     when { obj_is_list dup } then {
         lisp_compile_list
     } otherwise
+    when { obj_is_symbol dup } then {
+        if { } {
+            stack_bindings_push_unnamed
+            lisp_compile_emit_call { lisp_value_stack_peek_n_and_push }
+            lisp_compile_emit_literal 
+            drop swap
+        } {
+            stack_bindings_push_unnamed
+            lisp_compile_emit_call { lisp_value_stack_push }
+            lisp_compile_emit_literal symbol_get_binding
+            assert "symbol has binding" symbol_has_binding dup
+            drop
+        }
+        stack_bindings_find dup
+    } otherwise
     {
+        stack_bindings_push_unnamed
         lisp_compile_emit_call { lisp_value_stack_push }
         lisp_compile_emit_literal
         lisp_code_literal_list_add dup
@@ -1713,6 +1809,8 @@ def "print_string_instruction_func" { call print_string_instruction } ;
 se_check_last_defined_function ;
 
 se_check_function_by_name "symbol_bind" ;
+se_check_function_by_name "obj_is_symbol" ;
+#se_enable ;
 se_check_function_by_name "lisp_compile_expression" ;
 se_check_function_by_name "lisp_gc_push_roots_to_stack" ;
 se_check_function_by_name "read_next_expression" ;
@@ -1728,7 +1826,10 @@ se_check_function_by_name "lisp_assert_type" ;
 #while { true } { print_newline print_obj lisp_value_stack_pop read_next_expression } ;
 while { true } { 
     print_newline print_obj lisp_value_stack_pop
+    assert "single value on value stack" = 1 array_list_get_size lisp_value_stack
     call code_buffer_stack_pop
+    stack_bindings_drop_n 1
+    assert "single value on compile stack" = 1 array_list_get_size stack_bindings
     lisp_compile_expression lisp_value_stack_pop read_next_expression
     code_buffer_stack_push_new
 } ;
