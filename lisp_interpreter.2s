@@ -1564,18 +1564,19 @@ register_lisp_instruction "string_get_byte_instruction" {
 } ;
 
 
-constant "lisp_plus_symbol" get_or_create_symbol "+" ;
-symbol_bind lisp_plus_symbol alloc_builtin_func "+" 2 obj_i64_add_instruction ;
-constant "lisp_minus_symbol" get_or_create_symbol "-" ;
-symbol_bind lisp_minus_symbol alloc_builtin_func "-" 2 obj_i64_sub_instruction ;
-constant "lisp_mul_symbol" get_or_create_symbol "*" ;
-symbol_bind lisp_mul_symbol alloc_builtin_func "*" 2 obj_i64_mul_instruction ;
-constant "lisp_div_symbol" get_or_create_symbol "/" ;
-symbol_bind lisp_div_symbol alloc_builtin_func "/" 2 obj_i64_div_instruction ;
+# <name> <arg count> <func> ->
+def "lisp_register_builtin_function" {
+    symbol_bind get_or_create_symbol keep { alloc_builtin_func }
+} ;
+
+lisp_register_builtin_function "+" 2 obj_i64_add_instruction ;
+lisp_register_builtin_function "-" 2 obj_i64_sub_instruction ;
+lisp_register_builtin_function "*" 2 obj_i64_mul_instruction ;
+lisp_register_builtin_function "/" 2 obj_i64_div_instruction ;
+
+lisp_register_builtin_function "equal?" 2 equal_instruction ;
 
 constant "lisp_not_symbol" get_or_create_symbol "not" ;
-constant "lisp_equal_symbol" get_or_create_symbol "equal?" ;
-symbol_bind lisp_equal_symbol alloc_builtin_func "equal?" 2 equal_instruction ;
 constant "lisp_gt_symbol" get_or_create_symbol ">" ;
 constant "lisp_gte_symbol" get_or_create_symbol ">=" ;
 constant "lisp_lt_symbol" get_or_create_symbol "<" ;
@@ -1838,6 +1839,7 @@ se_check_last_defined_function ;
 se_check_function_by_name "symbol_bind" ;
 se_check_function_by_name "obj_is_symbol" ;
 #se_enable ;
+se_check_function_by_name "lisp_register_builtin_function" ;
 se_check_function_by_name "lisp_compile_expression" ;
 se_check_function_by_name "lisp_gc_push_roots_to_stack" ;
 se_check_function_by_name "read_next_expression" ;
