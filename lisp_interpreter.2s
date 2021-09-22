@@ -1768,6 +1768,15 @@ def "lisp_compile_list"
         assert "lambda has 2 args" = 2 obj_list_length dup
         obj_pair_cdr
     } otherwise
+    when { = lisp_quote_symbol obj_pair_car dup } then {
+        drop
+        stack_bindings_push_unnamed
+        lisp_compile_emit_call { lisp_value_stack_push }
+        lisp_compile_emit_literal obj_pair_car dup
+        lisp_code_literal_list_add obj_pair_car dup
+        assert "quote has one argument" = 1 obj_list_length dup
+        obj_pair_cdr
+    } otherwise
     when { = lisp_let_symbol obj_pair_car dup } then {
         drop
         bi { stack_bindings_drop_swap_n_times } { lexical_scope_drop_n } obj_list_length obj_pair_car dup
