@@ -225,23 +225,21 @@ se_check_last_defined_function ;
 
 constant "obj_type_names" array_list_new ;
 
-constant "symbol_obj_type_id"   0 ;
+constant "symbol_obj_type_id"       0 ;
 array_list_append obj_type_names "symbol" ;
-constant "i64_obj_type_id"      1 ;
+constant "i64_obj_type_id"          1 ;
 array_list_append obj_type_names "i64" ;
-constant "pair_obj_type_id"     2 ;
+constant "pair_obj_type_id"         2 ;
 array_list_append obj_type_names "pair" ;
-constant "lambda_obj_type_id"   3 ;
+constant "lambda_obj_type_id"       3 ;
 array_list_append obj_type_names "lambda" ;
-constant "env_obj_type_id"      4 ;
-array_list_append obj_type_names "env" ;
-constant "bool_obj_type_id"     5 ;
+constant "bool_obj_type_id"         4 ;
 array_list_append obj_type_names "bool" ;
-constant "cell_obj_type_id"     6 ;
+constant "cell_obj_type_id"         5 ;
 array_list_append obj_type_names "cell" ;
-constant "string_obj_type_id"   7 ;
+constant "string_obj_type_id"       6 ;
 array_list_append obj_type_names "string" ;
-constant "builtin_func_obj_type_id"   8 ;
+constant "builtin_func_obj_type_id" 7 ;
 array_list_append obj_type_names "builtin_func" ;
 
 
@@ -439,58 +437,32 @@ def "obj_list_length" {
     assert "obj is list" obj_is_list dup
 } ;
 
-# lambda layout [header, local env, arg list, body, id]
-# <local env stack> <arg list> <body> -> <lambda>
+# lambda layout [header, env size, arg count, function, env ...]
+# <env count> <arg count> <func> -> <lambda>
 def "alloc_lambda" {
     keep { lisp_gc_ref_list_append }
-    keep { write_mem_i64 swap 0 + 24 + obj_header_size }
-    keep { write_mem_i64 + 16 + obj_header_size }
-    keep { write_mem_i64 + 8 + obj_header_size }
-    keep { write_mem_i64 + obj_header_size }
+    keep { write_mem_i64 + 16 + obj_header_size } # function
+    keep { write_mem_i64 + 8 + obj_header_size } # arg count
+    keep { write_mem_i64 + obj_header_size } # env count
     keep { obj_set_gc_marked_flag swap 0 }
     keep { obj_set_type_id swap lambda_obj_type_id }
-    malloc + 24 obj_header_size
+    malloc + 24 + obj_header_size * 8 dup # allocate 3 fields + header + env
     lisp_run_gc
 } ;
 
-def "obj_lambda_get_local_env" { read_mem_i64 + obj_header_size } ;
-def "obj_lambda_get_arg_list" { read_mem_i64 + 8 + obj_header_size } ;
-def "obj_lambda_get_body" { read_mem_i64 + 16 + obj_header_size } ;
-def "obj_lambda_get_id" { read_mem_i64 + 24 + obj_header_size } ;
-def "obj_lambda_set_id" { write_mem_i64 + 24 + obj_header_size } ;
+def "obj_lambda_get_env_size" { read_mem_i64 + obj_header_size } ;
+def "obj_lambda_get_arg_count" { read_mem_i64 + 8 + obj_header_size } ;
+def "obj_lambda_get_function" { read_mem_i64 + 16 + obj_header_size } ;
+# <lambda> <index> -> <obj>
+def "obj_lambda_get_env_value" { read_mem_i64 + 24 + obj_header_size + * 8 swap } ;
+# <lambda> <index> <obj> ->
+def "obj_lambda_set_env_value" { write_mem_i64 + 24 + obj_header_size + * 8 swap } ;
 
 def "obj_lambda_invalidate" {
     drop
-    write_mem_i64 swap -1 + 24 + obj_header_size dup
     write_mem_i64 swap -1 + 16 + obj_header_size dup
     write_mem_i64 swap -1 + 8 + obj_header_size dup
     write_mem_i64 swap -1 + obj_header_size dup
-} ;
-se_check_last_defined_function ;
-
-# <bindings list> ->
-def "alloc_env" {
-    keep { lisp_gc_ref_list_append }
-    keep { write_mem_i64 + obj_header_size } # bindings list is set here
-    keep { obj_set_gc_marked_flag swap 0 }
-    keep { obj_set_type_id swap env_obj_type_id }
-    malloc + 8 obj_header_size
-    lisp_run_gc
-} ;
-
-def "obj_env_get_bindings" { read_mem_i64 + obj_header_size } ;
-
-# <env> <symbol> <value> -> 
-def "obj_env_add_binding" {
-    array_list_append
-    keep { array_list_append }
-    obj_env_get_bindings
-    dip { swap }
-} ;
-se_check_last_defined_function ;
-
-def "obj_env_invalidate" {
-    write_mem_i64 swap -1 + obj_header_size
 } ;
 se_check_last_defined_function ;
 
@@ -630,37 +602,23 @@ def "print_obj_quoted"
         print_string "("
     } otherwise
     when { = lambda_obj_type_id obj_get_type_id dup } then {
-        print_string ")"
-        print_obj obj_lambda_get_body
-        print_string " "
-        print_obj obj_lambda_get_arg_list dup
-        print_string " "
-        print_obj obj_lambda_get_local_env dup
-        print_string " "
-        print_obj obj_lambda_get_id dup
-        print_string "(lambda "
-    } otherwise
-    when { = env_obj_type_id obj_get_type_id dup } then {
-        print_string ")"
-        2drop
-        while { < 0 dup } {
-            if { = 0 dup } {
-            } {
+        drop
+        print_string "))"
+        drop while { < dip { obj_lambda_get_env_size } 2dup } {
+            if { < dip { obj_lambda_get_env_size } 2dup } {
                 print_string " "
-            }
-            print_string ")"
-            print_obj
-            array_list_get swap 2dup
-            + -1
-            print_string " . "
-            print_obj
-            array_list_get swap 2dup
-            + -1
-            print_string "("
-        }
-        array_list_get_size dup
-        obj_env_get_bindings
-        print_string "(env "
+            } { }
+            + 1
+            print_obj obj_lambda_get_env_value swap 2dup
+            # <index> <lambda>
+        } 0
+        print_string " (env "
+        . obj_lambda_get_arg_count dup
+        print_string " "
+        . obj_lambda_get_env_size dup
+        print_string " "
+        . dup
+        print_string "(lambda #"
     } otherwise
     when { = cell_obj_type_id obj_get_type_id dup } then {
         print_string ")"
@@ -706,11 +664,6 @@ def "destroy_obj"
         free
         obj_lambda_invalidate dup
     } otherwise
-    when { = env_obj_type_id obj_get_type_id dup } then {
-        free
-        obj_env_invalidate dup
-        array_list_destroy obj_env_get_bindings dup
-    } otherwise
     when { = cell_obj_type_id obj_get_type_id dup } then {
         free
         obj_cell_invalidate dup
@@ -734,7 +687,6 @@ def "obj_equal_switch"
         obj_equal bi@ { obj_pair_car } 2dup
     } otherwise
     when { = lambda_obj_type_id obj_get_type_id dup } then { = } otherwise
-    when { = env_obj_type_id obj_get_type_id dup } then { = } otherwise
     when { = cell_obj_type_id obj_get_type_id dup } then {
         obj_equal bi@ { obj_cell_get }
     } otherwise
@@ -1067,17 +1019,11 @@ def "lisp_gc_mark_push_refs_switch"
         lisp_gc_marker_stack_push obj_pair_cdr
         lisp_gc_marker_stack_push obj_pair_car dup
     } otherwise
-    when { = env_obj_type_id obj_get_type_id dup } then {
-        2drop while { < 0 dup } {
-            lisp_gc_marker_stack_push array_list_get swap 2dup
-            + -2
-        } array_list_get_size dup
-        obj_env_get_bindings
-    } otherwise
     when { = lambda_obj_type_id obj_get_type_id dup } then {
-        lisp_gc_marker_stack_push obj_lambda_get_body
-        lisp_gc_marker_stack_push obj_lambda_get_arg_list dup
-        lisp_gc_marker_stack_push obj_lambda_get_local_env dup
+        2drop while { < 0 dup } {
+            + -1
+            lisp_gc_marker_stack_push obj_lambda_get_env_value swap 2dup
+        } obj_lambda_get_env_size dup
     } otherwise
     when { = cell_obj_type_id obj_get_type_id dup } then {
         lisp_gc_marker_stack_push obj_cell_get
@@ -1090,7 +1036,6 @@ def "lisp_gc_mark_push_refs_switch"
     } otherwise
     { exit 1 print_newline . obj_get_type_id print_string "gc mark: bad object, obj type:" }
 ;
-se_check_last_defined_function ;
 
 def "lisp_gc_mark" {
     while { not array_list_is_empty lisp_gc_marker_stack } {
@@ -1204,7 +1149,7 @@ def "read_next_expression" {
 # <obj> <obj> -> <obj>
 def "obj_i64_add" {
     alloc_i64 + bi@ { obj_i64_get_value }
-    bi@ { assert "'add' args are i64" = i64_obj_type_id obj_get_type_id } 2dup
+    bi@ { lisp_assert_type "'add' args are i64" i64_obj_type_id } 2dup
 } ;
 
 # <name> <func>
@@ -1311,9 +1256,6 @@ register_lisp_instruction "define_instruction" {
     drop lisp_value_stack_pop
     drop lisp_value_stack_pop
     symbol_bind
-    if { lazy_and { = lambda_obj_type_id obj_get_type_id over } not = 0 over } {
-        obj_lambda_set_id swap 2dup
-    } { }
     # <symbol> <value>
     lisp_value_stack_peek 0 # symbol
     lisp_value_stack_peek 1 # value
@@ -1323,19 +1265,6 @@ register_lisp_instruction "define_instruction" {
         print_obj lisp_value_stack_peek 0
         print_string "symbol is already defined: "
     } { }
-} ;
-
-register_lisp_instruction "make_lambda_instruction" {
-    lisp_value_stack_push
-    drop lisp_value_stack_pop
-    drop lisp_value_stack_pop
-    drop lisp_value_stack_pop
-    alloc_lambda
-        lisp_value_stack_peek 0 # local env
-        lisp_value_stack_peek 1 # arg list
-        lisp_value_stack_peek 2 # body
-    assert "local env is env" = env_obj_type_id obj_get_type_id lisp_value_stack_peek 0 # local env
-    assert "arg list is list" obj_is_list lisp_value_stack_peek 1 # arg list
 } ;
 
 constant "temp_lambda_ptr" malloc 8 ;
@@ -1355,7 +1284,6 @@ register_lisp_instruction "car_instruction" {
         lisp_value_stack_push obj_pair_car lisp_value_stack_pop
     } {
         exit 1
-        lisp_print_stack_trace
         print_newline print_obj lisp_value_stack_peek_top
         print_string "error: car of obj: "
     }
@@ -1451,7 +1379,6 @@ register_lisp_instruction "not_instruction" {
     }
     if { not lazy_or { = obj_bool_true dup } = obj_bool_false dup } {
         exit 1
-        lisp_print_stack_trace
         print_newline
         print_obj dup
         print_string "'not' on non-boolean obj: "
@@ -1648,7 +1575,7 @@ symbol_bind lisp_string_from_native_buffer_symbol alloc_builtin_func "string-fro
 constant "lisp_print_stack_trace_symbol" get_or_create_symbol "print-stack-trace" ;
 symbol_bind lisp_print_stack_trace_symbol alloc_builtin_func "print-stack-trace" 0 {
     lisp_value_stack_push 0
-    #lisp_print_stack_trace
+    print_string "error: stack trace is not implemented\n"
 } ;
 
 def "obj_is_symbol" { drop swap lazy_and { = symbol_obj_type_id obj_get_type_id dup } not = 0 dup } ;
@@ -1676,11 +1603,26 @@ def "lisp_compile_emit_call" {
 } ;
 se_check_last_defined_function ;
 
-constant "stack_bindings" array_list_new ;
+constant "stack_bindings_stack" array_list_new ;
+
+def "stack_bindings" { array_list_get_last stack_bindings_stack } ;
+
+def "stack_bindings_stack_push_new" {
+    array_list_append stack_bindings_stack array_list_new
+} ;
+se_check_last_defined_function ;
+
+stack_bindings_stack_push_new ;
+
+def "stack_bindings_stack_drop" {
+    array_list_destroy array_list_pop_last stack_bindings_stack
+} ;
+se_check_last_defined_function ;
 
 def "stack_bindings_push_unnamed" {
     array_list_append stack_bindings 0
 } ;
+se_check_last_defined_function ;
 
 # <symbol> ->
 def "stack_bindings_bind_top" {
@@ -1715,16 +1657,127 @@ def "stack_bindings_find" {
 } ;
 se_check_last_defined_function ;
 
+constant "captured_values_list_stack" array_list_new ;
+def "captured_values_list" { array_list_get_last captured_values_list_stack } ;
+se_check_last_defined_function ;
+def "captured_values_list_stack_push_new" { array_list_append captured_values_list_stack array_list_new } ;
+se_check_last_defined_function ;
+def "captured_values_list_stack_drop" { array_list_destroy array_list_pop_last captured_values_list_stack } ;
+se_check_last_defined_function ;
+
+captured_values_list_stack_push_new ;
+
+constant "lexical_scope_list" array_list_new ;
+def "lexical_scope_push" { array_list_append lexical_scope_list } ;
+# <num items to drop> ->
+def "lexical_scope_drop_n" {
+    array_list_set_size lexical_scope_list - array_list_get_size lexical_scope_list
+} ;
+# <symbol> -> <bool>
+def "lexical_scope_contains" {
+    not = -1
+    drop swap
+    while { lazy_and { not = array_list_get lexical_scope_list 2dup } <= 0 dup } { + -1 }
+    # <index> <symbol>
+    + -1 array_list_get_size lexical_scope_list
+} ;
+se_check_last_defined_function ;
+
+# <lambda> <arg count> -> <lambda> <arg count>
+def "lisp_compilation_template_lambda_arg_check" {
+    if { = obj_lambda_get_arg_count 2dup } { } {
+        exit 1
+        print_newline
+        . over
+        print_string " args, but was "
+        . obj_lambda_get_arg_count dup
+        print_string "' takes "
+        print_obj dup
+        print_string "error: wrong arg count: lambda function '"
+    }
+} ;
+se_check_last_defined_function ;
+
+# <builtin> <arg count> -> <builtin> <arg count>
+def "lisp_compilation_template_builtin_arg_check" {
+    if { = obj_builtin_get_arg_count 2dup } { } {
+        exit 1
+        print_newline
+        . over
+        print_string " args, but was "
+        . obj_lambda_get_arg_count dup
+        print_string "' takes "
+        print_string obj_builtin_get_name dup
+        print_string "error: wrong arg count: builtin function '"
+    }
+} ;
+se_check_last_defined_function ;
+
 def "lisp_compile_list"
+    when { = lisp_lambda_symbol obj_pair_car dup } then {
+        drop
+        stack_bindings_push_unnamed
+        captured_values_list_stack_drop
+        lisp_compile_emit_call { lisp_value_stack_push }
+        drop while { > array_list_get_size captured_values_list dup } {
+            + 1
+            lisp_compile_emit_call {
+                # <lambda>
+                r>
+                obj_lambda_set_env_value r@
+                >r # <lambda> <index> <value>
+                -rot
+                # <value> <lambda> <index>
+                lisp_value_stack_pop
+                swap
+                # <index> <lambda>
+            }
+            lisp_compile_emit_literal dup # emit index
+            stack_bindings_drop_n 1
+            lisp_compile_expression array_list_get captured_values_list dup
+        } 0
+        lisp_compile_emit_call {
+            alloc_lambda
+            # <env count> <arg count> <func>
+        }
+        lisp_compile_emit_literal array_list_get_size captured_values_list # env size
+        lisp_compile_emit_literal obj_list_length obj_pair_car dup # arg count
+        lisp_compile_emit_literal code_buffer_stack_pop # func
+
+        stack_bindings_stack_drop
+
+        lisp_compile_emit_call {
+            lisp_value_drop_swap_n_times
+        }
+        lisp_compile_emit_literal + 1 obj_list_length obj_pair_car dup # arg count + 1 (lambda is on the value stack too
+        lisp_compile_expression obj_pair_car obj_pair_cdr dup
+        code_buffer_stack_push_new
+        drop while { not = 0 dup } {
+            obj_pair_cdr
+            stack_bindings_bind_top
+            stack_bindings_push_unnamed
+            lisp_assert_type "arg list contains symbols" symbol_obj_type_id dup
+            # <symbol> <rest> ..
+            obj_pair_car dup
+        } obj_pair_car dup
+
+        stack_bindings_stack_push_new
+        captured_values_list_stack_push_new
+
+        assert "lambda has arg list" obj_is_list obj_pair_car dup
+        assert "lambda has 2 args" = 2 obj_list_length dup
+        obj_pair_cdr
+    } otherwise
     when { = lisp_let_symbol obj_pair_car dup } then {
         drop
-        stack_bindings_drop_swap_n_times obj_list_length obj_pair_car dup
+        bi { stack_bindings_drop_swap_n_times } { lexical_scope_drop_n } obj_list_length obj_pair_car dup
         lisp_compile_emit_call { lisp_value_drop_swap_n_times }
         lisp_compile_emit_literal obj_list_length obj_pair_car dup
         lisp_compile_expression obj_pair_car obj_pair_cdr dup # compile 'let' body
         keep {
             drop while { not = 0 dup } {
                 obj_pair_cdr
+                lexical_scope_push obj_pair_car obj_pair_car dup # update lexical scope
                 stack_bindings_bind_top obj_pair_car obj_pair_car dup # bind stack slot to symbol
                 lisp_compile_expression obj_pair_car obj_pair_cdr obj_pair_car dup # compile binding body
             }
@@ -1761,9 +1814,12 @@ def "lisp_compile_list"
         assert "if has 3 args" = 3 obj_list_length dup
         obj_pair_cdr
     } otherwise
-    when { obj_is_symbol obj_pair_car dup } then {
+    when { lazy_and { obj_is_builtin symbol_get_binding obj_pair_car dup }
+           lazy_and { symbol_has_binding obj_pair_car dup }
+           lazy_and { not lexical_scope_contains obj_pair_car dup }
+           obj_is_symbol obj_pair_car dup } then {
         stack_bindings_push_unnamed
-        stack_bindings_drop_n obj_builtin_get_arg_count symbol_get_binding obj_pair_car
+        stack_bindings_drop_n + -1 obj_list_length
         lisp_compile_emit_call obj_builtin_get_instruction symbol_get_binding obj_pair_car dup
         keep {
             drop while { not = 0 dup } {
@@ -1771,16 +1827,44 @@ def "lisp_compile_list"
                 lisp_compile_expression obj_pair_car dup
             } obj_pair_cdr
         }
-        assert "arg count" = bi
+        if { = bi
             { + 1 obj_builtin_get_arg_count symbol_get_binding obj_pair_car }
-            { obj_list_length }
-        dup
-        assert "binding is a builtin" obj_is_builtin symbol_get_binding obj_pair_car dup
-        assert "symbol has binding" symbol_has_binding obj_pair_car dup
+            { obj_list_length } dup } { } {
+            exit 1
+            print_newline
+            . obj_list_length dup
+            print_string " args, but was "
+            . obj_builtin_get_arg_count symbol_get_binding obj_pair_car dup
+            print_string "' takes "
+            print_string obj_builtin_get_name symbol_get_binding obj_pair_car dup
+            print_string "error: wrong arg count: builtin function '"
+        }
     } otherwise
     {
         drop
-        assert "dead code" false
+        stack_bindings_drop_n + -1 obj_list_length dup
+        lisp_compile_emit_call {
+            if { obj_is_builtin dup } {
+                lisp_value_drop_swap_n_times 1 # remove builtin from the stack
+                call obj_builtin_get_instruction
+                drop swap
+                lisp_compilation_template_builtin_arg_check
+            } {
+                jmp obj_lambda_get_function
+                drop swap
+                lisp_compilation_template_lambda_arg_check
+                lisp_assert_type "object is callable" lambda_obj_type_id dup
+            }
+            # <lambda or bultin> <arg count>
+            lisp_value_stack_peek
+            dup
+            # <lambda or builtin index (arg count)>
+        }
+        lisp_compile_emit_literal + -1 obj_list_length dup
+        drop while { not = 0 dup } {
+            obj_pair_cdr
+            lisp_compile_expression obj_pair_car dup
+        } dup
     }
 ;
 
@@ -1789,16 +1873,32 @@ def "lisp_compile_expression_switch"
         lisp_compile_list
     } otherwise
     when { obj_is_symbol dup } then {
+        stack_bindings_push_unnamed
         if { } {
-            stack_bindings_push_unnamed
             lisp_compile_emit_call { lisp_value_stack_peek_n_and_push }
             lisp_compile_emit_literal 
             drop swap
         } {
-            stack_bindings_push_unnamed
-            lisp_compile_emit_call { lisp_value_stack_push }
-            lisp_compile_emit_literal symbol_get_binding
-            assert "symbol has binding" symbol_has_binding dup
+            if { lexical_scope_contains dup } {
+                array_list_append captured_values_list
+                lisp_compile_emit_call {
+                    obj_lambda_get_env_value
+                    lisp_assert_type "lambda env access" lambda_obj_type_id dup
+                    lisp_value_stack_peek
+                }
+                lisp_compile_emit_literal array_list_get_size stack_bindings # lambda's stack address
+                lisp_compile_emit_literal array_list_get_size captured_values_list # env binding index
+            } {
+                lisp_compile_emit_call { lisp_value_stack_push }
+                lisp_compile_emit_literal symbol_get_binding
+                if { not symbol_has_binding dup } {
+                    exit 1
+                    print_string " is undefined\n"
+                    print_obj dup
+                    print_string "symbol "
+                } { }
+            }
+            # <symbol>
             drop
         }
         stack_bindings_find dup
@@ -1836,28 +1936,31 @@ se_check_last_defined_function ;
 def "print_string_instruction_func" { call print_string_instruction } ;
 se_check_last_defined_function ;
 
+#se_enable ;
+se_check_function_by_name "lisp_compile_expression" ;
 se_check_function_by_name "symbol_bind" ;
 se_check_function_by_name "obj_is_symbol" ;
-#se_enable ;
 se_check_function_by_name "lisp_register_builtin_function" ;
-se_check_function_by_name "lisp_compile_expression" ;
 se_check_function_by_name "lisp_gc_push_roots_to_stack" ;
+se_check_function_by_name "lisp_gc_mark_push_refs_switch" ;
 se_check_function_by_name "read_next_expression" ;
-se_check_function_by_name "lisp_program_stack_print" ;
-se_check_function_by_name "lisp_call_stack_print" ;
 se_check_function_by_name "print_obj" ;
 se_check_function_by_name "not_instruction_f" ;
 se_check_function_by_name "lisp_gc_sweep" ;
 se_check_function_by_name "lisp_assert_type" ;
-
+se_check_function_by_name "alloc_lambda" ;
 
 #while { true } { print_newline token_print read_next_token } ;
 #while { true } { print_newline print_obj lisp_value_stack_pop read_next_expression } ;
 while { true } { 
+    #.s
     print_newline print_obj lisp_value_stack_pop
     assert "single value on value stack" = 1 array_list_get_size lisp_value_stack
     call code_buffer_stack_pop
     stack_bindings_drop_n 1
+    assert "lexical scope is empty" array_list_is_empty lexical_scope_list
+    assert "captured_values_list is empty" array_list_is_empty captured_values_list
+    assert "captured_values_list_stack contains a single element" = 1 array_list_get_size captured_values_list_stack
     assert "single value on compile stack" = 1 array_list_get_size stack_bindings
     lisp_compile_expression lisp_value_stack_pop read_next_expression
     code_buffer_stack_push_new
