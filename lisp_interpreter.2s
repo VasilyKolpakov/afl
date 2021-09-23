@@ -1741,174 +1741,189 @@ def "lisp_compilation_template_builtin_arg_check" {
 } ;
 se_check_last_defined_function ;
 
-def "lisp_compile_list"
-    when { = lisp_lambda_symbol obj_pair_car dup } then {
-        drop
+def "lisp_compile_lambda" {
+    drop
+    stack_bindings_push_unnamed
+    lisp_compile_emit_call { lisp_value_stack_push }
+    array_list_destroy
+    array_list_foreach_item_and_index
+    {
+        lisp_compile_emit_call {
+            # <lambda>
+            r>
+            obj_lambda_set_env_value r@
+            >r # <lambda> <index> <value>
+            -rot
+            # <value> <lambda> <index>
+            lisp_value_stack_pop
+            swap
+            # <index> <lambda>
+        }
+        lisp_compile_emit_literal  # emit index
+        stack_bindings_drop_n 1
+        lisp_compile_symbol
+        # <symbol> <index>
+    } dup
+    captured_values_list_stack_pop
+    lisp_compile_emit_call {
+        alloc_lambda
+        # <env count> <arg count> <func>
+    }
+    lisp_compile_emit_literal array_list_get_size captured_values_list # env size
+    lisp_compile_emit_literal obj_list_length obj_pair_car dup # arg count
+    lisp_compile_emit_literal code_buffer_stack_pop # func
+
+    stack_bindings_stack_drop
+
+    lisp_compile_emit_call {
+        lisp_value_stack_drop_swap_n_times
+    }
+    lisp_compile_emit_literal + 1 obj_list_length obj_pair_car dup # arg count + 1 (lambda is on the value stack too
+    lisp_compile_expression obj_pair_car obj_pair_cdr dup
+    code_buffer_stack_push_new
+    drop while { not = 0 dup } {
+        obj_pair_cdr
+        stack_bindings_bind_top
         stack_bindings_push_unnamed
-        lisp_compile_emit_call { lisp_value_stack_push }
-        array_list_destroy
-        array_list_foreach_item_and_index
-        {
-            lisp_compile_emit_call {
-                # <lambda>
-                r>
-                obj_lambda_set_env_value r@
-                >r # <lambda> <index> <value>
-                -rot
-                # <value> <lambda> <index>
-                lisp_value_stack_pop
-                swap
-                # <index> <lambda>
-            }
-            lisp_compile_emit_literal  # emit index
-            stack_bindings_drop_n 1
-            lisp_compile_symbol
-            # <symbol> <index>
-        } dup
-        captured_values_list_stack_pop
-        lisp_compile_emit_call {
-            alloc_lambda
-            # <env count> <arg count> <func>
-        }
-        lisp_compile_emit_literal array_list_get_size captured_values_list # env size
-        lisp_compile_emit_literal obj_list_length obj_pair_car dup # arg count
-        lisp_compile_emit_literal code_buffer_stack_pop # func
+        lisp_assert_type "arg list contains symbols" symbol_obj_type_id dup
+        # <symbol> <rest> ..
+        obj_pair_car dup
+    } obj_pair_car dup
 
-        stack_bindings_stack_drop
+    stack_bindings_stack_push_new
+    captured_values_list_stack_push_new
 
-        lisp_compile_emit_call {
-            lisp_value_stack_drop_swap_n_times
-        }
-        lisp_compile_emit_literal + 1 obj_list_length obj_pair_car dup # arg count + 1 (lambda is on the value stack too
-        lisp_compile_expression obj_pair_car obj_pair_cdr dup
-        code_buffer_stack_push_new
+    assert "lambda has arg list" obj_is_list obj_pair_car dup
+    assert "lambda has 2 args" = 2 obj_list_length dup
+    obj_pair_cdr
+} ;
+
+def "lisp_compile_if" {
+    drop
+    lisp_compile_emit_call {if} # {if} constant from switch_stmt.2s
+
+    lisp_compile_emit_literal code_buffer_stack_pop
+    # do not drop bindings stack because 'if' expression puts a value on the stack
+    lisp_compile_emit_call {
+        = obj_bool_true
+        lisp_assert_type "if cond" bool_obj_type_id dup
+        lisp_value_stack_pop
+    }
+    lisp_compile_expression obj_pair_car dup # compile condition
+    code_buffer_stack_push_new
+
+    lisp_compile_emit_literal code_buffer_stack_pop
+    stack_bindings_drop_n 1
+    lisp_compile_expression obj_pair_car obj_pair_cdr dup # compile then
+    code_buffer_stack_push_new
+
+    lisp_compile_emit_literal code_buffer_stack_pop
+    stack_bindings_drop_n 1
+    lisp_compile_expression obj_pair_car obj_pair_cdr obj_pair_cdr dup # compile else
+    code_buffer_stack_push_new
+
+    assert "if has 3 args" = 3 obj_list_length dup
+    obj_pair_cdr
+} ;
+
+def "lisp_compile_let" {
+    drop
+    bi { stack_bindings_drop_swap_n_times } { lexical_scope_drop_n } obj_list_length obj_pair_car dup
+    lisp_compile_emit_call {
+        lisp_value_stack_drop_swap_n_times
+    }
+    lisp_compile_emit_literal obj_list_length obj_pair_car dup
+    lisp_compile_expression obj_pair_car obj_pair_cdr dup # compile 'let' body
+    keep {
         drop while { not = 0 dup } {
             obj_pair_cdr
-            stack_bindings_bind_top
-            stack_bindings_push_unnamed
-            lisp_assert_type "arg list contains symbols" symbol_obj_type_id dup
-            # <symbol> <rest> ..
-            obj_pair_car dup
-        } obj_pair_car dup
-
-        stack_bindings_stack_push_new
-        captured_values_list_stack_push_new
-
-        assert "lambda has arg list" obj_is_list obj_pair_car dup
-        assert "lambda has 2 args" = 2 obj_list_length dup
-        obj_pair_cdr
-    } otherwise
-    when { = lisp_quote_symbol obj_pair_car dup } then {
-        drop
-        stack_bindings_push_unnamed
-        lisp_compile_emit_call {
-            lisp_value_stack_push
+            lexical_scope_push obj_pair_car obj_pair_car dup # update lexical scope
+            stack_bindings_bind_top obj_pair_car obj_pair_car dup # bind stack slot to symbol
+            lisp_compile_expression obj_pair_car obj_pair_cdr obj_pair_car dup # compile binding body
         }
-        lisp_compile_emit_literal obj_pair_car dup
-        lisp_code_literal_list_add obj_pair_car dup
-        assert "quote has one argument" = 1 obj_list_length dup
+        obj_pair_car
+    }
+    assert "let has bindings list" obj_is_list obj_pair_car dup
+    assert "let has 2 args" = 2 obj_list_length dup
+    obj_pair_cdr
+} ;
+
+def "lisp_compile_quote" {
+    drop
+    stack_bindings_push_unnamed
+    lisp_compile_emit_call {
+        lisp_value_stack_push
+    }
+    lisp_compile_emit_literal obj_pair_car dup
+    lisp_code_literal_list_add obj_pair_car dup
+    assert "quote has one argument" = 1 obj_list_length dup
         obj_pair_cdr
-    } otherwise
-    when { = lisp_let_symbol obj_pair_car dup } then {
-        drop
-        bi { stack_bindings_drop_swap_n_times } { lexical_scope_drop_n } obj_list_length obj_pair_car dup
-        lisp_compile_emit_call {
-            lisp_value_stack_drop_swap_n_times
+} ;
+
+def "lisp_compile_globally_defined_bulitin_func_call" {
+    stack_bindings_push_unnamed
+    stack_bindings_drop_n + -1 obj_list_length
+    lisp_compile_emit_call obj_builtin_get_instruction symbol_get_binding obj_pair_car dup
+    keep {
+        drop while { not = 0 dup } {
+            obj_pair_cdr
+            lisp_compile_expression obj_pair_car dup
+        } obj_pair_cdr
+    }
+    if { = bi
+        { + 1 obj_builtin_get_arg_count symbol_get_binding obj_pair_car }
+        { obj_list_length } dup } { } {
+        exit 1
+        print_newline
+        . obj_list_length dup
+        print_string " args, but was "
+        . obj_builtin_get_arg_count symbol_get_binding obj_pair_car dup
+        print_string "' takes "
+        print_string obj_builtin_get_name symbol_get_binding obj_pair_car dup
+        print_string "error: wrong arg count: builtin function '"
+    }
+} ;
+
+def "lisp_compile_generic_call" {
+    drop
+    stack_bindings_drop_n + -1 obj_list_length dup
+    lisp_compile_emit_call {
+        if { obj_is_builtin dup } {
+            lisp_value_stack_drop_swap_n_times 1 # remove builtin from the stack
+            call obj_builtin_get_instruction
+            drop swap
+            lisp_compilation_template_builtin_arg_check
+        } {
+            jmp obj_lambda_get_function
+            drop swap
+            lisp_compilation_template_lambda_arg_check
+            lisp_assert_type "object is callable" lambda_obj_type_id dup
         }
-        lisp_compile_emit_literal obj_list_length obj_pair_car dup
-        lisp_compile_expression obj_pair_car obj_pair_cdr dup # compile 'let' body
-        keep {
-            drop while { not = 0 dup } {
-                obj_pair_cdr
-                lexical_scope_push obj_pair_car obj_pair_car dup # update lexical scope
-                stack_bindings_bind_top obj_pair_car obj_pair_car dup # bind stack slot to symbol
-                lisp_compile_expression obj_pair_car obj_pair_cdr obj_pair_car dup # compile binding body
-            }
-            obj_pair_car
-        }
-        assert "let has bindings list" obj_is_list obj_pair_car dup
-        assert "let has 2 args" = 2 obj_list_length dup
+        # <lambda or bultin> <arg count>
+        lisp_value_stack_peek
+        dup
+        # <lambda or builtin index (arg count)>
+    }
+    lisp_compile_emit_literal + -1 obj_list_length dup
+    drop while { not = 0 dup } {
         obj_pair_cdr
-    } otherwise
-    when { = lisp_if_symbol obj_pair_car dup } then {
-        drop
-        lisp_compile_emit_call {if} # {if} constant from switch_stmt.2s
+        lisp_compile_expression obj_pair_car dup
+    } dup
+} ;
 
-        lisp_compile_emit_literal code_buffer_stack_pop
-        # do not drop bindings stack because 'if' expression puts a value on the stack
-        lisp_compile_emit_call {
-            = obj_bool_true
-            lisp_assert_type "if cond" bool_obj_type_id dup
-            lisp_value_stack_pop
-        }
-        lisp_compile_expression obj_pair_car dup # compile condition
-        code_buffer_stack_push_new
+def "lisp_compile_list"
+    when { = lisp_lambda_symbol obj_pair_car dup } then { lisp_compile_lambda } otherwise
+    when { = lisp_quote_symbol obj_pair_car dup } then { lisp_compile_quote } otherwise
+    when { = lisp_let_symbol obj_pair_car dup } then { lisp_compile_let } otherwise
+    when { = lisp_if_symbol obj_pair_car dup } then { lisp_compile_if } otherwise
 
-        lisp_compile_emit_literal code_buffer_stack_pop
-        stack_bindings_drop_n 1
-        lisp_compile_expression obj_pair_car obj_pair_cdr dup # compile then
-        code_buffer_stack_push_new
-
-        lisp_compile_emit_literal code_buffer_stack_pop
-        stack_bindings_drop_n 1
-        lisp_compile_expression obj_pair_car obj_pair_cdr obj_pair_cdr dup # compile else
-        code_buffer_stack_push_new
-
-        assert "if has 3 args" = 3 obj_list_length dup
-        obj_pair_cdr
-    } otherwise
     when { lazy_and { obj_is_builtin symbol_get_binding obj_pair_car dup }
            lazy_and { symbol_has_binding obj_pair_car dup }
            lazy_and { not lexical_scope_contains obj_pair_car dup }
            obj_is_symbol obj_pair_car dup } then {
-        stack_bindings_push_unnamed
-        stack_bindings_drop_n + -1 obj_list_length
-        lisp_compile_emit_call obj_builtin_get_instruction symbol_get_binding obj_pair_car dup
-        keep {
-            drop while { not = 0 dup } {
-                obj_pair_cdr
-                lisp_compile_expression obj_pair_car dup
-            } obj_pair_cdr
-        }
-        if { = bi
-            { + 1 obj_builtin_get_arg_count symbol_get_binding obj_pair_car }
-            { obj_list_length } dup } { } {
-            exit 1
-            print_newline
-            . obj_list_length dup
-            print_string " args, but was "
-            . obj_builtin_get_arg_count symbol_get_binding obj_pair_car dup
-            print_string "' takes "
-            print_string obj_builtin_get_name symbol_get_binding obj_pair_car dup
-            print_string "error: wrong arg count: builtin function '"
-        }
+        lisp_compile_globally_defined_bulitin_func_call
     } otherwise
-    {
-        drop
-        stack_bindings_drop_n + -1 obj_list_length dup
-        lisp_compile_emit_call {
-            if { obj_is_builtin dup } {
-                lisp_value_stack_drop_swap_n_times 1 # remove builtin from the stack
-                call obj_builtin_get_instruction
-                drop swap
-                lisp_compilation_template_builtin_arg_check
-            } {
-                jmp obj_lambda_get_function
-                drop swap
-                lisp_compilation_template_lambda_arg_check
-                lisp_assert_type "object is callable" lambda_obj_type_id dup
-            }
-            # <lambda or bultin> <arg count>
-            lisp_value_stack_peek
-            dup
-            # <lambda or builtin index (arg count)>
-        }
-        lisp_compile_emit_literal + -1 obj_list_length dup
-        drop while { not = 0 dup } {
-            obj_pair_cdr
-            lisp_compile_expression obj_pair_car dup
-        } dup
-    }
+    { lisp_compile_generic_call }
 ;
 
 def "lisp_compile_symbol" {
@@ -2000,7 +2015,7 @@ se_check_last_defined_function ;
 def "print_string_instruction_func" { call print_string_instruction } ;
 se_check_last_defined_function ;
 
-#se_enable ;
+se_enable ;
 se_check_function_by_name "lisp_compile_expression" ;
 se_check_function_by_name "symbol_bind" ;
 se_check_function_by_name "obj_is_symbol" ;
@@ -2017,7 +2032,7 @@ se_check_function_by_name "alloc_lambda" ;
 #while { true } { print_newline token_print read_next_token } ;
 #while { true } { print_newline print_obj lisp_value_stack_pop read_next_expression } ;
 while { true } { 
-    .s
+    #.s
     print_newline print_obj lisp_value_stack_pop
     call lisp_eval
     read_next_expression
