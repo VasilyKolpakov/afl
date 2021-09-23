@@ -1965,6 +1965,21 @@ def "lisp_compile_expression" {
     assert "obj type id is OK" and bi { <= 0 } { >= 7 } obj_get_type_id dup
 } ;
 
+# ->
+constant "lisp_eval" {
+    assert "single value on value stack" = 1 array_list_get_size lisp_value_stack
+    call code_buffer_stack_pop
+    stack_bindings_drop_n 1
+    assert "lexical scope is empty" array_list_is_empty lexical_scope_list
+    assert "captured_values_list is empty" array_list_is_empty captured_values_list
+    assert "captured_values_list_stack contains a single element" = 1 array_list_get_size captured_values_list_stack
+    assert "single value on compile stack" = 1 array_list_get_size stack_bindings
+    lisp_compile_expression lisp_value_stack_pop
+    code_buffer_stack_push_new
+} ;
+
+lisp_register_builtin_function "eval" 1 lisp_eval ;
+
 def "define_instruction_func" { call define_instruction } ;
 se_check_last_defined_function ;
 def "call_instruction_func" { call call_instruction } ;
@@ -2002,15 +2017,8 @@ se_check_function_by_name "alloc_lambda" ;
 #while { true } { print_newline token_print read_next_token } ;
 #while { true } { print_newline print_obj lisp_value_stack_pop read_next_expression } ;
 while { true } { 
-    #.s
+    .s
     print_newline print_obj lisp_value_stack_pop
-    assert "single value on value stack" = 1 array_list_get_size lisp_value_stack
-    call code_buffer_stack_pop
-    stack_bindings_drop_n 1
-    assert "lexical scope is empty" array_list_is_empty lexical_scope_list
-    assert "captured_values_list is empty" array_list_is_empty captured_values_list
-    assert "captured_values_list_stack contains a single element" = 1 array_list_get_size captured_values_list_stack
-    assert "single value on compile stack" = 1 array_list_get_size stack_bindings
-    lisp_compile_expression lisp_value_stack_pop read_next_expression
-    code_buffer_stack_push_new
+    call lisp_eval
+    read_next_expression
 } ;
