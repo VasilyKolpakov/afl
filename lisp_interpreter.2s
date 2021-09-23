@@ -906,7 +906,7 @@ def "lisp_value_stack_peek" {
 } ;
 
 # <n> ->
-def "lisp_value_drop_swap_n_times" {
+def "lisp_value_stack_drop_swap_n_times" {
     array_list_set_size lisp_value_stack - array_list_get_size lisp_value_stack 
     array_list_set lisp_value_stack + -1 - array_list_get_size lisp_value_stack dip { lisp_value_stack_peek_top } dup
 } ;
@@ -1662,7 +1662,35 @@ def "captured_values_list" { array_list_get_last captured_values_list_stack } ;
 se_check_last_defined_function ;
 def "captured_values_list_stack_push_new" { array_list_append captured_values_list_stack array_list_new } ;
 se_check_last_defined_function ;
-def "captured_values_list_stack_drop" { array_list_destroy array_list_pop_last captured_values_list_stack } ;
+def "captured_values_list_stack_pop" { array_list_pop_last captured_values_list_stack } ;
+se_check_last_defined_function ;
+
+# <symbol> -> <found bool> <env index>
+def "captured_values_find" {
+    if { = -1 dup } {
+        false
+    } {
+        true 
+    }
+    drop swap
+    while { lazy_and { not = array_list_get captured_values_list 2dup } <= 0 dup } { + -1 }
+    # <index> <symbol>
+    + -1 array_list_get_size captured_values_list
+} ;
+se_check_last_defined_function ;
+
+# <symbol> -> <env index>
+def "captured_values_register_if_absent_and_get_index" {
+    if { } {
+        drop swap
+    } {
+        + -1 array_list_get_size captured_values_list
+        array_list_append captured_values_list
+        drop
+        # <index> <symbol>
+    }
+    captured_values_find dup
+} ;
 se_check_last_defined_function ;
 
 captured_values_list_stack_push_new ;
@@ -1717,10 +1745,10 @@ def "lisp_compile_list"
     when { = lisp_lambda_symbol obj_pair_car dup } then {
         drop
         stack_bindings_push_unnamed
-        captured_values_list_stack_drop
         lisp_compile_emit_call { lisp_value_stack_push }
-        drop while { > array_list_get_size captured_values_list dup } {
-            + 1
+        array_list_destroy
+        array_list_foreach_item_and_index
+        {
             lisp_compile_emit_call {
                 # <lambda>
                 r>
@@ -1732,10 +1760,12 @@ def "lisp_compile_list"
                 swap
                 # <index> <lambda>
             }
-            lisp_compile_emit_literal dup # emit index
+            lisp_compile_emit_literal  # emit index
             stack_bindings_drop_n 1
-            lisp_compile_expression array_list_get captured_values_list dup
-        } 0
+            lisp_compile_symbol
+            # <symbol> <index>
+        } dup
+        captured_values_list_stack_pop
         lisp_compile_emit_call {
             alloc_lambda
             # <env count> <arg count> <func>
@@ -1747,7 +1777,7 @@ def "lisp_compile_list"
         stack_bindings_stack_drop
 
         lisp_compile_emit_call {
-            lisp_value_drop_swap_n_times
+            lisp_value_stack_drop_swap_n_times
         }
         lisp_compile_emit_literal + 1 obj_list_length obj_pair_car dup # arg count + 1 (lambda is on the value stack too
         lisp_compile_expression obj_pair_car obj_pair_cdr dup
@@ -1771,7 +1801,9 @@ def "lisp_compile_list"
     when { = lisp_quote_symbol obj_pair_car dup } then {
         drop
         stack_bindings_push_unnamed
-        lisp_compile_emit_call { lisp_value_stack_push }
+        lisp_compile_emit_call {
+            lisp_value_stack_push
+        }
         lisp_compile_emit_literal obj_pair_car dup
         lisp_code_literal_list_add obj_pair_car dup
         assert "quote has one argument" = 1 obj_list_length dup
@@ -1780,7 +1812,9 @@ def "lisp_compile_list"
     when { = lisp_let_symbol obj_pair_car dup } then {
         drop
         bi { stack_bindings_drop_swap_n_times } { lexical_scope_drop_n } obj_list_length obj_pair_car dup
-        lisp_compile_emit_call { lisp_value_drop_swap_n_times }
+        lisp_compile_emit_call {
+            lisp_value_stack_drop_swap_n_times
+        }
         lisp_compile_emit_literal obj_list_length obj_pair_car dup
         lisp_compile_expression obj_pair_car obj_pair_cdr dup # compile 'let' body
         keep {
@@ -1854,7 +1888,7 @@ def "lisp_compile_list"
         stack_bindings_drop_n + -1 obj_list_length dup
         lisp_compile_emit_call {
             if { obj_is_builtin dup } {
-                lisp_value_drop_swap_n_times 1 # remove builtin from the stack
+                lisp_value_stack_drop_swap_n_times 1 # remove builtin from the stack
                 call obj_builtin_get_instruction
                 drop swap
                 lisp_compilation_template_builtin_arg_check
@@ -1877,44 +1911,50 @@ def "lisp_compile_list"
     }
 ;
 
+def "lisp_compile_symbol" {
+    stack_bindings_push_unnamed
+    if { } {
+        lisp_compile_emit_call { lisp_value_stack_peek_n_and_push }
+        lisp_compile_emit_literal 
+        drop swap
+    } {
+        if { lexical_scope_contains dup } {
+            lisp_compile_emit_call {
+                lisp_value_stack_push obj_lambda_get_env_value
+                lisp_assert_type "lambda env access" lambda_obj_type_id dup
+                lisp_value_stack_peek
+            }
+            lisp_compile_emit_literal array_list_get_size stack_bindings # lambda's stack address
+            lisp_compile_emit_literal captured_values_register_if_absent_and_get_index # env binding index
+            # <symbol>
+        } {
+            lisp_compile_emit_call { lisp_value_stack_push }
+            lisp_compile_emit_literal symbol_get_binding
+            if { not symbol_has_binding dup } {
+                exit 1
+                print_string " is undefined\n"
+                print_obj dup
+                print_string "symbol "
+            } { }
+        }
+        # <symbol>
+        drop
+    }
+    stack_bindings_find dup
+} ;
+
 def "lisp_compile_expression_switch" 
     when { obj_is_list dup } then {
         lisp_compile_list
     } otherwise
     when { obj_is_symbol dup } then {
-        stack_bindings_push_unnamed
-        if { } {
-            lisp_compile_emit_call { lisp_value_stack_peek_n_and_push }
-            lisp_compile_emit_literal 
-            drop swap
-        } {
-            if { lexical_scope_contains dup } {
-                array_list_append captured_values_list
-                lisp_compile_emit_call {
-                    obj_lambda_get_env_value
-                    lisp_assert_type "lambda env access" lambda_obj_type_id dup
-                    lisp_value_stack_peek
-                }
-                lisp_compile_emit_literal array_list_get_size stack_bindings # lambda's stack address
-                lisp_compile_emit_literal array_list_get_size captured_values_list # env binding index
-            } {
-                lisp_compile_emit_call { lisp_value_stack_push }
-                lisp_compile_emit_literal symbol_get_binding
-                if { not symbol_has_binding dup } {
-                    exit 1
-                    print_string " is undefined\n"
-                    print_obj dup
-                    print_string "symbol "
-                } { }
-            }
-            # <symbol>
-            drop
-        }
-        stack_bindings_find dup
+        lisp_compile_symbol
     } otherwise
     {
         stack_bindings_push_unnamed
-        lisp_compile_emit_call { lisp_value_stack_push }
+        lisp_compile_emit_call {
+            lisp_value_stack_push
+        }
         lisp_compile_emit_literal
         lisp_code_literal_list_add dup
     }

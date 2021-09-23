@@ -167,3 +167,24 @@ def "array_list_append_all" {
     swap
 } ;
 
+# <func <item> <index> ->> <array> ->
+def "array_list_foreach_item_and_index" {
+    4drop
+    while { > drop 3dup } {
+        2dip { + 1 }
+        call
+        dip {
+            swap # <index> <item> ...
+            keep { array_list_get swap }
+            drop
+            # <size> <index> <array> ...
+        }
+        4dup
+    }
+    # <func> <size> <index> <array>
+    dip {
+        dip { 0 }
+        array_list_get_size dup
+    }
+} ;
+

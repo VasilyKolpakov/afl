@@ -18,6 +18,7 @@ def "exit" { drop syscall 60 r> 1 2 3 4 5 >r } ;
 
 def "2drop" { drop drop } ;
 def "3drop" { drop drop drop } ;
+def "4drop" { drop drop drop drop } ;
 
 # <func f> <func g> <value a> -> ...
 # remove args from stack, push a, apply g, push a, apply f
