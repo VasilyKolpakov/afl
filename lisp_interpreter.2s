@@ -1502,6 +1502,12 @@ lisp_register_builtin_function "*" 2 obj_i64_mul_instruction ;
 lisp_register_builtin_function "/" 2 obj_i64_div_instruction ;
 
 lisp_register_builtin_function "equal?" 2 equal_instruction ;
+lisp_register_builtin_function "print" 1 print_instruction ;
+lisp_register_builtin_function "print-string" 1 print_string_instruction ;
+
+lisp_register_builtin_function "car" 1 car_instruction ;
+lisp_register_builtin_function "cdr" 1 cdr_instruction ;
+lisp_register_builtin_function "cons" 2 cons_instruction ;
 
 constant "lisp_not_symbol" get_or_create_symbol "not" ;
 constant "lisp_gt_symbol" get_or_create_symbol ">" ;
@@ -1517,10 +1523,6 @@ constant "lisp_begin_symbol" get_or_create_symbol "begin" ;
 
 constant "lisp_quote_symbol" get_or_create_symbol "quote" ;
 constant "lisp_eval_symbol" get_or_create_symbol "eval" ;
-constant "lisp_car_symbol" get_or_create_symbol "car" ;
-constant "lisp_cdr_symbol" get_or_create_symbol "cdr" ;
-constant "lisp_cons_symbol" get_or_create_symbol "cons" ;
-symbol_bind lisp_cons_symbol alloc_builtin_func "cons" 2 cons_instruction ;
 
 constant "lisp_nil_symbol" get_or_create_symbol "nil" ;
 symbol_bind lisp_nil_symbol 0 ;
@@ -1537,7 +1539,6 @@ symbol_bind lisp_length_symbol alloc_builtin_func "length" 1 {
 constant "lisp_list_symbol" get_or_create_symbol "list" ;
 
 constant "lisp_read_syntax_symbol" get_or_create_symbol "read-syntax" ;
-constant "lisp_print_symbol" get_or_create_symbol "print" ;
 constant "lisp_print_string_symbol" get_or_create_symbol "print-string" ;
 
 constant "lisp_cell_symbol" get_or_create_symbol "cell" ;
@@ -1977,14 +1978,16 @@ def "lisp_compile_symbol" {
             lisp_compile_emit_literal captured_values_register_if_absent_and_get_index # env binding index
             # <symbol>
         } {
-            lisp_compile_emit_call { lisp_value_stack_push }
-            lisp_compile_emit_literal symbol_get_binding
-            if { not symbol_has_binding dup } {
-                exit 1
-                print_string " is undefined\n"
-                print_obj dup
-                print_string "symbol "
-            } { }
+            lisp_compile_emit_call {
+                lisp_value_stack_push symbol_get_binding
+                if { symbol_has_binding dup } { } {
+                    exit 1
+                    print_string " is undefined\n"
+                    print_obj dup
+                    print_string "symbol "
+                }
+            }
+            lisp_compile_emit_literal
         }
         # <symbol>
         drop
