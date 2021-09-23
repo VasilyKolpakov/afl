@@ -1925,12 +1925,31 @@ def "lisp_compile_begin" {
     obj_pair_cdr
 } ;
 
+def "lisp_compile_define" {
+    drop
+    lisp_compile_emit_call {
+        lisp_value_stack_push # push symbol on the stack
+        symbol_bind swap
+        # <value> <symbol> <symbol>
+        lisp_value_stack_pop
+        dup
+        # <symbol>
+    }
+    lisp_compile_emit_literal obj_pair_car dup
+
+    lisp_compile_expression obj_pair_car obj_pair_cdr dup
+    lisp_assert_type "define: first arg is a symbol" symbol_obj_type_id obj_pair_car dup
+    assert "define has two arguments" = 2 obj_list_length dup
+    obj_pair_cdr
+} ;
+
 def "lisp_compile_list"
     when { = lisp_lambda_symbol obj_pair_car dup } then { lisp_compile_lambda } otherwise
     when { = lisp_quote_symbol obj_pair_car dup } then { lisp_compile_quote } otherwise
     when { = lisp_let_symbol obj_pair_car dup } then { lisp_compile_let } otherwise
     when { = lisp_if_symbol obj_pair_car dup } then { lisp_compile_if } otherwise
     when { = lisp_begin_symbol obj_pair_car dup } then { lisp_compile_begin } otherwise
+    when { = lisp_define_symbol obj_pair_car dup } then { lisp_compile_define } otherwise
 
     when { lazy_and { obj_is_builtin symbol_get_binding obj_pair_car dup }
            lazy_and { symbol_has_binding obj_pair_car dup }
