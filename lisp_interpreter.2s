@@ -1911,11 +1911,26 @@ def "lisp_compile_generic_call" {
     } dup
 } ;
 
+def "lisp_compile_begin" {
+    drop
+    stack_bindings_drop_n + -1 obj_list_length dup
+    lisp_compile_emit_call {
+        lisp_value_stack_drop_swap_n_times
+    }
+    lisp_compile_emit_literal + -1 obj_list_length dup
+    drop while { not = 0 dup } {
+        obj_pair_cdr
+        lisp_compile_expression obj_pair_car dup
+    } dup
+    obj_pair_cdr
+} ;
+
 def "lisp_compile_list"
     when { = lisp_lambda_symbol obj_pair_car dup } then { lisp_compile_lambda } otherwise
     when { = lisp_quote_symbol obj_pair_car dup } then { lisp_compile_quote } otherwise
     when { = lisp_let_symbol obj_pair_car dup } then { lisp_compile_let } otherwise
     when { = lisp_if_symbol obj_pair_car dup } then { lisp_compile_if } otherwise
+    when { = lisp_begin_symbol obj_pair_car dup } then { lisp_compile_begin } otherwise
 
     when { lazy_and { obj_is_builtin symbol_get_binding obj_pair_car dup }
            lazy_and { symbol_has_binding obj_pair_car dup }
@@ -2015,7 +2030,7 @@ se_check_last_defined_function ;
 def "print_string_instruction_func" { call print_string_instruction } ;
 se_check_last_defined_function ;
 
-se_enable ;
+#se_enable ;
 se_check_function_by_name "lisp_compile_expression" ;
 se_check_function_by_name "symbol_bind" ;
 se_check_function_by_name "obj_is_symbol" ;
