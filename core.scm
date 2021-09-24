@@ -39,31 +39,18 @@
 (define alist-lookup
   (lambda (l k) (alist-lookup-rec (assert l list?) k)))
 
-(define transform-let-expr (lambda (let-expr-args)
-    (cons
-        (cons (quote lambda)
-              (list
-                (map (lambda (binding) (car binding)) (car let-expr-args))
-                (car (cdr let-expr-args))))
-        (map (lambda (binding) (car (cdr binding))) (car let-expr-args)))))
-
-
-(define transform-all-let-exprs (lambda (expr)
-    (if (list? expr)
-      (map transform-all-let-exprs
-           (if (equal? (car expr) 'let)
-             (transform-let-expr (cdr expr))
-             expr))
-      expr)))
-
-(eval (transform-all-let-exprs '(define fixed-point-with-limit
+(define fixed-point-with-limit
   (lambda (f l i)
     (if (< l 1)
-      nil
-      (let ((fi (f i)))
-        (if (equal? i fi)
-          i
-          (fixed-point-with-limit f (- l 1) fi))))))))
+        (begin
+          (print-string "error: fix point reached max iterations\n")
+          (print-stack-trace)
+          (print-string "stacktrace end\n")
+          (exit 1))
+        (let ((fi (f i)))
+          (if (equal? i fi)
+              i
+              (fixed-point-with-limit f (- l 1) fi))))))
 
 (define macro-list (cell nil))
 
@@ -71,25 +58,23 @@
   (lambda (sym macro-func)
     (cell-set macro-list (cons (cons sym macro-func) (cell-get macro-list)))))
 
-(eval (transform-all-let-exprs '(define apply-single-macro
+(define apply-single-macro
   (lambda (expr)
     (let ((macro-func (alist-lookup (cell-get macro-list) (car expr))))
       (if (equal? macro-func nil)
         expr
-        (macro-func (cdr expr))))))))
+        (macro-func (cdr expr))))))
 
-(eval (transform-all-let-exprs '(define apply-all-macro
+(define apply-all-macro
   (lambda (expr)
     (if (non-empty-list? expr)
       (let ((newexpr (map apply-all-macro expr)))
         (apply-single-macro newexpr))
-      expr)))))
+      expr)))
 
 (define macro-expand
   (lambda (expr)
     (fixed-point-with-limit apply-all-macro 10 expr)))
-
-(add-macro 'let transform-let-expr)
 
 (define REPL-print-enabled (cell #f))
 
@@ -109,6 +94,17 @@
 
 (REPL)
 
+(define make-list-maker
+  (lambda (expr-args)
+    (if (nil? expr-args)
+        ''()
+        (cons 'cons
+              (cons (car expr-args)
+                    (cons (make-list-maker (cdr expr-args))
+                          '()))))))
+
+(add-macro 'list make-list-maker)
+
 (define extract-defun-lambda
   (lambda (expr-args)
     (let ((args (cdr (car expr-args)))
@@ -122,20 +118,6 @@
                  (list 'define (car (car expr-args)) lam))
                (cons 'define expr-args))))
 
-(define (nil? lst) (equal? lst nil))
-
-(define (transform-let-star bindings body)
-  (if (nil? bindings)
-    body
-    (list
-      'let
-      (list (car bindings))
-      (transform-let-star (cdr bindings) body))))
-
-(define (transform-let-star-expr let-args)
-  (transform-let-star (car let-args) (car (cdr let-args))))
-
-(add-macro 'let* transform-let-star-expr)
 
 
 (define syscall-mmap 9)
