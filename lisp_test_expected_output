@@ -12,7 +12,7 @@ nil
 1
 2
 "factorial"
-nil
+'factorial
 120
 "equal? numbers"
 true
@@ -30,7 +30,7 @@ true
 "let expression"
 11
 "memory operations and syscalls"
-nil
+'buffer
 nil
 42
 nil
