@@ -35,7 +35,7 @@ rename_word ".c" "write_byte_to_stdout" ;
 
 
 rename_word "du" "dup" ;
-#rename_word "dn" "pick" ;
+rename_word "dn" "pick" ;
 rename_word "2d" "2dup" ;
 rename_word "s" "swap" ;
 rename_word "ro" "rot" ;

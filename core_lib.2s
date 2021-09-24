@@ -43,15 +43,16 @@ def "dip" {
 } ;
 
 def "3dup" {
-    dip { dip { swap } swap }
-    dup
-    dip { 2dup }
+    pick 3
+    pick 3
+    pick 3
 } ;
 
 def "4dup" {
-    dip { dip { dip { swap } swap } swap }
-    dup
-    dip { 3dup }
+    pick 4
+    pick 4
+    pick 4
+    pick 4
 } ;
 
 def "2dip" {
@@ -96,3 +97,4 @@ def "compare_i64" {
         if { = } { 0 } { 1 }
     }
 } ;
+

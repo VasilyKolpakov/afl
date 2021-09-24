@@ -5,7 +5,10 @@
 def "stacktrace_get_func_instruction_count" {
     + 1
     drop
-    while { lazy_and { not = indirect_jmp_instruction_code read_mem_i64 dup } not = return_instruction_code read_mem_i64 dup } {
+    while {
+        lazy_and { not = indirect_jmp_instruction_code read_mem_i64 dup }
+        lazy_and { not = jmp_instruction_code read_mem_i64 dup }
+        not = return_instruction_code read_mem_i64 dup } {
         swap + 1 swap
         + -8
     } # <func> <count>
