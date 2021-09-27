@@ -232,6 +232,9 @@ def "se_stacks_print" {
     print_string "value stack: "
 } ;
 
+constant "se_tmp_stack" array_list_new ;
+def "se_tmp_stack_push" { array_list_append se_tmp_stack } ;
+def "se_tmp_stack_pop" { array_list_pop_last se_tmp_stack } ;
 # <function> <pointer to instruction> -> <bool>
 def "se_is_one_of_instructions" {
     dip { 2drop }
@@ -642,6 +645,21 @@ def "se_run_function_on_fake_stacks_instruction_switch"
             keep { array_list_append se_stacks_get_value_stack }
             keep { array_list_get se_stacks_get_value_stack } # <stacks> <val stack index>
             keep { - array_list_get_size se_stacks_get_value_stack } # <stacks> <value>
+            keep {
+                2drop
+                while { < 0 over } {
+                    dip { + -1 }
+                    array_list_append dip { se_tmp_stack_pop } se_stacks_get_value_stack dup
+                } 
+                dip { dup }
+                drop swap
+                while { < 0 over } {
+                    dip { + -1 }
+                    se_tmp_stack_push se_stacks_pop_from_value_stack dup
+                } 
+                dip { dup }
+                # <stacks> <index>
+            }
             keep { se_stacks_pop_from_value_stack }
         }
     } otherwise

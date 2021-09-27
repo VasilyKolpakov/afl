@@ -1,0 +1,47 @@
+# import the_dictionary.2s
+# import stack_effect.2s
+
+# <func> -> <bool> <string>
+def "td_find_function_name" {
+    if { = 0 dup } {
+        false
+    } {
+        true td_dict_record_name
+    }
+    drop swap
+    while {
+        lazy_and {
+            not
+            lazy_and { = td_word_def_address td_dict_record_word_def 2dup }
+            td_word_def_is_function td_dict_record_word_def dup
+        }
+        not = 0 dup
+    } {
+        td_dict_record_next
+        # <record> <func>
+    } td_def_list 
+} ;
+se_check_last_defined_function ;
+
+# <op code> -> <bool> <string>
+def "td_find_instruction_name" {
+    if { = 0 dup } {
+        false
+    } {
+        true td_dict_record_name
+    }
+    drop swap
+    while {
+        lazy_and {
+            not
+            lazy_and { = td_word_def_address td_dict_record_word_def 2dup }
+            not td_word_def_is_function td_dict_record_word_def dup
+        }
+        not = 0 dup
+    } {
+        td_dict_record_next
+        # <record> <func>
+    } td_def_list 
+} ;
+se_check_last_defined_function ;
+

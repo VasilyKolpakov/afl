@@ -98,6 +98,12 @@ def "array_list_get_last" {
     assert "non-empty array_list" < 0 array_list_get_size dup
 } ;
 
+# <list> <value> ->
+def "array_list_set_last" {
+    bi { array_list_set } { + -1 array_list_get_size }
+    assert "non-empty array_list" < 0 array_list_get_size dup
+} ;
+
 # same as get(size - 1 - index)
 # <list> <index> -> <value>
 def "array_list_peek" {
@@ -186,5 +192,42 @@ def "array_list_foreach_item_and_index" {
         dip { 0 }
         array_list_get_size dup
     }
+} ;
+
+# <list> <start index inclusive> <end index exclusive> ->
+def "array_list_remove_slice" {
+    3drop
+    while { > 2dup } {
+        r>
+        swap + 8 swap + 8
+        write_mem_i64 swap read_mem_i64 swap
+        2dup
+        >r
+    }
+    # <end ptr> <slice start ptr> <slice end ptr>
+    + bi { * 8 array_list_get_size } { array_list_get_array }
+    keep {
+        swap
+        + r> * 8
+        swap
+        + r@ * 8
+        >r array_list_get_array
+    }
+    array_list_set_size
+    keep {
+        - dip { - swap } # subtract slice length
+        array_list_get_size
+    } 3dup 
+    dip {
+        assert "start index <= end index" <= 2dup
+        assert "0 <= start index" <= 0 dup
+    }
+    assert "end index <= size" >=
+    keep {
+        assert "start index < size" >
+    }
+    # <size> <start index> <end index> ...
+    array_list_get_size
+    3dup
 } ;
 

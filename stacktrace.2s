@@ -24,19 +24,19 @@ def "stacktrace_get_func_first_pointer" {
 # <i pointer> -> <func name or "#?#">
 def "stacktrace_print_func_name_by_instruction_pointer" {
     if { not = 0 dup } {
-        print_string the_dictionary_dict_record_name # <record> <i pointer>
+        print_string td_dict_record_name # <record> <i pointer>
     } { print_string "?" drop }
     drop swap
     while {
         lazy_and {
-            not lazy_and { stacktrace_instruction_pointer_is_in_function the_dictionary_word_def_address the_dictionary_dict_record_word_def 2dup }
-            the_dictionary_word_def_is_function the_dictionary_dict_record_word_def dup
+            not lazy_and { stacktrace_instruction_pointer_is_in_function td_word_def_address td_dict_record_word_def 2dup }
+            td_word_def_is_function td_dict_record_word_def dup
         }
         not = 0 dup
     } {
-        the_dictionary_dict_record_next
+        td_dict_record_next
 #        print_newline print_string stacktrace_dict_record_name print_string "func search loop:   " dup
-    } the_dictionary_def_list 
+    } td_def_list 
 } ;
 
 # <function> <instruction pointer> -> <bool>

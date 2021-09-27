@@ -1,0 +1,168 @@
+# import stack_effect.2s
+# import switch_stmt.2s
+# import the_dictionary_utils.2s
+# import i64_to_text.2s
+
+# <instruction ptr> -> <op code>
+def "iptr_op_code" { read_mem_i64 } ;
+# <instruction ptr> -> <op arg>
+def "iptr_op_arg" { read_mem_i64 + -8 } ;
+
+constant "code_text_array" array_list_new ;
+constant "code_text_array_indent_ptr" malloc 8 ;
+write_mem_i64 code_text_array_indent_ptr 0 ;
+def "code_text_array_indent_get" { read_mem_i64 code_text_array_indent_ptr } ;
+def "code_text_array_indent_set" { write_mem_i64 code_text_array_indent_ptr } ;
+def "code_text_array_indent_inc" { code_text_array_indent_set + 1 code_text_array_indent_get } ;
+se_check_last_defined_function ;
+def "code_text_array_indent_dec" { code_text_array_indent_set + -1 code_text_array_indent_get } ;
+se_check_last_defined_function ;
+def "code_text_array_append" {
+    drop while { < 0 dup } {
+        array_list_append code_text_array "    "
+        + -1
+    } code_text_array_indent_get
+    array_list_append code_text_array
+    array_list_append code_text_array "\n"
+} ;
+def "code_text_array_print" {
+    drop while { < 0 dup } {
+        print_string array_list_get code_text_array dup
+        + -1
+    } array_list_get_size code_text_array
+} ;
+# <op code>
+def "instruction_has_arg" {
+    drop swap
+    lazy_or { = lit_instruction_code dup }
+    lazy_or { = late_bind_instruction_code dup }
+    lazy_or { = call_instruction_code dup }
+              = jmp_instruction_code dup
+} ;
+
+def "iptr_next" {
+    if { instruction_has_arg iptr_op_code dup } {
+        + -16
+    } {
+        + -8
+    }
+} ;
+se_check_last_defined_function ;
+
+# <inst ptr> -> <bool>
+def "pf_is_if_call_or_tail_call" {
+    drop swap
+    lazy_and { = {if} iptr_op_arg dup }
+    lazy_or { = jmp_instruction_code iptr_op_code dup }
+    = call_instruction_code iptr_op_code dup
+} ;
+se_check_last_defined_function ;
+
+# <inst ptr> -> <bool>
+def "pf_is_if_cond" {
+    drop swap
+    lazy_and { pf_is_if_call_or_tail_call iptr_next dup }
+    = lit_instruction_code iptr_op_code dup
+} ;
+se_check_last_defined_function ;
+
+# <inst ptr> -> <bool>
+def "pf_is_if_then" {
+    drop swap
+    lazy_and { pf_is_if_call_or_tail_call iptr_next iptr_next dup }
+    lazy_and { = lit_instruction_code iptr_op_code iptr_next dup }
+    = lit_instruction_code iptr_op_code dup
+} ;
+se_check_last_defined_function ;
+
+# <inst ptr> -> <bool>
+def "pf_is_if_else" {
+    drop swap
+    lazy_and { pf_is_if_call_or_tail_call iptr_next iptr_next iptr_next dup }
+    lazy_and { = lit_instruction_code iptr_op_code iptr_next iptr_next dup }
+    lazy_and { = lit_instruction_code iptr_op_code iptr_next dup }
+    = lit_instruction_code iptr_op_code dup
+} ;
+se_check_last_defined_function ;
+
+# <inst ptr> -> <bool>
+def "pf_is_anon_function" {
+    drop swap
+    lazy_or { pf_is_if_cond dup }
+    lazy_or { pf_is_if_then dup }
+    pf_is_if_else dup
+} ;
+se_check_last_defined_function ;
+
+# <inst ptr> ->
+def "pf_append_instruction" 
+    when { = lit_instruction_code iptr_op_code dup } then { code_text_array_append i64_to_stirng iptr_op_arg } otherwise
+    when { = call_instruction_code iptr_op_code dup } then {
+        pf_append_function_call iptr_op_arg
+    } otherwise
+    {
+        code_text_array_append
+        assert "known instruction"
+        td_find_instruction_name iptr_op_code 
+    }
+;
+
+constant "{while}" read_mem_i64 + -8 { while } ;
+
+def "pf_append_function_body_loop_switch"
+    when { pf_is_anon_function dup } then {
+        iptr_next
+        code_text_array_append "{"
+        pf_append_function_body iptr_op_arg dup # else branch
+        code_text_array_append "}"
+    } otherwise
+    {
+        iptr_next
+        pf_append_instruction dup
+    }
+;
+
+def "pf_append_function_body_end_switch"
+    when { = jmp_instruction_code iptr_op_code dup } then {
+        pf_append_function_call iptr_op_arg
+    } otherwise
+    when { = indirect_jmp_instruction_code iptr_op_code dup } then {
+        code_text_array_append "jmp" drop
+    } otherwise
+    { drop }
+;
+# <func>
+def "pf_append_function_body" {
+    code_text_array_indent_dec
+    pf_append_function_body_end_switch
+    while {
+        not
+        lazy_or { = jmp_instruction_code iptr_op_code dup }
+        lazy_or { = indirect_jmp_instruction_code iptr_op_code dup }
+        = return_instruction_code iptr_op_code dup
+    } {
+        pf_append_function_body_loop_switch
+    }
+    code_text_array_indent_inc
+} ;
+
+# <func> ->
+def "pf_append_function_call" {
+    if { } {
+        drop code_text_array_append
+    } {
+        code_text_array_indent_inc
+        pf_append_function_body drop # 'raw' call in code_buffer
+        code_text_array_indent_dec
+    }
+    td_find_function_name dup
+} ;
+se_check_last_defined_function ;
+
+def "pf_print_function" {
+    code_text_array_print
+    pf_append_function_body
+    array_list_clear code_text_array
+} ;
+se_check_last_defined_function ;
+

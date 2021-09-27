@@ -5,6 +5,8 @@
 # import switch_stmt.2s
 # import lib.2s
 # import code_buffer.2s
+# import i64_to_text.2s
+# import print_function.2s
 
 #se_enable ;
 
@@ -597,7 +599,6 @@ def "obj_builtin_get_instruction" {
 } ;
 
 def "print_obj_quoted"
-    when { = 0 dup } then { print_string "nil" drop } otherwise
     when { = obj_bool_true dup } then { print_string "true" drop } otherwise
     when { = obj_bool_false dup } then { print_string "false" drop } otherwise
     when { obj_is_list dup } then {
@@ -662,11 +663,10 @@ def "print_obj_quoted"
 ;
 
 def "print_obj"
-    when { = 0 dup } then { print_string "nil" drop } otherwise
-    when { = symbol_obj_type_id obj_get_type_id dup } then {
+    when { obj_is_list dup } then {
         print_obj_quoted print_string "'"
     } otherwise
-    when { obj_is_list dup } then {
+    when { = symbol_obj_type_id obj_get_type_id dup } then {
         print_obj_quoted print_string "'"
     } otherwise
     { print_obj_quoted }
@@ -804,50 +804,6 @@ def "parse_i64" {
     }
 } ;
 
-# <buffer> <number> ->
-def "render_i64" {
-    2drop
-    if { > 0 over } {
-        # negative
-        write_mem_byte swap 45 dup
-        while { not = 0 over } {
-            + -1 dip { / swap 10 }
-            2keep { 
-                write_mem_byte dip { + 48 * -1 % swap 10 }
-            }
-        }
-        + -1 dip { / swap 10 }
-        2keep { 
-            write_mem_byte dip { + 48 * -1 % swap 10 }
-        }
-    } {
-        # positive
-        while { not = 0 over } {
-            + -1 dip { / swap 10 }
-            2keep { 
-                write_mem_byte dip { + 48 % swap 10 }
-            }
-        }
-        + -1 dip { / swap 10 }
-        2keep { 
-            write_mem_byte dip { + 48 % swap 10 }
-        }
-    }
-    # <buffer end> <number>
-    + dip { + -1 i64_text_length dup }
-} ;
-
-# <number> -> <length>
-def "i64_text_length" {
-    drop swap
-    while { not = 0 over }  {
-        + 1 dip { / swap 10 }
-    }
-        + 1 dip { / swap 10 }
-    # <length> <number>
-    if { > 0 dup } { 1 } { 0 }
-} ;
-
 def "parse_i64_string" {
     parse_i64 bi { byte_vector_get_array } { byte_vector_get_size }
 } ;
@@ -939,6 +895,13 @@ se_check_last_defined_function ;
 def "lisp_value_stack_peek_n_and_push" {
     array_list_append lisp_value_stack
     array_list_get lisp_value_stack + -1 - array_list_get_size lisp_value_stack 
+} ;
+se_check_last_defined_function ;
+
+# <botton index> <top index> ->
+def "lisp_value_stack_remove_slice" {
+    array_list_remove_slice lisp_value_stack
+    bi@ { + -1 - array_list_get_size lisp_value_stack }
 } ;
 se_check_last_defined_function ;
 
@@ -1179,6 +1142,14 @@ def "obj_i64_add" {
 def "register_lisp_instruction" {
     def string_concat swap "_f"
     constant 2dup
+} ;
+
+register_lisp_instruction "obj_i64_equal_instruction" {
+    lisp_value_stack_push
+    if { } { obj_bool_true } { obj_bool_false }
+    = bi@ { obj_i64_get_value }
+    bi@ { lisp_assert_type "'add' args are i64" i64_obj_type_id } 2dup
+    lisp_value_stack_pop lisp_value_stack_pop
 } ;
 
 register_lisp_instruction "obj_i64_add_instruction" {
@@ -1505,21 +1476,41 @@ def "obj_is_builtin" { drop swap lazy_and { = builtin_func_obj_type_id obj_get_t
 se_check_last_defined_function ;
 
 constant "code_buffer_stack" array_list_new ;
+constant "code_buffer_enabled_flag_stack" array_list_new ;
+array_list_append code_buffer_enabled_flag_stack true ;
+
+def "lisp_compile_stop_producing_code" { array_list_set_last code_buffer_enabled_flag_stack false } ;
 
 def "code_buffer_stack_peek" { array_list_get_last code_buffer_stack } ;
 se_check_last_defined_function ;
-def "code_buffer_stack_push_new" { array_list_append code_buffer_stack code_buffer_new } ;
+def "code_buffer_stack_push_new" {
+    array_list_append code_buffer_stack code_buffer_new
+    array_list_append code_buffer_enabled_flag_stack true
+} ;
 se_check_last_defined_function ;
-def "code_buffer_stack_pop" { code_buffer_make_function_and_destroy array_list_pop_last code_buffer_stack } ;
-se_check_last_defined_function ;
-
-def "lisp_compile_emit_literal" { 
-    code_buffer_emit_literal code_buffer_stack_peek
+def "code_buffer_stack_pop" {
+    code_buffer_make_function_and_destroy array_list_pop_last code_buffer_stack
+    drop array_list_pop_last code_buffer_enabled_flag_stack
 } ;
 se_check_last_defined_function ;
 
+# <value> ->
+def "lisp_compile_emit_literal" { 
+    if { array_list_get_last code_buffer_enabled_flag_stack } {
+        code_buffer_emit_literal code_buffer_stack_peek
+    } {
+        drop
+    }
+} ;
+se_check_last_defined_function ;
+
+# <func> ->
 def "lisp_compile_emit_call" { 
-    code_buffer_emit_call code_buffer_stack_peek
+    if { array_list_get_last code_buffer_enabled_flag_stack } {
+        code_buffer_emit_call code_buffer_stack_peek
+    } {
+        drop
+    }
 } ;
 se_check_last_defined_function ;
 
@@ -1631,6 +1622,20 @@ def "lexical_scope_contains" {
 } ;
 se_check_last_defined_function ;
 
+constant "tco_postpone_counts_stack" array_list_new ;
+def "tco_postpone_counts_stack_push_zero" { array_list_append tco_postpone_counts_stack 0 } ;
+def "tco_postpone_counts_stack_drop" { assert "tco postpone count is zero" = 0 array_list_pop_last tco_postpone_counts_stack } ;
+def "tco_postpone_count_increment" { array_list_append tco_postpone_counts_stack + 1 array_list_pop_last tco_postpone_counts_stack } ;
+def "tco_postpone_count_decrement" {
+    array_list_append tco_postpone_counts_stack
+    + -1
+    assert "tco postpone count is greater than zero" < 0 dup
+    array_list_pop_last tco_postpone_counts_stack
+} ;
+def "tco_postpone_count_is_zero" { = 0 array_list_peek tco_postpone_counts_stack 0 } ;
+
+tco_postpone_counts_stack_push_zero ;
+
 # <lambda> <arg count> -> <lambda> <arg count>
 def "lisp_compilation_template_lambda_arg_check" {
     if { = obj_lambda_get_arg_count 2dup } { } {
@@ -1700,7 +1705,9 @@ def "lisp_compile_lambda" {
         lisp_value_stack_drop_swap_n_times
     }
     lisp_compile_emit_literal + 1 obj_list_length obj_pair_car dup # arg count + 1 (lambda is on the value stack too
-    lisp_compile_expression obj_pair_car obj_pair_cdr dup
+    tco_postpone_counts_stack_drop
+    lisp_compile_expression obj_pair_car obj_pair_cdr dup # compile lambda body
+    tco_postpone_counts_stack_push_zero
     code_buffer_stack_push_new
     drop while { not = 0 dup } {
         obj_pair_cdr
@@ -1711,6 +1718,7 @@ def "lisp_compile_lambda" {
         # <symbol> <rest> ..
         obj_pair_car dup
     } obj_pair_car dup
+    stack_bindings_push_unnamed # lambda obj
 
     stack_bindings_stack_push_new
     captured_values_list_stack_push_new
@@ -1722,6 +1730,9 @@ def "lisp_compile_lambda" {
 
 def "lisp_compile_if" {
     drop
+    if { tco_postpone_count_is_zero } {
+        lisp_compile_stop_producing_code
+    } { }
     lisp_compile_emit_call {if} # {if} constant from switch_stmt.2s
 
     lisp_compile_emit_literal code_buffer_stack_pop
@@ -1731,7 +1742,9 @@ def "lisp_compile_if" {
         lisp_assert_type "if cond" bool_obj_type_id dup
         lisp_value_stack_pop
     }
+    tco_postpone_count_decrement
     lisp_compile_expression obj_pair_car dup # compile condition
+    tco_postpone_count_increment
     code_buffer_stack_push_new
 
     lisp_compile_emit_literal code_buffer_stack_pop
@@ -1756,6 +1769,7 @@ def "lisp_compile_let" {
     }
     lisp_compile_emit_literal obj_list_length obj_pair_car dup
     lisp_compile_expression obj_pair_car obj_pair_cdr dup # compile 'let' body
+    tco_postpone_count_decrement
     keep {
         drop while { not = 0 dup } {
             obj_pair_cdr
@@ -1765,6 +1779,7 @@ def "lisp_compile_let" {
         }
         obj_pair_car
     }
+    tco_postpone_count_increment
     assert "let has bindings list" obj_is_list obj_pair_car dup
     assert "let has 2 args" = 2 obj_list_length dup
     obj_pair_cdr
@@ -1786,12 +1801,14 @@ def "lisp_compile_globally_defined_bulitin_func_call" {
     stack_bindings_push_unnamed
     stack_bindings_drop_n + -1 obj_list_length
     lisp_compile_emit_call obj_builtin_get_instruction symbol_get_binding obj_pair_car dup
+    tco_postpone_count_decrement
     keep {
         drop while { not = 0 dup } {
             obj_pair_cdr
             lisp_compile_expression obj_pair_car dup
         } obj_pair_cdr
     }
+    tco_postpone_count_increment
     if { = bi
         { + 1 obj_builtin_get_arg_count symbol_get_binding obj_pair_car }
         { obj_list_length } dup } { } {
@@ -1809,28 +1826,70 @@ def "lisp_compile_globally_defined_bulitin_func_call" {
 def "lisp_compile_generic_call" {
     drop
     stack_bindings_drop_n + -1 obj_list_length dup
-    lisp_compile_emit_call {
-        if { obj_is_builtin dup } {
-            lisp_value_stack_drop_swap_n_times 1 # remove builtin from the stack
-            call obj_builtin_get_instruction
-            drop swap
-            lisp_compilation_template_builtin_arg_check
-        } {
-            jmp obj_lambda_get_function
-            drop swap
-            lisp_compilation_template_lambda_arg_check
-            lisp_assert_type "object is callable" lambda_obj_type_id dup
+    if { tco_postpone_count_is_zero } {
+        lisp_compile_stop_producing_code
+        lisp_compile_emit_call {
+            if { obj_is_builtin dup } {
+                lisp_value_stack_drop_swap_n_times 1 # remove builtin from the stack
+                call obj_builtin_get_instruction
+                drop swap
+                lisp_compilation_template_builtin_arg_check
+            } {
+                jmp obj_lambda_get_function
+                drop swap
+                lisp_compilation_template_lambda_arg_check
+                lisp_assert_type "object is callable" lambda_obj_type_id dup
+            }
+            # <lambda or builtin> <arg count>
         }
-        # <lambda or bultin> <arg count>
-        lisp_value_stack_peek
-        dup
-        # <lambda or builtin index (arg count)>
+        if { not = 0 dup } { # add remove_slice code only if it is required
+            lisp_compile_emit_call {
+                swap
+                lisp_value_stack_remove_slice # top index = arg count + 1 (lambda or builtin on the bottom) -1
+                # <bottom index> <arg count> <arg count> <lambda or builtin>
+                rot
+                # <arg count> <arg count> <bottom index> <lambda or builtin>
+                dup rot
+                # <bottom index> <lambda or builtin> <arg count>
+            }
+            lisp_compile_emit_literal
+        } {
+            drop
+        }
+        + -1 array_list_get_size stack_bindings # bottom index
+        lisp_compile_emit_call {
+            # <lambda or bultin> <arg count>
+            lisp_value_stack_peek
+            dup 
+            # <lambda or builtin index (arg count)>
+        }
+        lisp_compile_emit_literal + -1 obj_list_length dup # lambda or builtin index (arg count) # top index
+    } {
+        lisp_compile_emit_call {
+            if { obj_is_builtin dup } {
+                lisp_value_stack_drop_swap_n_times 1 # remove builtin from the stack
+                call obj_builtin_get_instruction
+                drop swap
+                lisp_compilation_template_builtin_arg_check
+            } {
+                jmp obj_lambda_get_function
+                drop swap
+                lisp_compilation_template_lambda_arg_check
+                lisp_assert_type "object is callable" lambda_obj_type_id dup
+            }
+            # <lambda or bultin> <arg count>
+            lisp_value_stack_peek
+            dup
+            # <lambda or builtin index (arg count)>
+        }
+        lisp_compile_emit_literal + -1 obj_list_length dup
     }
-    lisp_compile_emit_literal + -1 obj_list_length dup
+    tco_postpone_count_decrement
     drop while { not = 0 dup } {
         obj_pair_cdr
         lisp_compile_expression obj_pair_car dup
     } dup
+    tco_postpone_count_increment
 } ;
 
 def "lisp_compile_begin" {
@@ -1843,7 +1902,12 @@ def "lisp_compile_begin" {
     drop while { not = 0 dup } {
         obj_pair_cdr
         lisp_compile_expression obj_pair_car dup
+        if { = 0 obj_pair_cdr dup } {
+            tco_postpone_count_decrement # enable tco for the last expression
+        } { }
     } dup
+    tco_postpone_count_increment
+    assert "begin has args" not = 0 dup
     obj_pair_cdr
 } ;
 
@@ -1859,7 +1923,9 @@ def "lisp_compile_define" {
     }
     lisp_compile_emit_literal obj_pair_car dup
 
+    tco_postpone_count_decrement
     lisp_compile_expression obj_pair_car obj_pair_cdr dup
+    tco_postpone_count_increment
     lisp_assert_type "define: first arg is a symbol" symbol_obj_type_id obj_pair_car dup
     assert "define has two arguments" = 2 obj_list_length dup
     obj_pair_cdr
@@ -1895,7 +1961,7 @@ def "lisp_compile_symbol" {
                 lisp_assert_type "lambda env access" lambda_obj_type_id dup
                 lisp_value_stack_peek
             }
-            lisp_compile_emit_literal array_list_get_size stack_bindings # lambda's stack address
+            lisp_compile_emit_literal + -1 array_list_get_size stack_bindings # lambda's stack address
             lisp_compile_emit_literal captured_values_register_if_absent_and_get_index # env binding index
             # <symbol>
         } {
@@ -1941,9 +2007,10 @@ def "lisp_compile_expression" {
 
 # ->
 constant "lisp_eval" {
-    #assert "single value on value stack" = 1 array_list_get_size lisp_value_stack
-    call code_buffer_stack_pop
+    jmp code_buffer_stack_pop
     stack_bindings_drop_n 1
+    assert "tco postpone count is zero" tco_postpone_count_is_zero
+    assert "tco postpone counts stack size is 1" = 1 array_list_get_size tco_postpone_counts_stack
     assert "lexical scope is empty" array_list_is_empty lexical_scope_list
     assert "captured_values_list is empty" array_list_is_empty captured_values_list
     assert "captured_values_list_stack contains a single element" = 1 array_list_get_size captured_values_list_stack
@@ -1957,6 +2024,7 @@ def "lisp_register_builtin_function" {
     symbol_bind get_or_create_symbol keep { alloc_builtin_func }
 } ;
 
+lisp_register_builtin_function "=" 2 obj_i64_equal_instruction ;
 lisp_register_builtin_function "+" 2 obj_i64_add_instruction ;
 lisp_register_builtin_function "-" 2 obj_i64_sub_instruction ;
 lisp_register_builtin_function "*" 2 obj_i64_mul_instruction ;
@@ -2038,6 +2106,12 @@ lisp_register_builtin_function "string-from-native-buffer" 2 {
     obj_i64_get_value
     assert "length is i64" lisp_obj_is_i64 dup lisp_value_stack_pop
 } ;
+lisp_register_builtin_function "print-function" 1 {
+    lisp_value_stack_push 0
+    pf_print_function obj_lambda_get_function
+    lisp_assert_type "print-function expects lambda arg" lambda_obj_type_id dup
+    lisp_value_stack_pop
+} ;
 
 def "define_instruction_func" { call define_instruction } ;
 se_check_last_defined_function ;
@@ -2059,8 +2133,8 @@ se_check_last_defined_function ;
 def "print_string_instruction_func" { call print_string_instruction } ;
 se_check_last_defined_function ;
 
-se_check_function_by_name "lisp_compile_expression" ;
 #se_enable ;
+se_check_function_by_name "lisp_compile_expression" ;
 se_check_function_by_name "symbol_bind" ;
 se_check_function_by_name "obj_is_symbol" ;
 se_check_function_by_name "lisp_register_builtin_function" ;
