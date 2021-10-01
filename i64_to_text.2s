@@ -1,0 +1,52 @@
+# import byte_vector.2s
+
+# <buffer> <number> ->
+def "render_i64" {
+    2drop
+    if { > 0 over } {
+        # negative
+        write_mem_byte swap 45 dup
+        while { not = 0 over } {
+            + -1 dip { / swap 10 }
+            2keep { 
+                write_mem_byte dip { + 48 * -1 % swap 10 }
+            }
+        }
+        + -1 dip { / swap 10 }
+        2keep { 
+            write_mem_byte dip { + 48 * -1 % swap 10 }
+        }
+    } {
+        # positive
+        while { not = 0 over } {
+            + -1 dip { / swap 10 }
+            2keep { 
+                write_mem_byte dip { + 48 % swap 10 }
+            }
+        }
+        + -1 dip { / swap 10 }
+        2keep { 
+            write_mem_byte dip { + 48 % swap 10 }
+        }
+    }
+    # <buffer end> <number>
+    + dip { + -1 i64_text_length dup }
+} ;
+
+# <number> -> <length>
+def "i64_text_length" {
+    drop swap
+    while { not = 0 over }  {
+        + 1 dip { / swap 10 }
+    }
+        + 1 dip { / swap 10 }
+    # <length> <number>
+    if { > 0 dup } { 1 } { 0 }
+} ;
+
+def "i64_to_stirng" {
+    keep { render_i64 byte_vector_get_array }
+    bi* { byte_vector_set_size } { i64_text_length } 2dup
+    bi* { byte_vector_ensure_capacity } { i64_text_length } 2dup
+    byte_vector_new
+} ;

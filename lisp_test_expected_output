@@ -1,4 +1,4 @@
-nil
+'()
 "arithmetic"
 3
 4
@@ -15,25 +15,25 @@ nil
 'factorial
 120
 "equal? numbers"
-true
-false
+#t
+#f
 "equal? lists"
-true
-false
+#t
+#f
 "quote"
 '(lambda (x) (+ x x))
 "list operations"
-false
-true
+#f
+#t
 3
 0
 "let expression"
 11
 "memory operations and syscalls"
 'buffer
-nil
+'()
 42
-nil
+'()
 100
 "string operations"
 9

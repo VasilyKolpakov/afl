@@ -113,7 +113,7 @@
     (lambda (pid dict-record-ptr)
       (if (equal? dict-record-ptr 0)
         nil
-        (let*
+        (let
           ((dict-record-name-2s-string (ptrace-peek pid dict-record-ptr))
            (dict-record-word-def (ptrace-peek pid (+ dict-record-ptr 8)))
            (dict-record-word-def-addr (ptrace-peek pid dict-record-word-def))

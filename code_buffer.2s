@@ -7,45 +7,73 @@ def "code_buffer_new" {
 } ;
 
 # <code buffer> <func>
-def "code_buffer_emit_call" {
+def "code_buffer_prepend_code" {
     array_list_append
-    keep { array_list_append swap call_instruction_code }
+    assert "function with return instruction at the end is expected"
+    = return_instruction_code read_mem_i64 read_mem_i64 + 8 over
 } ;
 
-# <code buffer> <value>
-def "code_buffer_emit_literal" {
-    array_list_append
-    keep { array_list_append swap lit_instruction_code }
+def "code_buffer_wrap_func" {
+    + 16
+    keep { write_mem_i64 swap return_instruction_code }
+    keep { write_mem_i64 + 8 }
+    keep { write_mem_i64 + 16 swap call_instruction_code }
+    keep { write_mem_i64 + 24 dup } # write func start
+    malloc 32
 } ;
+
+# <code buffer> <func>
+def "code_buffer_prepend_call" {
+    code_buffer_prepend_code dip { code_buffer_wrap_func }
+} ;
+# <code buffer> <value>
+def "code_buffer_prepend_literal" {
+    code_buffer_prepend_code dip { func_capture }
+} ;
+
+def "code_buffer_code_list_to_func" {
+    free keep { + bi { array_list_get_array } { * 8 + -2 array_list_get_size } }
+    bi { array_list_append } { array_list_get_array } dup
+} ;
+se_check_last_defined_function ;
+
+# <list> <func> ->
+def "code_buffer_append_func_code" {
+    3drop
+    while { >= 2dup } {
+        dip {
+            + 8
+            array_list_append swap read_mem_i64 2dup
+        }
+    }
+    if { = return_instruction_code read_mem_i64 over } {
+        dip { + 8 }
+    } {
+        assert "indirect jmp expected" = indirect_jmp_instruction_code read_mem_i64 over
+    }
+    # <high (start) iptr> <low (return) iptr> <list>
+    bi { } { read_mem_i64 + 8 }
+    swap
+} ;
+se_check_last_defined_function ;
 
 # <code buffer>
 def "code_buffer_make_function_and_destroy" {
+    code_buffer_code_list_to_func
+    if { = call_instruction_code array_list_get swap 2 dup } {
+        array_list_set rot 2 jmp_instruction_code dup # TCO
+    } { }
     array_list_destroy
-    keep {
-        +
-        # <first instruction byte index> <ptr>
-        * 8 + -1 array_list_get_size
-    }
-    # <cb> <ptr>
-    write_mem_i64 + over
-    # <func size> <ptr> ...
-    * 8 array_list_get_size
-    2dup
-    # <cb> <ptr>
-    drop swap
     drop while { < 0 dup } {
-        2keep {
-            keep { write_mem_i64 } swap
-            # <data> <ptr>
-            array_list_get swap
-        }
-        # <cb index> <cb> <ptr> <original ptr>
-        + -1 2dip { + 8 }
+        code_buffer_append_func_code swap
+        array_list_get swap
+        3dup
+        + -1
+        # <index> <src list> <func buffer list>
     } array_list_get_size dup
-    # <cb> <ptr> <ptr>
-    keep { + -8 dup malloc * 8 + 1 array_list_get_size }
-    bi { array_list_set 2dip { jmp_instruction_code } } { + -2 array_list_get_size } dup
-    assert "last instruction is a call" = call_instruction_code bi { array_list_get } { + -2 array_list_get_size } dup
+    swap
+    keep { array_list_append swap return_instruction_code }
+    array_list_new
 } ;
 se_check_last_defined_function ;
 

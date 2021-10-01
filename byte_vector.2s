@@ -120,7 +120,7 @@ def "string_equals" {
 def "string_concat" {
     keep { byte_vector_set_size }
     drop -rot
-    # <ser 3 size> <str 2> <str 3>
+    # <str 3 size> <str 2> <str 3>
     + bi* { byte_vector_get_size } { byte_vector_get_size } 2dup
     memcopy dip { bi* { byte_vector_get_array } { + bi { byte_vector_get_array } { byte_vector_get_size } } 2dup }
     # <str 2 size> <str 3> <str 1>

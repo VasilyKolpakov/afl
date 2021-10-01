@@ -98,12 +98,22 @@ se_check_last_defined_function ;
 def "pf_append_instruction" 
     when { = lit_instruction_code iptr_op_code dup } then { code_text_array_append i64_to_stirng iptr_op_arg } otherwise
     when { = call_instruction_code iptr_op_code dup } then {
-        pf_append_function_call iptr_op_arg
+        pf_append_function_name iptr_op_arg
     } otherwise
     {
         code_text_array_append
-        assert "known instruction"
-        td_find_instruction_name iptr_op_code 
+        if { not } {
+            drop
+            assert "known instruction" false
+
+            code_text_array_print
+
+            print_newline
+            . over
+            print_string "bad instruction: "
+        } { drop swap }
+        # <bool> <name> <op code>
+        td_find_instruction_name dup iptr_op_code 
     }
 ;
 
@@ -124,7 +134,8 @@ def "pf_append_function_body_loop_switch"
 
 def "pf_append_function_body_end_switch"
     when { = jmp_instruction_code iptr_op_code dup } then {
-        pf_append_function_call iptr_op_arg
+        pf_append_function_name iptr_op_arg
+        code_text_array_append "^^^ jmp ^^^"
     } otherwise
     when { = indirect_jmp_instruction_code iptr_op_code dup } then {
         code_text_array_append "jmp" drop
@@ -147,15 +158,10 @@ def "pf_append_function_body" {
 } ;
 
 # <func> ->
-def "pf_append_function_call" {
-    if { } {
-        drop code_text_array_append
-    } {
-        code_text_array_indent_inc
-        pf_append_function_body drop # 'raw' call in code_buffer
-        code_text_array_indent_dec
-    }
-    td_find_function_name dup
+def "pf_append_function_name" {
+    code_text_array_append
+    assert "function has name"
+    td_find_function_name
 } ;
 se_check_last_defined_function ;
 

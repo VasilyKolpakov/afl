@@ -166,7 +166,7 @@ def "panic_on_syscall_error" {
 def "assert" {
     if { not swap } {
         exit 1
-        stacktrace_print_return_stack_except_n_slots 2
+        stacktrace_print_return_stack_except_n_slots 1
         print_string "Stacktrace:\n"
         print_newline
         print_string
@@ -174,4 +174,18 @@ def "assert" {
     } { drop }
 } ;
 
+# <func> -> <func>
+def "TCO" {
+    keep {
+        write_mem_i64 swap jmp_instruction_code
+        + 16
+        read_mem_i64 + 8
+    }
+    keep {
+        assert "tail call" = call_instruction_code
+        read_mem_i64
+        + 16
+        read_mem_i64 + 8
+    }
+} ;
 
