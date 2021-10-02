@@ -43,3 +43,64 @@
 "single quote"
 '(+ 1 2)
 'symbol
+"if and let"
+"true"
+"false"
+"false"
+"no capture"
+(lambda #139750570726616 0 0 (env ))
+"capture x"
+(lambda #139750570816920 1 0 (env 0))
+"not capture x"
+(lambda #139750569864728 0 1 (env ))
+"capture y"
+(lambda #139750569263768 1 1 (env 'y))
+"capture x y"
+(lambda #139750569266392 2 0 (env 'x 'y))
+"capture x y again"
+(lambda #139750569727640 2 0 (env 2 13))
+"lambda call"
+42
+"capture x in inner lambda"
+'x
+"another lambda call"
+42
+"bound function"
+3
+"multiple copies"
+3
+"begin 3"
+3
+"define a 0"
+'a
+0
+"print"
+42'()
+"lambda 2 args"
+(lambda #139750569266904 0 2 (env ))
+"read-syntax"
+"1 < 2"
+#t
+"cons (1)"
+'(1)
+"cell"
+'test-cell
+'()
+'()
+42
+"complex lambda"
+3
+
+end
+'()
+"tco test"
+'tco-test
+lisp builtin: print-stack-trace
+lisp: REPL
+?
+while
+?
+?
+'()
+"begin"
+42

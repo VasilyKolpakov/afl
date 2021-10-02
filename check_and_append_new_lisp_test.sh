@@ -4,7 +4,7 @@ red=`tput setaf 1`
 green=`tput setaf 2`
 reset=`tput sgr0`
 
-./run_file_non_interactive.sh lisp_test.lisp > lisp_test_actual_output
+./run_file_non_interactive.sh lisp_test.scm > lisp_test_actual_output
 
 if cmp -n $(wc -c < lisp_test_expected_output) lisp_test_expected_output lisp_test_actual_output ; then
     echo "${green}OK${reset}"

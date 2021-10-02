@@ -64,4 +64,100 @@
 '(+ 1 2)
 'symbol
 
+"if and let"
+(if #t
+    (let ((x "true")) x)
+    (+ 2 2))
+(if (equal? 1 2)
+    (+ 2 2)
+    (let ((x "false")) x))
+(if (equal? 1 2)
+    (+ 2 2)
+    (let ((x "false")) x))
+
+"no capture"
+(let ((x 0))
+  (lambda () 0))
+
+"capture x"
+(let ((x 0))
+  (lambda () x))
+
+"not capture x"
+(let ((x 0))
+  (lambda (x) x))
+
+"capture y"
+(let ((x 0) (y 'y))
+  (lambda (x) (+ x y)))
+
+"capture x y"
+(let ((x 'x) (y 'y))
+  (lambda () (+ x y)))
+
+"capture x y again"
+(let ((x 2))
+  (let ((y 13))
+    (lambda () (+ x y))))
+
+"lambda call"
+(((lambda () (lambda () 42))))
+
+"capture x in inner lambda"
+(let ((x 'x))
+  (((lambda () (lambda () x)))))
+
+"another lambda call"
+((lambda (x) (+ x 1)) 41)
+
+"bound function"
+(let ((add +))
+  (add 1 2))
+
+"multiple copies"
+(let ((x 1))
+  (((lambda () (lambda () (+ x (+ x x)))))))
+
+"begin 3"
+(begin 1 2 3)
+
+"define a 0"
+(define a 0)
+a
+
+"print"
+(print 42)
+
+"lambda 2 args"
+(lambda (x y) (+ x y))
+
+(read-syntax)
+"read-syntax"
+"1 < 2"
+(< 1 2)
+
+"cons (1)"
+(cons 1 '())
+
+"cell"
+(define test-cell (cell '()))
+(cell-get test-cell)
+(cell-set test-cell 42)
+(cell-get test-cell)
+
+"complex lambda"
+(((lambda (x) (lambda (y) (+ x y))) 1) 2)
+(print-string "\nend\n")
+
+"tco test"
+(define tco-test
+  (lambda (n)
+    (if (= n 0)
+        (print-stack-trace)
+        (tco-test (- n 1)))))
+(tco-test 20)
+
+"begin"
+(begin
+  1 2 3 4 42)
 (exit 0)

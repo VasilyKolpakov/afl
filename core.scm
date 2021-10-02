@@ -151,3 +151,8 @@
 (define reverse
   (lambda (l)
     (foldl l cons nil)))
+
+(define (drop l n)
+  (if (> n 0)
+      (drop (cdr l) (- n 1))
+      l))
