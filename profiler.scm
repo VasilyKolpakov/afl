@@ -1,31 +1,6 @@
 ; import core.scm
 ;(enable-REPL-print)
 
-(define (index-of-rec lst v acc)
-  (if (equal? lst nil)
-    nil
-    (if (equal? v (car lst))
-      acc
-      (index-of-rec (cdr lst) v (+ acc 1)))))
-
-(define (index-of lst v)
-  (index-of-rec lst v 0))
-
-(define range-tailrec (lambda (n l)
-    (if (> n 0)
-      (range-tailrec (- n 1) (cons (- n 1) l))
-      l)))
-
-(define range (lambda (n) (range-tailrec n nil)))
-
-(define filter
-  (lambda (f l)
-    (if (equal? l nil)
-      nil
-      (if (f (car l))
-        (cons (car l) (filter f (cdr l)))
-        (filter f (cdr l))))))
-
 (define sleep
   (let ((buf (syscall-mmap-anon 4096)))
     (lambda (millis)

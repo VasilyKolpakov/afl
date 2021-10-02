@@ -143,16 +143,42 @@
              )))
 
 (define foldl
-  (lambda (l f z)
+  (lambda (f z l)
     (if (equal? l nil)
       z
-      (foldl (cdr l) f (f (car l) z)))))
+      (foldl f (f (car l) z) (cdr l)))))
 
 (define reverse
   (lambda (l)
-    (foldl l cons nil)))
+    (foldl cons nil l)))
 
 (define (drop l n)
   (if (> n 0)
       (drop (cdr l) (- n 1))
       l))
+
+(define (index-of-rec lst v acc)
+  (if (equal? lst nil)
+    nil
+    (if (equal? v (car lst))
+      acc
+      (index-of-rec (cdr lst) v (+ acc 1)))))
+
+(define (index-of lst v)
+  (index-of-rec lst v 0))
+
+(define range-tailrec (lambda (n l)
+    (if (> n 0)
+      (range-tailrec (- n 1) (cons (- n 1) l))
+      l)))
+
+(define range (lambda (n) (range-tailrec n nil)))
+
+(define filter
+  (lambda (f l)
+    (if (equal? l nil)
+      nil
+      (if (f (car l))
+        (cons (car l) (filter f (cdr l)))
+        (filter f (cdr l))))))
+

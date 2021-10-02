@@ -683,7 +683,13 @@ def "print_obj_quoted"
     } otherwise
     when { = lambda_obj_type_id obj_get_type_id dup } then {
         drop
-        print_string "))"
+        print_string ")"
+        if { td_find_function_name obj_lambda_get_function dup } {
+            print_string
+        } {
+            . obj_lambda_get_function dup print_string "#" drop
+        }
+        print_string ") "
         drop while { < dip { obj_lambda_get_env_size } 2dup } {
             if { < dip { obj_lambda_get_env_size } 2dup } {
                 print_string " "
@@ -694,9 +700,9 @@ def "print_obj_quoted"
         } 0
         print_string " (env "
         . obj_lambda_get_arg_count dup
-        print_string " "
+        print_string " arg count: "
         . obj_lambda_get_env_size dup
-        print_string " "
+        print_string " env size: "
         . dup
         print_string "(lambda #"
     } otherwise
@@ -1721,6 +1727,7 @@ tco_postpone_counts_stack_push_zero ;
 def "lisp_compilation_template_lambda_arg_check" {
     if { = obj_lambda_get_arg_count 2dup } { } {
         exit 1
+        stacktrace_print_return_stack_except_n_slots 1
         print_newline
         . over
         print_string " args, but was "
@@ -2111,11 +2118,18 @@ def "lisp_compile_expression" {
     assert "syntax is not null" not = 0 dup
 } ;
 
+constant "lisp_eval_debug_enabled_ptr" malloc 8 ;
+write_mem_i64 lisp_eval_debug_enabled_ptr false ;
+def "lisp_eval_debug_enable" { write_mem_i64 lisp_eval_debug_enabled_ptr true } ;
+def "lisp_eval_debug_enabled" { read_mem_i64 lisp_eval_debug_enabled_ptr } ;
+
 # ->
 constant "lisp_eval" {
     jmp
-#    pf_print_function dup
-#    print_string "eval function:\n"
+    if { lisp_eval_debug_enabled } {
+        pf_print_function dup
+        print_string "eval function:\n"
+    } { }
     code_buffer_stack_pop
     stack_bindings_drop_n 1
     assert "tco postpone count is zero" tco_postpone_count_is_zero
@@ -2145,6 +2159,30 @@ lisp_register_builtin_function "+" 2 obj_i64_add_instruction ;
 lisp_register_builtin_function "-" 2 obj_i64_sub_instruction ;
 lisp_register_builtin_function "*" 2 obj_i64_mul_instruction ;
 lisp_register_builtin_function "/" 2 obj_i64_div_instruction ;
+lisp_register_builtin_function "min" 2 {
+    lisp_value_stack_push alloc_i64
+    if { < 2dup } {
+        drop swap
+    } {
+        drop
+    }
+    obj_i64_get_value swap
+    obj_i64_get_value
+    bi@ { lisp_assert_type "'min' args are i64" i64_obj_type_id } 2dup
+    lisp_value_stack_pop lisp_value_stack_pop
+} ;
+lisp_register_builtin_function "max" 2 {
+    lisp_value_stack_push alloc_i64
+    if { < 2dup } {
+        drop
+    } {
+        drop swap
+    }
+    obj_i64_get_value swap
+    obj_i64_get_value
+    bi@ { lisp_assert_type "'max' args are i64" i64_obj_type_id } 2dup
+    lisp_value_stack_pop lisp_value_stack_pop
+} ;
 
 lisp_register_builtin_function ">" 2 obj_i64_gt_instruction ;
 lisp_register_builtin_function ">=" 2 obj_i64_gte_instruction ;
@@ -2229,9 +2267,21 @@ lisp_register_builtin_function "print-function" 1 {
     lisp_value_stack_pop
 } ;
 
+lisp_register_builtin_function "enable-eval-debug-logging" 0 {
+    lisp_value_stack_push 0
+    lisp_eval_debug_enable
+} ;
+
 lisp_register_builtin_function "enable-gc-logging" 0 {
     lisp_value_stack_push 0
     lisp_gc_logging_enable
+} ;
+
+constant "lisp_rng" malloc random_instance_size ;
+random_init lisp_rng 0 ;
+
+lisp_register_builtin_function "random-int" 0 {
+    lisp_value_stack_push alloc_i64 random_next_int lisp_rng
 } ;
 
 def "define_instruction_func" { call define_instruction } ;
