@@ -653,8 +653,19 @@ i_push_to_stack:
         sub         r14, 8                  ; move instruction pointer to the next instruction
         jmp iloop
 
+i_argc:
+        bump_data_stack 1
+        mov         rax, [rsp]
+        mov         [r12 - 8], rax
+        jmp iloop
+i_argv:
+        bump_data_stack 1
+        mov         rax, [rsp + 8]
+        mov         [r12 - 8], rax
+        jmp iloop
 
 _start: 
+        mov         r15, rdi
         mov         rax, f_default_sigsegv_handler
         mov         QWORD [sigsegv_handler_pointer], rax
         mov         QWORD [the_dictionary], 0
@@ -2626,6 +2637,8 @@ f_tests: equ     $-8
                     def_instruction_word_2 'r', 'i', i_read_mem_i64
                     
                     def_instruction_word_2 's', 'c', i_syscall
+                    def_instruction_word_2 'a', 'c', i_argc
+                    def_instruction_word_2 'a', 'v', i_argv
 
                  
                     def_instruction_word 'i', i_indirect_call

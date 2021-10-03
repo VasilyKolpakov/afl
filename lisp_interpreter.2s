@@ -411,16 +411,6 @@ def "symbol_unbind" {
     symbol_set_binding_flag swap false
 } ;
 
-# <buffer> <size>
-def "print_buffer" {
-    assert "buffer is fully written" =
-    dip {
-        panic_on_syscall_error
-        syscall 1 1 2dip { 1 2 3 }
-    }
-    over
-} ;
-
 constant "symbol_list" array_list_new ;
 
 # <symbol> <string> -> <bool>

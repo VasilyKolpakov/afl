@@ -189,3 +189,37 @@ def "TCO" {
     }
 } ;
 
+# <buffer> <size>
+def "print_buffer" {
+    assert "buffer is fully written" =
+    dip {
+        panic_on_syscall_error
+        syscall 1 1 2dip { 1 2 3 }
+    }
+    over
+} ;
+
+# <n> -> <buffer> <length>
+def "argv_get_buffer" {
+    keep { - swap }
+    swap
+    # <buffer end> <buffer>
+    while { not = 0 read_mem_byte dup } {
+        + 1
+    }
+    dup
+    # <null-term str>
+    drop while { < 0 dup } {
+        + -1
+        dip {
+            + 1
+            while { not = 0 read_mem_byte dup } {
+                + 1
+            }
+        }
+    }
+    dip { argv }
+    assert "argc > n" > argc dup
+    assert "0 <= n" <= 0 dup
+} ;
+
