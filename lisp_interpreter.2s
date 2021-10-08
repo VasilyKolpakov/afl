@@ -2369,6 +2369,19 @@ lisp_register_builtin_function "read-mem-i64" 1 read_mem_i64_instruction ;
 lisp_register_builtin_function "write-mem-i64" 2 write_mem_i64_instruction ;
 lisp_register_builtin_function "read-mem-byte" 1 read_mem_byte_instruction ;
 lisp_register_builtin_function "write-mem-byte" 2 write_mem_byte_instruction ;
+lisp_register_builtin_function "memcopy" 3 {
+    lisp_value_stack_push 0
+    memcopy rot
+    obj_i64_get_value
+    lisp_assert_type "memcopy src address" i64_obj_type_id dup
+    lisp_value_stack_pop 
+    obj_i64_get_value
+    lisp_assert_type "memcopy dest address" i64_obj_type_id dup
+    lisp_value_stack_pop 
+    obj_i64_get_value
+    lisp_assert_type "memcopy length" i64_obj_type_id dup
+    lisp_value_stack_pop 
+} ;
 
 lisp_register_builtin_function "bitwise-ior" 2 bitwise_ior_instruction ;
 
