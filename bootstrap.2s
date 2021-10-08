@@ -69,3 +69,5 @@ rename_word "ij" "jmp_instruction_code"
 
 rename_word "ac" "argc"
 rename_word "av" "argv"
+
+rename_word "r0" "f_read_from_std_in"

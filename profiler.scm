@@ -1,4 +1,6 @@
-; import core.scm
+(import "core.scm")
+(import "linux-error-names.scm")
+
 ;(enable-REPL-print)
 
 (define sleep
@@ -13,7 +15,7 @@
 (define (getpid) (syscall 39 1 2 3 4 5 6))
 (define SIGINT 2)
 (define (kill pid sig) (syscall 62 pid sig 1 2 3 4))
-(define (wait4 pid stat-addr options) (syscall 61 pid stat-addr options 0 1 2))
+(define (wait4 pid stat-addr options) (checked-syscall 61 pid stat-addr options 0 1 2))
 
 (define USER-REGS-STRUCT-FIELDS
   '(r15 r14 r13 r12 rbp rbx r11 r10 r9 r8 rax rcx rdx
@@ -27,7 +29,7 @@
 (define PTRACE_GETREGS 12)
 
 (define (ptrace req pid addr data)
-  (syscall 101 req pid addr data 1 2))
+  (checked-syscall 101 req pid addr data 1 2))
 
 (define ptrace-peek
   (let ((buf (syscall-mmap-anon 4096)))
@@ -67,17 +69,9 @@
 
 (define (child-code)
   (begin
-    (println buffer)
     (println (ptrace PTRACE_TRACEME 0 0 0))
-    (write-mem-i64 buffer 42)
-    (kill (getpid) SIGINT)
-    (loop (lambda ()
-            (begin
-              ;(sleep 1000)
-              ;(println (read-mem-i64 buffer))
-              (write-mem-i64 buffer (+ (read-mem-i64 buffer) 1)))))
-    (sleep 100000)
-    (print-string "exit\n")
+    (execve-second-cli-arg)
+    (print-string "child exited\n")
     (exit 0)))
 
 (define (read-process-dict pid)
@@ -137,14 +131,21 @@
 
 (define (parent-code child-pid)
   (begin
+    (sleep 1000)
+    (print-string "parent pid:")
+    (println (getpid))
+    (print-string "parent's child pid:")
+    (println child-pid)
     (print-string "parent waiting\n")
+    (wait4 child-pid buffer 0)
+    (ptrace PTRACE_CONT child-pid 0 0)
     (wait4 child-pid buffer 0)
     (println buffer)
     (print-string "parent waited\n")
     (ptrace PTRACE_CONT child-pid 0 0)
     (loop (lambda ()
             (begin
-              (sleep 100)
+              (sleep 10)
               (kill child-pid SIGINT)
               (wait4 child-pid buffer 0)
               ;(read-process-mem child-pid buffer buffer 8)

@@ -8,6 +8,8 @@ constant "syscall_mmap_MAP_PRIVATE" 2 ;
 
 constant "syscall_mremap_MREMAP_MAYMOVE" 1 ;
 
+constant "syscall_open_O_RDONLY" 0 ;
+
 def "syscall_mmap_anon" {
     syscall 9 0 r>  
         bit_or syscall_mmap_PROT_READ syscall_mmap_PROT_WRITE
@@ -49,3 +51,14 @@ def "syscall_read" {
 def "syscall_write" {
     syscall 1 3dip { 1 2 3 }
 } ;
+
+# <filename null str> <flags> <mode> -> <fd>
+def "syscall_open" {
+    syscall 2 3dip { 1 2 3 }
+} ;
+
+# <fd> -> <ret>
+def "syscall_close" {
+    syscall 3 dip { 1 2 3 4 5 }
+} ;
+

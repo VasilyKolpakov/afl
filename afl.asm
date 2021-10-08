@@ -845,6 +845,7 @@ f_print_buffer: equ     $-8
 
 ; <buffer pointer> <count> -> <bytes read>
 ; read to buffer
+f_read_from_std_in_end:
         dq          i_return, i_syscall, 
         dq          val(0), val(0)              ; syscall num, fd
         dq          i_pop_from_ret_stack        ; buffer pointer
@@ -853,6 +854,7 @@ f_print_buffer: equ     $-8
         dq          i_push_to_ret_stack         ; count
         dq          i_push_to_ret_stack         ; buffer pointer
 f_read_from_std_in: equ     $-8
+        dq          f_read_from_std_in_end
 
 ; <size> -> <addr>
 ; allocate virtual memory pages
@@ -895,6 +897,7 @@ f_mremap: equ     $-8
 
 ; <size> -> <addr>
 ; malloc
+f_malloc_end:
         dq          i_return
         dq          i_add, val(8)                       ; <addr>
         dq          i_write_mem_i64                     ; <addr>
@@ -903,9 +906,11 @@ f_mremap: equ     $-8
         dq          call(f_mmap_anon)                   ; <addr> <size>
         dq          i_dup, i_add, val(8)                ; <size> <size>
 f_malloc: equ     $-8
+        dq          f_malloc_end
 
 ; <addr> <new size> -> <addr>
 ; realloc
+f_realloc_end:
         dq          i_return
         dq          i_add, val(8)                       ; <addr>
         dq          i_write_mem_i64                     ; <addr>
@@ -916,9 +921,11 @@ f_malloc: equ     $-8
         dq          i_add, val(-8)                      ; <orig addr> <new size> <new size>
         dq          i_rot, i_dup, i_add, val(8), i_swap ; <addr> <new size> <new size>
 f_realloc: equ     $-8
+        dq          f_realloc_end
 
 ; <addr>
 ; free
+f_free_end:
         dq          i_return
         dq          i_drop, call(f_log_syscall_error)
         dq          call(f_munmap)                      ; <err code>
@@ -926,6 +933,7 @@ f_realloc: equ     $-8
         dq          i_read_mem_i64, i_dup               ; <size> <addr>
         dq          i_add, val(-8)                      ; <addr>
 f_free: equ     $-8
+        dq          f_free_end
 
 
 ; exit
@@ -2652,6 +2660,10 @@ f_tests: equ     $-8
                     def_function_word '.', f_print_number
                     def_function_word_2 'n', 'l', f_print_newline
                     def_function_word_2 '.', 'c', f_write_byte_to_stdout
+                    def_function_word_2 'r', '0', f_read_from_std_in
+                    def_function_word_2 'f', '0', f_malloc
+                    def_function_word_2 'f', '1', f_free
+                    def_function_word_2 'f', '2', f_realloc
 
 
                     def_function_word 'p', f_print_byte_vector
