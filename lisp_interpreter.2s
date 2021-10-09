@@ -2336,10 +2336,7 @@ lisp_register_builtin_function "eval" 1 lisp_eval ;
 
 lisp_register_builtin_function "not" 1 not_instruction ;
 
-constant "lisp_nil_symbol" get_or_create_symbol "nil" ;
-symbol_bind lisp_nil_symbol 0 ;
-
-lisp_register_builtin_function "nil?" 1 {
+lisp_register_builtin_function "empty?" 1 {
     lisp_value_stack_push
     if { = 0 } {
         obj_bool_true

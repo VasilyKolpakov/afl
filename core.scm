@@ -4,14 +4,14 @@
         (print-string "\n"))))
 
 (define map (lambda (f l)
-    (if (equal? l nil)
-      nil
+    (if (empty? l)
+      '()
       (cons (f (car l)) (map f (cdr l))))))
 
 (define non-empty-list?
   (lambda (l)
     (if (list? l)
-      (not (equal? l nil))
+      (not (empty? l))
       #f)))
 
 (define assert
@@ -28,8 +28,8 @@
 
 (define alist-lookup-rec
   (lambda (l k)
-    (if (equal? l nil)
-      nil
+    (if (empty? l)
+      '()
       (if (equal? (car (car l)) k)
         (cdr (car l))
         (alist-lookup-rec (cdr l) k)))))
@@ -50,7 +50,7 @@
               i
               (fixed-point-with-limit f (- l 1) fi))))))
 
-(define macro-list (cell nil))
+(define macro-list (cell '()))
 
 (define add-macro
   (lambda (sym macro-func)
@@ -59,7 +59,7 @@
 (define apply-single-macro
   (lambda (expr)
     (let ((macro-func (alist-lookup (cell-get macro-list) (car expr))))
-      (if (equal? macro-func nil)
+      (if (equal? macro-func '())
         expr
         (macro-func (cdr expr))))))
 
@@ -80,7 +80,7 @@
   (lambda (value)
     (if (cell-get REPL-print-enabled)
       (println value)
-      nil)))
+      '())))
 
 (define enable-REPL-print
   (lambda () (cell-set REPL-print-enabled #t)))
@@ -94,7 +94,7 @@
 
 (define make-list-maker
   (lambda (expr-args)
-    (if (nil? expr-args)
+    (if (empty? expr-args)
         ''()
         (cons 'cons
               (cons (car expr-args)
@@ -144,13 +144,13 @@
 
 (define foldl
   (lambda (f z l)
-    (if (equal? l nil)
+    (if (empty? l)
       z
       (foldl f (f (car l) z) (cdr l)))))
 
 (define reverse
   (lambda (l)
-    (foldl cons nil l)))
+    (foldl cons '() l)))
 
 (define (drop l n)
   (if (> n 0)
@@ -158,8 +158,8 @@
       l))
 
 (define (index-of-rec lst v acc)
-  (if (equal? lst nil)
-    nil
+  (if (equal? lst '())
+    '()
     (if (equal? v (car lst))
       acc
       (index-of-rec (cdr lst) v (+ acc 1)))))
@@ -172,12 +172,12 @@
       (range-tailrec (- n 1) (cons (- n 1) l))
       l)))
 
-(define range (lambda (n) (range-tailrec n nil)))
+(define range (lambda (n) (range-tailrec n '())))
 
 (define filter
   (lambda (f l)
-    (if (equal? l nil)
-      nil
+    (if (equal? l '())
+      '()
       (if (f (car l))
         (cons (car l) (filter f (cdr l)))
         (filter f (cdr l))))))
