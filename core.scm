@@ -140,6 +140,14 @@
 
 (add-macro 'cond cond-to-if)
 
+(define (and-to-if exprs)
+  (cond
+    ((empty? exprs) #t)
+    ((empty? (cdr exprs)) (car exprs))
+    (else (list 'if (car exprs) (and-to-if (cdr exprs)) #f))))
+
+(add-macro 'and and-to-if)
+
 
 (define syscall-mmap 9)
 (define syscall-mmap-PROT-READ 1)
