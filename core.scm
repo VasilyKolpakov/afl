@@ -1,5 +1,3 @@
-; import lisp_interpreter.2s
-
 (define println (lambda (obj)
     (begin
         (print obj)
@@ -108,7 +106,9 @@
 (define extract-defun-lambda
   (lambda (expr-args)
     (let ((args (cdr (car expr-args)))
-          (body (car (cdr expr-args))))
+          (body (if (> (length expr-args) 2)
+                    (cons 'begin (cdr expr-args))
+                    (car (cdr expr-args)))))
       (list 'lambda args body))))
 
 (add-macro 'define
