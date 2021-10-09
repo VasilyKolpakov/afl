@@ -119,6 +119,27 @@
                (cons 'define expr-args))))
 
 
+(define (assert-stmt message b)
+  (if b
+      '()
+      (begin
+        (print-string "assertion failed: ")
+        (print-string message)
+        (print-string "\n")
+        (print-stack-trace)
+        (exit 1))))
+
+(define (cond-to-if clauses)
+  (assert-stmt "else clause is present" (not (empty? clauses)))
+  (let ((clause (car clauses)))
+    (if (equal? 'else (car clause))
+        (car (cdr clause))
+        (let ((condd (car clause))
+              (then-body (car (cdr clause))))
+          (list 'if condd then-body (cond-to-if (cdr clauses)))))))
+
+(add-macro 'cond cond-to-if)
+
 
 (define syscall-mmap 9)
 (define syscall-mmap-PROT-READ 1)
