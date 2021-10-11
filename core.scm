@@ -8,7 +8,7 @@
       '()
       (cons (f (car l)) (map f (cdr l))))))
 
-(define non-empty-list?
+(define not-empty?
   (lambda (l)
     (if (list? l)
       (not (empty? l))
@@ -65,7 +65,7 @@
 
 (define apply-all-macro
   (lambda (expr)
-    (if (non-empty-list? expr)
+    (if (not-empty? expr)
       (let ((newexpr (map apply-all-macro expr)))
         (apply-single-macro newexpr))
       expr)))
@@ -156,6 +156,14 @@
 (add-macro 'let add-begin-in-let)
 
 
+(define (panic msg obj)
+  (print-string "error: ")
+  (print-string msg)
+  (print-string " ")
+  (print obj)
+  (print-string "\n")
+  (exit 1))
+
 (define syscall-mmap 9)
 (define syscall-mmap-PROT-READ 1)
 (define syscall-mmap-PROT-WRITE 2)
@@ -188,6 +196,14 @@
   (lambda (l)
     (foldl cons '() l)))
 
+(define (foldr f z l)
+  (foldl f z (reverse l)))
+
+(define (append l1 l2)
+  (assert-stmt "l1 is list" (list? l1))
+  (assert-stmt "l2 is list" (list? l2))
+  (foldl cons l2 (reverse l1)))
+
 (define (drop l n)
   (if (> n 0)
       (drop (cdr l) (- n 1))
@@ -217,4 +233,28 @@
       (if (f (car l))
         (cons (car l) (filter f (cdr l)))
         (filter f (cdr l))))))
+
+(define (foreach-recursive f l)
+  (if (empty? l)
+      '()
+      (begin
+        (f (car l))
+        (foreach-recursive f (cdr l)))))
+
+(define (foreach f l)
+  (assert-stmt "l is list" (list? l))
+  (foreach-recursive f l))
+
+(define (zip-recursive l1 l2)
+  (if (empty? l1)
+      '()
+      (cons 
+        (cons (car l1) (car l2))
+        (zip-recursive (cdr l1) (cdr l2)))))
+
+(define (zip l1 l2)
+  (assert-stmt "l1 is list" (list? l1))
+  (assert-stmt "l2 is list" (list? l2))
+  (assert-stmt "equal length" (equal? (length l1) (length l2)))
+  (zip-recursive l1 l2))
 
