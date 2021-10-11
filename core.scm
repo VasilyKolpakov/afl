@@ -148,6 +148,13 @@
 
 (add-macro 'and and-to-if)
 
+(define (add-begin-in-let exprs)
+  (if (= (length exprs) 2)
+      (cons 'let exprs)
+      (list 'let (car exprs) (cons 'begin (cdr exprs)))))
+
+(add-macro 'let add-begin-in-let)
+
 
 (define syscall-mmap 9)
 (define syscall-mmap-PROT-READ 1)
