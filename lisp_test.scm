@@ -1,4 +1,4 @@
-; import core.scm
+(import "core.scm")
 
 (enable-REPL-print)
 
@@ -77,28 +77,28 @@
 
 "no capture"
 (let ((x 0))
-  (lambda () 0))
+  ((lambda () 0)))
 
 "capture x"
 (let ((x 0))
-  (lambda () x))
+  ((lambda () x)))
 
 "not capture x"
 (let ((x 0))
-  (lambda (x) x))
+  ((lambda (x) x) 1))
 
 "capture y"
 (let ((x 0) (y 'y))
-  (lambda (x) (+ x y)))
+  ((lambda (x) (cons x y)) 1))
 
 "capture x y"
 (let ((x 'x) (y 'y))
-  (lambda () (+ x y)))
+  ((lambda () (cons x y))))
 
 "capture x y again"
 (let ((x 2))
   (let ((y 13))
-    (lambda () (+ x y))))
+    ((lambda () (+ x y)))))
 
 "lambda call"
 (((lambda () (lambda () 42))))
@@ -129,7 +129,7 @@ a
 (print 42)
 
 "lambda 2 args"
-(lambda (x y) (+ x y))
+((lambda (x y) (+ x y)) 1 2)
 
 (read-syntax)
 "read-syntax"
@@ -160,4 +160,10 @@ a
 "begin"
 (begin
   1 2 3 4 42)
+
+"number?"
+(number? 1)
+(number? '())
+(number? "1")
+
 (exit 0)
