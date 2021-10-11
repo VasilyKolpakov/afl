@@ -138,6 +138,10 @@ array_list_append source_file_input_stack buffered_input_create 0 ; # stdin
 
 def "scanner_peek" {
     buffered_input_read_current_byte array_list_get_last source_file_input_stack
+    if { array_list_is_empty source_file_input_stack } {
+        exit 1
+        print_string "lisp interpreter: unexpected EOF\n"
+    } { }
 } ;
 se_check_last_defined_function ;
 
