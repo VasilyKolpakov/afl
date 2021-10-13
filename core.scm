@@ -204,6 +204,13 @@
   (assert-stmt "l2 is list" (list? l2))
   (foldl cons l2 (reverse l1)))
 
+(define (vararg-append-to-append exprs)
+  (if (> (length exprs) 2)
+      (list 'append (car exprs) (vararg-append-to-append (cdr exprs)))
+      (cons 'append exprs)))
+
+(add-macro 'append vararg-append-to-append)
+
 (define (drop l n)
   (if (> n 0)
       (drop (cdr l) (- n 1))
