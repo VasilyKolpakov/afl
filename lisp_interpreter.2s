@@ -174,6 +174,7 @@ constant "double_quote_char" 34 ;
 constant "single_quote_char" 39 ;
 constant "backquote_char" string_first_char "`" ;
 constant "backslash_char" 92 ;
+constant "comma_char" string_first_char "," ;
 
 # <char> -> <bool>
 def "is_whitespace_char" {
@@ -203,6 +204,7 @@ constant "token_symbol_or_i64_literal_type" 2 ;
 constant "token_string_literal_type"        3 ;
 constant "token_char_literal_type"          4 ;
 constant "token_backquote_type"             5 ;
+constant "token_comma_type"                 6 ;
 
 # <expr type id> <value> -> <token>
 def "token_create" {
@@ -290,6 +292,10 @@ def "read_next_token_double_quote" {
 
 # -> <token> # scanner on the char's position
 def "read_next_token_switch"
+    when { = comma_char scanner_peek } then {
+        token_create token_comma_type 0
+        scanner_advance
+    } otherwise
     when { = single_quote_char scanner_peek } then {
         token_create token_backquote_type 0
         scanner_advance
@@ -1274,6 +1280,14 @@ def "lisp_run_gc" {
 } ;
 
 def "read_next_expression_switch"
+    when { = token_comma_type token_get_type_id token_scanner_peek } then {
+        lisp_value_stack_push drop lisp_value_stack_pop
+        alloc_pair lisp_unquote_symbol lisp_value_stack_peek_top
+        lisp_value_stack_push drop lisp_value_stack_pop
+        alloc_pair lisp_value_stack_peek_top 0
+        read_next_expression
+        token_scanner_advance
+    } otherwise
     when { = token_backquote_type token_get_type_id token_scanner_peek } then {
         lisp_value_stack_push drop lisp_value_stack_pop
         alloc_pair lisp_quote_symbol lisp_value_stack_peek_top
@@ -1464,6 +1478,7 @@ register_lisp_instruction "car_instruction" {
         lisp_value_stack_push obj_pair_car lisp_value_stack_pop
     } {
         exit 1
+        stacktrace_print_return_stack_except_n_slots 1
         print_newline print_obj lisp_value_stack_peek_top
         print_string "error: car of obj: "
     }
@@ -1668,6 +1683,7 @@ constant "lisp_let_symbol" get_or_create_symbol "let" ;
 constant "lisp_if_symbol" get_or_create_symbol "if" ;
 constant "lisp_begin_symbol" get_or_create_symbol "begin" ;
 constant "lisp_quote_symbol" get_or_create_symbol "quote" ;
+constant "lisp_unquote_symbol" get_or_create_symbol "unquote" ;
 
 def "obj_is_symbol" { drop swap lazy_and { = symbol_obj_type_id obj_get_type_id dup } not = 0 dup } ;
 se_check_last_defined_function ;
@@ -2338,6 +2354,7 @@ lisp_register_builtin_function "print-stack-trace" 0 {
 
 lisp_register_builtin_function "eval" 1 lisp_eval ;
 
+lisp_register_builtin_function "id" 1 { } ;
 lisp_register_builtin_function "not" 1 not_instruction ;
 
 lisp_register_builtin_function "empty?" 1 {
@@ -2350,6 +2367,14 @@ lisp_register_builtin_function "empty?" 1 {
     lisp_value_stack_pop
 } ;
 
+lisp_register_builtin_function "symbol?" 1 {
+    if { drop swap lazy_and { = symbol_obj_type_id obj_get_type_id dup } not = 0 dup } {
+        lisp_value_stack_push obj_bool_true
+    } {
+        lisp_value_stack_push obj_bool_false
+    }
+    lisp_value_stack_pop
+} ;
 lisp_register_builtin_function "number?" 1 {
     if { drop swap lazy_and { = i64_obj_type_id obj_get_type_id dup } not = 0 dup } {
         lisp_value_stack_push obj_bool_true

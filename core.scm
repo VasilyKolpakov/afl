@@ -265,3 +265,29 @@
   (assert-stmt "equal length" (equal? (length l1) (length l2)))
   (zip-recursive l1 l2))
 
+(define (expr-has-unquote expr)
+  (if (list? expr)
+      (cond
+        ((empty? expr) #f)
+        ((equal? (car expr) 'quote) #f)
+        ((equal? (car expr) 'unquote) #t)
+        (else (not (empty? (filter id (map expr-has-unquote expr))))))
+      #f))
+
+(define (transform-quasiquote expr)
+  (cond
+    ((symbol? expr) (list 'quote expr))
+    ((not (list? expr)) expr)
+    ((empty? expr) '(quote ()))
+    ((not (expr-has-unquote expr)) (if (equal? (car expr) 'quote)
+                                       expr
+                                       (list 'quote expr)))
+    ((equal? (car expr) 'unquote) (car (cdr expr)))
+    (else (cons 'list (map transform-quasiquote expr)))))
+
+(define (transform-quasiquote-macro exprs)
+  (assert-stmt "quote has single arg" (empty? (cdr exprs)))
+  (transform-quasiquote (car exprs)))
+
+(add-macro 'quote transform-quasiquote-macro)
+
