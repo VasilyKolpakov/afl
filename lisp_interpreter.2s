@@ -2391,6 +2391,18 @@ lisp_register_builtin_function "length" 1 {
     lisp_value_stack_pop
 } ;
 
+lisp_register_builtin_function "arity" 1 {
+    lisp_value_stack_push
+    alloc_i64
+    if { obj_is_builtin dup } {
+        obj_builtin_get_arg_count
+    } {
+        obj_lambda_get_arg_count
+        lisp_assert_type "object is callable" lambda_obj_type_id dup
+    }
+    lisp_value_stack_pop
+} ;
+
 constant "lisp_the_s2_dictionaty_ptr_symbol" get_or_create_symbol "the-s2-dictionary-ptr" ;
 symbol_bind lisp_the_s2_dictionaty_ptr_symbol alloc_i64 the_dictionary ;
 constant "lisp_s2_return_stack_ptr_symbol" get_or_create_symbol "s2-return-stack-ptr" ;
