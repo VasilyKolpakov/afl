@@ -2221,6 +2221,7 @@ def "lisp_compile_symbol" {
                 lisp_value_stack_push symbol_get_binding
                 if { symbol_has_binding dup } { } {
                     exit 1
+                    stacktrace_print_return_stack_except_n_slots 1
                     print_string " is undefined\n"
                     print_obj dup
                     print_string "symbol "
