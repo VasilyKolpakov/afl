@@ -128,17 +128,26 @@
 (define fpointer (syscall-mmap-anon-exec 1000))
 (define buffer (syscall-mmap-anon 1000))
 
-(define local-vars '(a b c))
+(define (compile-procedure local-vars-with-inits statements)
+  (let ((local-var-inits (map (lambda (v) (car (cdr v))) local-vars-with-inits))
+        (local-vars (map car local-vars-with-inits)))
+    (append
+      (list set-frame-pointer-instruction)
+      (flatmap (lambda (var-init) (compile-expr var-init '()))
+               local-var-inits)
+      (flatmap (lambda (stmt) (compile-statement stmt local-vars))
+               statements)
+      (list
+        (add-rsp-instruction (* 8 (length local-vars)))
+        return-instruction))))
+
 (define instructions
-  (append
-    (list set-frame-pointer-instruction)
-    (compile-expr 1 local-vars)
-    (compile-expr 2 local-vars)
-    (compile-expr 3 local-vars)
-    (compile-statement '(set-64 ,buffer (+ a (+ b c))) local-vars)
-    (list (add-rsp-instruction 24))
-    (list
-      return-instruction)))
+  (compile-procedure
+    '((a 1)
+      (b 2)
+      (c 3))
+    '((set-64 ,buffer (+ a (+ b c)))
+      (set-64 ,(+ 8 buffer) (+ 20 (+ a (+ b c)))))))
 
 (foreach println instructions)
 
@@ -151,7 +160,6 @@
                (generator (+ fpointer loc)))) locations-and-insts))
 
 (enable-REPL-print)
-(begin
-  (native-call fpointer)
-  (read-mem-i64 buffer)
-  )
+(native-call fpointer)
+(read-mem-i64 buffer)
+(read-mem-i64 (+ 8 buffer))
