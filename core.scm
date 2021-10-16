@@ -292,3 +292,6 @@
 (add-macro 'quote transform-quasiquote-macro)
 
 (define (not-empty? v) (not (empty? v)))
+
+(define (flatten xs) (foldr append '() xs))
+(define (flatmap f xs) (flatten (map f xs)))
