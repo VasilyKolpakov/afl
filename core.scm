@@ -8,7 +8,7 @@
       '()
       (cons (f (car l)) (map f (cdr l))))))
 
-(define not-empty?
+(define non-empty-list?
   (lambda (l)
     (if (list? l)
       (not (empty? l))
@@ -65,7 +65,7 @@
 
 (define apply-all-macro
   (lambda (expr)
-    (if (not-empty? expr)
+    (if (non-empty-list? expr)
       (let ((newexpr (map apply-all-macro expr)))
         (apply-single-macro newexpr))
       expr)))
@@ -291,3 +291,4 @@
 
 (add-macro 'quote transform-quasiquote-macro)
 
+(define (not-empty? v) (not (empty? v)))
