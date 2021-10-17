@@ -2431,6 +2431,12 @@ lisp_register_builtin_function "memcopy" 3 {
 } ;
 
 lisp_register_builtin_function "bitwise-ior" 2 bitwise_ior_instruction ;
+lisp_register_builtin_function "bitwise-lshift" 2 {
+    lisp_value_stack_push
+    alloc_i64 bit_lshift bi@ { obj_i64_get_value }
+    assert "bitwise-ior args are i64" and bi@ { = i64_obj_type_id obj_get_type_id } 2dup
+    lisp_value_stack_pop lisp_value_stack_pop
+} ;
 
 lisp_register_builtin_function "string-length" 1 string_length_instruction ;
 lisp_register_builtin_function "string-get-byte" 2 string_get_byte_instruction ;
