@@ -1,3 +1,6 @@
+(define i32-max-value (- (bitwise-lshift 1 31) 1))
+(define i32-min-value (- 0 (bitwise-lshift 1 31)))
+
 (define println (lambda (obj)
     (begin
         (print obj)

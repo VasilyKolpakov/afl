@@ -86,16 +86,15 @@
   (list 4 generate-set-frame-pointer "set-frame-pointer"))
 
 (define (generate-jmp ptr target)
-  (println target)
-  (write-mem-byte ptr #x48) ; mov rax, imm-value
-  (write-mem-byte (+ 1 ptr) #xb8)
-  (write-mem-i64  (+ 2 ptr) target)
-  (write-mem-byte (+ 10 ptr) #xff) ; jmp rax
-  (write-mem-byte (+ 11 ptr) #xe0)
-  )
+  (let ((rel-target (- target (+ ptr 5))))
+    (assert-stmt "rel-target <= i32-max-value" (<= rel-target i32-max-value))
+    (assert-stmt "rel-target >= i32-min-value" (>= rel-target i32-min-value))
+  (write-mem-byte ptr #xe9) ; jmp rel-target
+  (write-mem-i64 (+ ptr 1) rel-target)
+  ))
 
 (define (jmp-instruction target-label)
-  (list 12
+  (list 5
         (lambda (ptr label-locs)
           (generate-jmp ptr (alist-lookup label-locs target-label)))
         (list "jmp" target-label)))
