@@ -385,6 +385,24 @@ i_read_mem_i64:
         jmp iloop
 
 ; <address> <value>
+i_write_mem_i32:
+        drop_data_stack 2
+        mov         rax,  [r12 + 8*1]        ; address
+        mov         rdi,  [r12 + 8*0]        ; value
+        mov         [rax], edi
+        jmp iloop
+        
+; <address> -> <value>
+i_read_mem_i32:
+        drop_data_stack 1
+        mov         rax,  [r12 + 8*0]        ; address
+        mov         rdi,  0
+        mov         edi, [rax]
+        mov         [r12], rdi
+        add         r12, 8
+        jmp iloop
+
+; <address> <value>
 i_write_mem_byte:
         drop_data_stack 2
         mov         rax,  [r12 + 8*1]        ; address
@@ -2641,8 +2659,10 @@ f_tests: equ     $-8
                     
                     def_instruction_word_2 'w', 'b', i_write_mem_byte
                     def_instruction_word_2 'r', 'b', i_read_mem_byte
-                    def_instruction_word_2 'w', 'i', i_write_mem_i64
-                    def_instruction_word_2 'r', 'i', i_read_mem_i64
+                    def_instruction_word_2 'w', 'i', i_write_mem_i32
+                    def_instruction_word_2 'r', 'i', i_read_mem_i32
+                    def_instruction_word_2 'w', 'l', i_write_mem_i64
+                    def_instruction_word_2 'r', 'l', i_read_mem_i64
                     
                     def_instruction_word_2 's', 'c', i_syscall
                     def_instruction_word_2 'a', 'c', i_argc

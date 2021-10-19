@@ -90,7 +90,7 @@
     (assert-stmt "rel-target <= i32-max-value" (<= rel-target i32-max-value))
     (assert-stmt "rel-target >= i32-min-value" (>= rel-target i32-min-value))
   (write-mem-byte ptr #xe9) ; jmp rel-target
-  (write-mem-i64 (+ ptr 1) rel-target)
+  (write-mem-i32 (+ ptr 1) rel-target)
   ))
 
 (define (jmp-instruction target-label)
@@ -164,6 +164,7 @@
 
 (define buffer (syscall-mmap-anon 1000))
 (define the-label (generate-label))
+(define the-label-2 (generate-label))
 (define instructions
   (list
     set-frame-pointer-instruction
@@ -171,7 +172,12 @@
     (push-imm-instruction buffer)
     (push-imm-instruction 42)
     set-64-instruction
+    (jmp-instruction the-label-2)
     the-label
+    (push-imm-instruction buffer)
+    (push-imm-instruction 43)
+    set-64-instruction
+    the-label-2
     return-instruction))
 
 (define instructions_

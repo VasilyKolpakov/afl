@@ -53,8 +53,10 @@ rename_word "rp" "r_pick" ;
 
 rename_word "wb" "write_mem_byte" ;
 rename_word "rb" "read_mem_byte" ;
-rename_word "wi" "write_mem_i64" ;
-rename_word "ri" "read_mem_i64" ;
+rename_word "wi" "write_mem_i32" ;
+rename_word "ri" "read_mem_i32" ;
+rename_word "wl" "write_mem_i64" ;
+rename_word "rl" "read_mem_i64" ;
 
 rename_word "sc" "syscall" ;
 

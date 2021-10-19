@@ -2414,6 +2414,18 @@ lisp_register_builtin_function "native-call" 1 native_call_instruction ;
 
 lisp_register_builtin_function "read-mem-i64" 1 read_mem_i64_instruction ;
 lisp_register_builtin_function "write-mem-i64" 2 write_mem_i64_instruction ;
+lisp_register_builtin_function "read-mem-i32" 1 {
+    lisp_value_stack_push
+    alloc_i64 read_mem_i32 obj_i64_get_value
+    lisp_assert_type "read-mem-i32" i64_obj_type_id dup
+    lisp_value_stack_pop
+} ;
+lisp_register_builtin_function "write-mem-i32" 2 {
+    lisp_value_stack_push 0
+    write_mem_i32 bi@ { obj_i64_get_value }
+    bi@ { lisp_assert_type "write-mem-i32" i64_obj_type_id } 2dup
+    lisp_value_stack_pop lisp_value_stack_pop
+} ;
 lisp_register_builtin_function "read-mem-byte" 1 read_mem_byte_instruction ;
 lisp_register_builtin_function "write-mem-byte" 2 write_mem_byte_instruction ;
 lisp_register_builtin_function "memcopy" 3 {
