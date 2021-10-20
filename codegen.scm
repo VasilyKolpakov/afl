@@ -99,6 +99,20 @@
           (generate-jmp ptr (alist-lookup label-locs target-label)))
         (list "jmp" target-label)))
 
+(define (generate-call ptr target)
+  (let ((rel-target (- target (+ ptr 5))))
+    (assert-stmt "rel-target <= i32-max-value" (<= rel-target i32-max-value))
+    (assert-stmt "rel-target >= i32-min-value" (>= rel-target i32-min-value))
+  (write-mem-byte ptr #xe8) ; call rel-target
+  (write-mem-i32 (+ ptr 1) rel-target)
+  ))
+
+(define (call-instruction target-label)
+  (list 5
+        (lambda (ptr label-locs)
+          (generate-call ptr (alist-lookup label-locs target-label)))
+        (list "call" target-label)))
+
 
 (define (prefix-sum l)
   (reverse (cdr (foldl
@@ -168,17 +182,16 @@
 (define instructions
   (list
     set-frame-pointer-instruction
-    (jmp-instruction the-label)
+    (call-instruction the-label)
+    return-instruction
+
+    the-label
+    set-frame-pointer-instruction
     (push-imm-instruction buffer)
     (push-imm-instruction 42)
     set-64-instruction
-    (jmp-instruction the-label-2)
-    the-label
-    (push-imm-instruction buffer)
-    (push-imm-instruction 43)
-    set-64-instruction
-    the-label-2
-    return-instruction))
+    return-instruction
+    ))
 
 (define instructions_
   (compile-procedure
