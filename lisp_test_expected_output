@@ -94,8 +94,14 @@
 end
 '()
 "tco test"
+'()
 'tco-test
 lisp builtin: print-stack-trace
+lisp: tco-test
+lisp: tco-test
+lisp: tco-test
+lisp: tco-test
+lisp: tco-test
 lisp: REPL
 ?
 while

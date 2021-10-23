@@ -1863,6 +1863,11 @@ def "tco_postpone_count_decrement" {
     array_list_pop_last tco_postpone_counts_stack
 } ;
 def "tco_postpone_count_is_zero" { = 0 array_list_peek tco_postpone_counts_stack 0 } ;
+constant "tco_enabled_ptr" malloc 8 ;
+write_mem_i64 tco_enabled_ptr true ;
+def "tco_is_enabled" { read_mem_i64 tco_enabled_ptr } ;
+def "tco_disable" { write_mem_i64 tco_enabled_ptr false } ;
+def "tco_is_tail_call" { lazy_and { tco_postpone_count_is_zero } tco_is_enabled } ;
 
 tco_postpone_counts_stack_push_zero ;
 
@@ -1911,7 +1916,7 @@ def "lisp_compile_prepend_remove_temp_values_from_the_stack" {
 
 def "lisp_compile_lambda" {
     drop
-    if { tco_postpone_count_is_zero } {
+    if { tco_is_tail_call } {
         lisp_compile_stop_producing_code
         lisp_compile_prepend_remove_temp_values_from_the_stack 1
     } { }
@@ -1956,7 +1961,11 @@ def "lisp_compile_lambda" {
     stack_bindings_stack_drop
 
     tco_postpone_counts_stack_drop
-    assert "tco was triggered" not code_buffer_is_enabled
+    lisp_compile_prepend_code {
+        lisp_value_stack_drop_swap_n_times
+    }
+    lisp_compile_prepend_literal + 1 obj_list_length obj_pair_car dup # drop args and lambda
+    #assert "tco was triggered" not code_buffer_is_enabled
     lisp_compile_expression obj_pair_car obj_pair_cdr dup # compile lambda body
     tco_postpone_counts_stack_push_zero
     code_buffer_stack_push_new
@@ -1981,7 +1990,7 @@ def "lisp_compile_lambda" {
 
 def "lisp_compile_if" {
     drop
-    if { tco_postpone_count_is_zero } {
+    if { tco_is_tail_call } {
         lisp_compile_stop_producing_code
     } { }
     lisp_compile_prepend_code { if } 
@@ -2038,7 +2047,7 @@ def "lisp_compile_let" {
 
 def "lisp_compile_quote" {
     drop
-    if { tco_postpone_count_is_zero } {
+    if { tco_is_tail_call } {
         lisp_compile_stop_producing_code
         lisp_compile_prepend_remove_temp_values_from_the_stack 1
     } { }
@@ -2055,11 +2064,11 @@ def "lisp_compile_quote" {
 def "lisp_compile_globally_defined_bulitin_func_call" {
     stack_bindings_push_unnamed
     stack_bindings_drop_n + -1 obj_list_length
-    if { tco_postpone_count_is_zero } {
+    if { tco_is_tail_call } {
         lisp_compile_stop_producing_code
     } { }
     lisp_compile_prepend_call obj_builtin_get_instruction symbol_get_binding obj_pair_car dup
-    if { tco_postpone_count_is_zero } {
+    if { tco_is_tail_call } {
         lisp_compile_prepend_remove_temp_values_from_the_stack + -1 obj_list_length dup # pass arg count
     } { }
     tco_postpone_count_decrement
@@ -2103,7 +2112,7 @@ def "lisp_generic_call" TCO {
 def "lisp_compile_generic_call" {
     drop
     stack_bindings_drop_n + -1 obj_list_length dup
-    if { tco_postpone_count_is_zero } {
+    if { tco_is_tail_call } {
         lisp_compile_stop_producing_code
         lisp_compile_prepend_code {
             lisp_generic_call
@@ -2153,7 +2162,7 @@ def "lisp_compile_begin" {
 } ;
 
 def "lisp_compile_define" {
-    if { tco_postpone_count_is_zero } {
+    if { tco_is_tail_call } {
         lisp_compile_stop_producing_code
         lisp_compile_prepend_remove_temp_values_from_the_stack 1
     } { }
@@ -2194,7 +2203,7 @@ def "lisp_compile_list"
 ;
 
 def "lisp_compile_symbol" {
-    if { tco_postpone_count_is_zero } {
+    if { tco_is_tail_call } {
         lisp_compile_stop_producing_code
         lisp_compile_prepend_remove_temp_values_from_the_stack 1
     } { }
@@ -2243,7 +2252,7 @@ def "lisp_compile_expression_switch"
         lisp_compile_symbol
     } otherwise
     {
-        if { tco_postpone_count_is_zero } {
+        if { tco_is_tail_call } {
             lisp_compile_stop_producing_code
             lisp_compile_prepend_remove_temp_values_from_the_stack 1
         } { }
@@ -2476,6 +2485,11 @@ lisp_register_builtin_function "enable-eval-debug-logging" 0 {
 lisp_register_builtin_function "enable-gc-logging" 0 {
     lisp_value_stack_push 0
     lisp_gc_logging_enable
+} ;
+
+lisp_register_builtin_function "disable-tco" 0 {
+    lisp_value_stack_push 0
+    tco_disable
 } ;
 
 constant "ptr_to_null" malloc 8 ;

@@ -150,12 +150,13 @@ a
 (print-string "\nend\n")
 
 "tco test"
+(disable-tco)
 (define tco-test
   (lambda (n)
-    (if (= n 0)
+    (if (= n 1)
         (print-stack-trace)
         (tco-test (- n 1)))))
-(tco-test 20)
+(tco-test 5)
 
 "begin"
 (begin
