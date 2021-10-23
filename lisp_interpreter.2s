@@ -2393,6 +2393,20 @@ lisp_register_builtin_function "number?" 1 {
     }
     lisp_value_stack_pop
 } ;
+lisp_register_builtin_function "callable?" 1 {
+    if {
+        drop swap lazy_and {
+            lazy_or { = lambda_obj_type_id obj_get_type_id dup }
+            = builtin_func_obj_type_id obj_get_type_id dup
+        }
+        not = 0 dup
+    } {
+        lisp_value_stack_push obj_bool_true
+    } {
+        lisp_value_stack_push obj_bool_false
+    }
+    lisp_value_stack_pop
+} ;
 lisp_register_builtin_function "list?" 1 list_q_instruction ;
 lisp_register_builtin_function "length" 1 {
     lisp_value_stack_push
