@@ -113,7 +113,7 @@
           (generate-call ptr (alist-lookup label-locs target-label)))
         (list "call" target-label)))
 
-(define (generate-je ptr target)
+(define (generate-cond-jmp code ptr target)
   (let ((rel-target (- target (+ ptr 11))))
     (assert-stmt "rel-target <= i32-max-value" (<= rel-target i32-max-value))
     (assert-stmt "rel-target >= i32-min-value" (>= rel-target i32-min-value))
@@ -123,16 +123,19 @@
   (write-mem-byte (+ 3 ptr) #x39)
   (write-mem-byte (+ 4 ptr) #xf8)
   (write-mem-byte (+ 5 ptr) #x0f) ; je rel-target
-  (write-mem-byte (+ 6 ptr) #x84)
+  (write-mem-byte (+ 6 ptr) code)
   (write-mem-i32  (+ 7 ptr) rel-target)
   ))
 
-(define (je-instruction target-label)
+(define (cond-jmp-instruction cond-code target-label)
   (list 11
         (lambda (ptr label-locs)
-          (generate-je ptr (alist-lookup label-locs target-label)))
-        (list "je" target-label)))
+          (generate-cond-jmp cond-code ptr (alist-lookup label-locs target-label)))
+        (list "cond-jmp" cond-code target-label)))
 
+(define (cond-jmp-instruction-gen cond-code)
+  (lambda (label)
+    (cond-jmp-instruction cond-code label)))
 
 (define (prefix-sum l)
   (reverse (cdr (foldl
@@ -146,7 +149,9 @@
 
 (define symbol-to-cond-goto-instruction
   (list
-    (list '= 2 je-instruction)))
+    (list '= 2 (cond-jmp-instruction-gen #x84))
+    (list '> 2 (cond-jmp-instruction-gen #x87))
+    ))
 
 (define (compile-list expr rest local-vars)
   (let ((arg-count-and-inst (assert (alist-lookup symbol-to-instruction (car expr)) not-empty?)))
@@ -268,7 +273,7 @@
     (push-var-instruction 0)
     (push-var-instruction 1)
     (push-imm-instruction 0)
-    (je-instruction label-if-equal)
+    (cond-jmp-instruction #x84 label-if-equal)
     (push-imm-instruction 4242)
     (jmp-instruction label-end-if)
     label-if-equal
@@ -283,7 +288,7 @@
     '(ptr val)
     '()
     '(
-      (goto-if (= 9 0) ,the-label)
+      (goto-if (> 9 9) ,the-label)
       (set-64 ptr val)
       (label ,the-label)
       )))
