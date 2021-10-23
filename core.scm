@@ -143,6 +143,40 @@
 
 (add-macro 'cond cond-to-if)
 
+(define filter
+  (lambda (f l)
+    (if (equal? l '())
+      '()
+      (if (f (car l))
+        (cons (car l) (filter f (cdr l)))
+        (filter f (cdr l))))))
+
+(define (expr-has-unquote expr)
+  (if (list? expr)
+      (cond
+        ((empty? expr) #f)
+        ((equal? (car expr) 'quote) #f)
+        ((equal? (car expr) 'unquote) #t)
+        (else (not (empty? (filter id (map expr-has-unquote expr))))))
+      #f))
+
+(define (transform-quasiquote expr)
+  (cond
+    ((symbol? expr) (list 'quote expr))
+    ((not (list? expr)) expr)
+    ((empty? expr) '(quote ()))
+    ((not (expr-has-unquote expr)) (if (equal? (car expr) 'quote)
+                                       expr
+                                       (list 'quote expr)))
+    ((equal? (car expr) 'unquote) (car (cdr expr)))
+    (else (cons 'list (map transform-quasiquote expr)))))
+
+(define (transform-quasiquote-macro exprs)
+  (assert-stmt "quote has single arg" (empty? (cdr exprs)))
+  (transform-quasiquote (car exprs)))
+
+(add-macro 'quote transform-quasiquote-macro)
+
 (define (and-to-if exprs)
   (cond
     ((empty? exprs) #t)
@@ -150,6 +184,16 @@
     (else (list 'if (car exprs) (and-to-if (cdr exprs)) #f))))
 
 (add-macro 'and and-to-if)
+
+(define (or-to-if exprs)
+  (cond
+    ((empty? exprs) #f)
+    ((empty? (cdr exprs)) (car exprs))
+    (else '(if ,(car exprs) 
+               #t 
+               ,(or-to-if (cdr exprs))))))
+
+(add-macro 'or or-to-if)
 
 (define (add-begin-in-let exprs)
   (if (= (length exprs) 2)
@@ -236,14 +280,6 @@
 
 (define range (lambda (n) (range-tailrec n '())))
 
-(define filter
-  (lambda (f l)
-    (if (equal? l '())
-      '()
-      (if (f (car l))
-        (cons (car l) (filter f (cdr l)))
-        (filter f (cdr l))))))
-
 (define (foreach-recursive f l)
   (if (empty? l)
       '()
@@ -267,32 +303,6 @@
   (assert-stmt "l2 is list" (list? l2))
   (assert-stmt "equal length" (equal? (length l1) (length l2)))
   (zip-recursive l1 l2))
-
-(define (expr-has-unquote expr)
-  (if (list? expr)
-      (cond
-        ((empty? expr) #f)
-        ((equal? (car expr) 'quote) #f)
-        ((equal? (car expr) 'unquote) #t)
-        (else (not (empty? (filter id (map expr-has-unquote expr))))))
-      #f))
-
-(define (transform-quasiquote expr)
-  (cond
-    ((symbol? expr) (list 'quote expr))
-    ((not (list? expr)) expr)
-    ((empty? expr) '(quote ()))
-    ((not (expr-has-unquote expr)) (if (equal? (car expr) 'quote)
-                                       expr
-                                       (list 'quote expr)))
-    ((equal? (car expr) 'unquote) (car (cdr expr)))
-    (else (cons 'list (map transform-quasiquote expr)))))
-
-(define (transform-quasiquote-macro exprs)
-  (assert-stmt "quote has single arg" (empty? (cdr exprs)))
-  (transform-quasiquote (car exprs)))
-
-(add-macro 'quote transform-quasiquote-macro)
 
 (define (not-empty? v) (not (empty? v)))
 
