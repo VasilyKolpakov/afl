@@ -144,6 +144,10 @@
   (list
     (list '+ 2 add-instruction)))
 
+(define symbol-to-cond-goto-instruction
+  (list
+    (list '= 2 je-instruction)))
+
 (define (compile-list expr rest local-vars)
   (let ((arg-count-and-inst (assert (alist-lookup symbol-to-instruction (car expr)) not-empty?)))
     (assert-stmt "arg count matches" (= (length (cdr expr)) (car arg-count-and-inst)))
@@ -182,6 +186,11 @@
                (list
                  (add-rsp-instruction (* 8 (+ 2 proc-arg-count)))
                  (call-instruction proc-label)))))
+          ((equal? stmt-type 'label)
+           (list (car (cdr stmt))))
+          ((equal? stmt-type 'goto)
+           (let ((label (car (cdr stmt))))
+             (list (jmp-instruction label))))
           (else (panic "bad statement" stmt)))))
 
 
@@ -221,7 +230,7 @@
 (define the-label (generate-label))
 (define label-if-equal (generate-label))
 (define label-end-if (generate-label))
-(define instructions
+(define instructions_
   (list
     set-frame-pointer-instruction
 
@@ -260,7 +269,9 @@
     '(ptr val)
     '()
     '(
+      ;(goto ,the-label)
       (set-64 ptr val)
+      (label ,the-label)
       )))
 
 (define main-proc (make-procedure
@@ -271,25 +282,24 @@
       (call ,(car set-64-proc) ,buffer 42)
       )))
 
-(define instructions_
+(define instructions
   (append
     (car (cdr main-proc))
     (car (cdr set-64-proc))))
 
 
-(foreach
-  println
-  (map
-    (lambda (i)
-      (if (label? i)
-          (list 'label i)
-          (drop i 2)))
-    instructions))
+(define (instruction? i)
+  (and
+    (list? i)
+    (>= (length i) 2)
+    (number? (car i))
+    (callable? (car (cdr i)))))
 
 (define (instruction-size i)
-  (if (label? i)
-      0
-      (car i)))
+  (cond
+    ((label? i) 0)
+    ((instruction? i) (car i))
+    (else (panic "bad instruction:" i))))
 
 (define fpointer (syscall-mmap-anon-exec 1000))
 
@@ -301,7 +311,6 @@
       (with-locations (zip instructions inst-locations))
       (insts-and-locations (filter (lambda (x) (not (label? (car x)))) with-locations))
       (labels-and-locations (filter (lambda (x) (label? (car x))) with-locations)))
-  (println labels-and-locations)
   (foreach (lambda (i-and-loc)
              (let ((inst (car i-and-loc))
                    (loc (cdr i-and-loc))
@@ -310,6 +319,16 @@
                    (generator loc labels-and-locations)
                    (generator loc))))
            insts-and-locations))
+
+(println "========== instructions ============")
+(foreach
+  println
+  (map
+    (lambda (i)
+      (if (label? i)
+          (list 'label i)
+          (drop i 2)))
+    instructions))
 
 (enable-REPL-print)
 (native-call fpointer)
