@@ -191,6 +191,20 @@
           ((equal? stmt-type 'goto)
            (let ((label (car (cdr stmt))))
              (list (jmp-instruction label))))
+          ((equal? stmt-type 'goto-if)
+           (let ((cond-expr (car (cdr stmt)))
+                 (label (car (cdr (cdr stmt)))))
+             (let ((arg-count-and-cond-inst
+                     (assert
+                       (alist-lookup symbol-to-cond-goto-instruction (car cond-expr))
+                       not-empty?))
+                   (arg-count (car arg-count-and-cond-inst))
+                   (cond-inst-gen (car (cdr arg-count-and-cond-inst))))
+               (assert-stmt "cond expr: arg count matches" (= (length (cdr cond-expr)) arg-count))
+               (foldr 
+                 (lambda (expr rest) (compile-expr-rec expr rest local-vars))
+                 (list (cond-inst-gen label))
+                 (cdr cond-expr))))) 
           (else (panic "bad statement" stmt)))))
 
 
@@ -269,7 +283,7 @@
     '(ptr val)
     '()
     '(
-      ;(goto ,the-label)
+      (goto-if (= 9 0) ,the-label)
       (set-64 ptr val)
       (label ,the-label)
       )))
