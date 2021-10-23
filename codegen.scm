@@ -113,6 +113,26 @@
           (generate-call ptr (alist-lookup label-locs target-label)))
         (list "call" target-label)))
 
+(define (generate-je ptr target)
+  (let ((rel-target (- target (+ ptr 11))))
+    (assert-stmt "rel-target <= i32-max-value" (<= rel-target i32-max-value))
+    (assert-stmt "rel-target >= i32-min-value" (>= rel-target i32-min-value))
+  (write-mem-byte ptr       #x5f) ; pop rdi
+  (write-mem-byte (+ 1 ptr) #x58) ; pop rax
+  (write-mem-byte (+ 2 ptr) #x48) ; cmp rax,rdi
+  (write-mem-byte (+ 3 ptr) #x39)
+  (write-mem-byte (+ 4 ptr) #xf8)
+  (write-mem-byte (+ 5 ptr) #x0f) ; je rel-target
+  (write-mem-byte (+ 6 ptr) #x84)
+  (write-mem-i32  (+ 7 ptr) rel-target)
+  ))
+
+(define (je-instruction target-label)
+  (list 11
+        (lambda (ptr label-locs)
+          (generate-je ptr (alist-lookup label-locs target-label)))
+        (list "je" target-label)))
+
 
 (define (prefix-sum l)
   (reverse (cdr (foldl
@@ -138,7 +158,7 @@
       ((not-empty? var-index) (cons (push-var-instruction var-index) rest))
       ((number? expr) (cons (push-imm-instruction expr) rest))
       ((list? expr) (compile-list expr rest local-vars))
-      (else (panic "bad expr: " expr)))))
+      (else (panic "bad expr: " (list expr local-vars))))))
 
 (define (compile-expr expr local-vars)
   (compile-expr-rec expr '() local-vars))
@@ -150,15 +170,29 @@
              (compile-expr (car (cdr stmt)) local-vars)
              (compile-expr (car (cdr (cdr stmt))) local-vars)
              (list set-64-instruction)))
+          ((equal? stmt-type 'call)
+           (let ((proc (car (cdr stmt)))
+                 (proc-args (cdr (cdr stmt)))
+                 (proc-label (car proc))
+                 (proc-arg-count (car (cdr proc))))
+             (assert-stmt "number of args" (= proc-arg-count (length proc-args)))
+             (append
+               (list (add-rsp-instruction -16))
+               (flatmap (lambda (expr) (compile-expr expr local-vars)) proc-args)
+               (list
+                 (add-rsp-instruction (* 8 (+ 2 proc-arg-count)))
+                 (call-instruction proc-label)))))
           (else (panic "bad statement" stmt)))))
 
 
 
-(define (compile-procedure local-vars-with-inits statements)
+(define (compile-procedure args local-vars-with-inits statements)
   (let ((local-var-inits (map (lambda (v) (car (cdr v))) local-vars-with-inits))
-        (local-vars (map car local-vars-with-inits)))
+        (local-vars (append args (map car local-vars-with-inits))))
     (append
-      (list set-frame-pointer-instruction)
+      (list
+        set-frame-pointer-instruction
+        (add-rsp-instruction (- 0 (* 8 (length args)))))
       (flatmap (lambda (var-init) (compile-expr var-init '()))
                local-var-inits)
       (flatmap (lambda (stmt) (compile-statement stmt local-vars))
@@ -176,34 +210,72 @@
 
 (define (label? v) (number? v))
 
+(define (make-procedure args locals stmts)
+  (let ((new-label (generate-label))
+        (instructions (compile-procedure args locals stmts)))
+    (list
+      (list new-label (length args))
+      (cons new-label instructions))))
+
 (define buffer (syscall-mmap-anon 1000))
 (define the-label (generate-label))
-(define the-label-2 (generate-label))
+(define label-if-equal (generate-label))
+(define label-end-if (generate-label))
 (define instructions
   (list
     set-frame-pointer-instruction
+
+    (add-rsp-instruction -16)
+    (push-imm-instruction buffer)
+    (push-imm-instruction 42)
+    (add-rsp-instruction 32)
     (call-instruction the-label)
+
+    (add-rsp-instruction -16)
+    (push-imm-instruction (+ 8 buffer))
+    (push-imm-instruction 0)
+    (add-rsp-instruction 32)
+    (call-instruction the-label)
+
     return-instruction
 
     the-label
     set-frame-pointer-instruction
-    (push-imm-instruction buffer)
+    (add-rsp-instruction -16)
+    (push-var-instruction 0)
+    (push-var-instruction 1)
+    (push-imm-instruction 0)
+    (je-instruction label-if-equal)
+    (push-imm-instruction 4242)
+    (jmp-instruction label-end-if)
+    label-if-equal
     (push-imm-instruction 42)
+    label-end-if
     set-64-instruction
+    (add-rsp-instruction 16)
     return-instruction
     ))
 
-(define instructions_
-  (compile-procedure
+(define set-64-proc (make-procedure
+    '(ptr val)
+    '()
     '(
-      (a 1)
-      (b 2)
-      (c 3)
-      )
-    '(
-      (set-64 ,buffer (+ a (+ b c)))
-      (set-64 ,(+ 8 buffer) (+ a (+ b c)))
+      (set-64 ptr val)
       )))
+
+(define main-proc (make-procedure
+    '()
+    '()
+    '(
+      (call ,(car set-64-proc) ,(+ 8 buffer) 44)
+      (call ,(car set-64-proc) ,buffer 42)
+      )))
+
+(define instructions_
+  (append
+    (car (cdr main-proc))
+    (car (cdr set-64-proc))))
+
 
 (foreach
   println
