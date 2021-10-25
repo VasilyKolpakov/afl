@@ -59,7 +59,6 @@
   (assert-stmt "value <= 127" (<= value 127))
   (assert-stmt "value >= 128" (>= value -128))
   (list 4 (lambda (ptr) (generate-add-rsp ptr value)) (list "add-rsp" value)))
-; 48 8b 45 ff
 
 (define (generate-push-var ptr index)
   (write-mem-byte ptr       #x48) ; rax,QWORD PTR [rbp-index]
@@ -72,8 +71,16 @@
 (define (push-var-instruction index)
   (list 5 (lambda (ptr) (generate-push-var ptr index)) (list "push-var" index)))
 
-;  63:	55                   	push   rbp
-;  64:	48 89 e5             	mov    rbp,rsp
+(define (generate-set-var ptr index)
+  (write-mem-byte ptr       #x58) ; pop rax
+  (write-mem-byte (+ 1 ptr) #x48) ; QWORD PTR [rbp+___],rax
+  (write-mem-byte (+ 2 ptr) #x89)
+  (write-mem-byte (+ 3 ptr) #x45)
+  (write-mem-byte (+ 4 ptr) (- 0 (* (+ 1 index) 8)))
+  )
+
+(define (set-var-instruction index)
+  (list 5 (lambda (ptr) (generate-set-var ptr index)) (list "set-var" index)))
 
 (define (generate-set-frame-pointer ptr)
   (write-mem-byte ptr       #x55) ; push rbp
@@ -173,12 +180,22 @@
   (compile-expr-rec expr '() local-vars))
 
 (define (compile-statement stmt local-vars)
-  (let ((stmt-type (car stmt)))
+  (let ((stmt-type (car stmt))
+        (stmt-args (cdr stmt)))
     (cond ((equal? stmt-type 'set-64)
            (append
              (compile-expr (car (cdr stmt)) local-vars)
              (compile-expr (car (cdr (cdr stmt))) local-vars)
              (list set-64-instruction)))
+          ((equal? stmt-type 'set-var)
+           (let ((var (car stmt-args))
+                 (var-index (index-of local-vars var))
+                 (val-expr (car (cdr stmt-args))))
+             (if (empty? var-index) (panic "set-var: bad variable:" var) '())
+             (compile-expr-rec
+               val-expr
+               (list (set-var-instruction var-index))
+               local-vars)))
           ((equal? stmt-type 'call)
            (let ((proc (car (cdr stmt)))
                  (proc-args (cdr (cdr stmt)))
@@ -289,6 +306,7 @@
     '()
     '(
       (goto-if (> 9 9) ,the-label)
+      (set-var val (+ val 100))
       (set-64 ptr val)
       (label ,the-label)
       )))
@@ -305,7 +323,6 @@
   (append
     (car (cdr main-proc))
     (car (cdr set-64-proc))))
-
 
 (define (instruction? i)
   (and
