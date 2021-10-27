@@ -60,8 +60,23 @@
   (assert-stmt "value >= 128" (>= value -128))
   (list 4 (lambda (ptr) (generate-add-rsp ptr value)) (list "add-rsp" value)))
 
+(define (generate-push-var-ref ptr index)
+  (assert-stmt "index >= 0" (>= index 0))
+  (assert-stmt "index < 15" (< index 15))
+  (write-mem-byte ptr       #x48) ; lea rax,[rbp-index*8] 
+  (write-mem-byte (+ 1 ptr) #x8d)
+  (write-mem-byte (+ 2 ptr) #x45)
+  (write-mem-byte (+ 3 ptr) (- 0 (* (+ 1 index) 8)))
+  (write-mem-byte (+ 4 ptr) #x50) ; push rax
+  )
+
+(define (push-var-ref-instruction index)
+  (list 5 (lambda (ptr) (generate-push-var-ref ptr index)) (list "push-var-ref" index)))
+
 (define (generate-push-var ptr index)
-  (write-mem-byte ptr       #x48) ; rax,QWORD PTR [rbp-index]
+  (assert-stmt "index >= 0" (>= index 0))
+  (assert-stmt "index < 15" (< index 15))
+  (write-mem-byte ptr       #x48) ; rax,QWORD PTR [rbp-index*8]
   (write-mem-byte (+ 1 ptr) #x8b)
   (write-mem-byte (+ 2 ptr) #x45)
   (write-mem-byte (+ 3 ptr) (- 0 (* (+ 1 index) 8)))
@@ -103,7 +118,7 @@
 (define (jmp-instruction target-label)
   (list 5
         (lambda (ptr label-locs)
-          (generate-jmp ptr (alist-lookup label-locs target-label)))
+          (generate-jmp ptr (assert (alist-lookup label-locs target-label) not-empty?)))
         (list "jmp" target-label)))
 
 (define (generate-call ptr target)
@@ -117,7 +132,7 @@
 (define (call-instruction target-label)
   (list 5
         (lambda (ptr label-locs)
-          (generate-call ptr (alist-lookup label-locs target-label)))
+          (generate-call ptr (assert (alist-lookup label-locs target-label) not-empty?)))
         (list "call" target-label)))
 
 (define (generate-cond-jmp code ptr target)
@@ -137,7 +152,7 @@
 (define (cond-jmp-instruction cond-code target-label)
   (list 11
         (lambda (ptr label-locs)
-          (generate-cond-jmp cond-code ptr (alist-lookup label-locs target-label)))
+          (generate-cond-jmp cond-code ptr (assert (alist-lookup label-locs target-label) not-empty?)))
         (list "cond-jmp" cond-code target-label)))
 
 (define (cond-jmp-instruction-gen cond-code)
@@ -161,12 +176,19 @@
     ))
 
 (define (compile-list expr rest local-vars)
-  (let ((arg-count-and-inst (assert (alist-lookup symbol-to-instruction (car expr)) not-empty?)))
-    (assert-stmt "arg count matches" (= (length (cdr expr)) (car arg-count-and-inst)))
-    (foldr
-      (lambda (expr rest) (compile-expr-rec expr rest local-vars))
-      (cons (car (cdr arg-count-and-inst)) rest)
-      (cdr expr))))
+  (cond
+    ((equal? 'ref (car expr))
+     (let ((var (car (cdr expr))) 
+           (var-index (index-of local-vars var)))
+       (if (empty? var-index) (panic "ref: bad variable:" var) '())
+       (list (push-var-ref-instruction var-index))))
+    (else
+      (let ((arg-count-and-inst (assert (alist-lookup symbol-to-instruction (car expr)) not-empty?)))
+        (assert-stmt "arg count matches" (= (length (cdr expr)) (car arg-count-and-inst)))
+        (foldr 
+          (lambda (expr rest) (compile-expr-rec expr rest local-vars))
+          (cons (car (cdr arg-count-and-inst)) rest)
+          (cdr expr))))))
 
 (define (compile-expr-rec expr rest local-vars)
   (let ((var-index (index-of local-vars expr)))
@@ -269,35 +291,16 @@
 (define instructions_
   (list
     set-frame-pointer-instruction
-
-    (add-rsp-instruction -16)
-    (push-imm-instruction buffer)
     (push-imm-instruction 42)
-    (add-rsp-instruction 32)
-    (call-instruction the-label)
-
-    (add-rsp-instruction -16)
-    (push-imm-instruction (+ 8 buffer))
-    (push-imm-instruction 0)
-    (add-rsp-instruction 32)
-    (call-instruction the-label)
-
-    return-instruction
-
-    the-label
-    set-frame-pointer-instruction
-    (add-rsp-instruction -16)
-    (push-var-instruction 0)
-    (push-var-instruction 1)
-    (push-imm-instruction 0)
-    (cond-jmp-instruction #x84 label-if-equal)
-    (push-imm-instruction 4242)
-    (jmp-instruction label-end-if)
-    label-if-equal
-    (push-imm-instruction 42)
-    label-end-if
+    (push-var-ref-instruction 0)
+    (push-imm-instruction 4422)
     set-64-instruction
-    (add-rsp-instruction 16)
+    (push-imm-instruction buffer)
+    (push-var-instruction 0)
+    set-64-instruction
+    (add-rsp-instruction (* 1 8))
+    ;(call-instruction the-label)
+
     return-instruction
     ))
 
@@ -306,7 +309,7 @@
     '()
     '(
       (goto-if (> 9 9) ,the-label)
-      (set-var val (+ val 100))
+      (set-64 (ref val) (+ val 100))
       (set-64 ptr val)
       (label ,the-label)
       )))
