@@ -129,6 +129,28 @@
   (write-mem-i32 (+ ptr 1) rel-target)
   ))
 
+(define (generate-syscall ptr)
+  (write-mem-byte ptr        #x41) ; pop r9
+  (write-mem-byte (+ 1 ptr)  #x59)
+  (write-mem-byte (+ 2 ptr)  #x41) ; pop r8
+  (write-mem-byte (+ 3 ptr)  #x58)
+  (write-mem-byte (+ 4 ptr)  #x41) ; pop r10
+  (write-mem-byte (+ 5 ptr)  #x5a)
+  (write-mem-byte (+ 6 ptr)  #x5a) ; pop rdx
+  (write-mem-byte (+ 7 ptr)  #x5e) ; pop rsi
+  (write-mem-byte (+ 8 ptr)  #x5f) ; pop rdi
+  (write-mem-byte (+ 9 ptr)  #x58) ; pop rax
+  (write-mem-byte (+ 10 ptr) #x41) ; pop r15
+  (write-mem-byte (+ 11 ptr) #x5f)
+  (write-mem-byte (+ 12 ptr) #x0f) ; syscall
+  (write-mem-byte (+ 13 ptr) #x05)
+  (write-mem-byte (+ 14 ptr) #x49) ; mov [r15], rax
+  (write-mem-byte (+ 15 ptr) #x89)
+  (write-mem-byte (+ 16 ptr) #x07)
+  )
+
+(define syscall-instruction (list 17 generate-syscall "syscall"))
+
 (define (call-instruction target-label)
   (list 5
         (lambda (ptr label-locs)
@@ -230,6 +252,12 @@
                (list
                  (add-rsp-instruction (* 8 (+ 2 proc-arg-count)))
                  (call-instruction proc-label)))))
+          ((equal? stmt-type 'syscall)
+           (begin
+             (assert-stmt "syscall has 8 args" (= 8 (length stmt-args)))
+             (append
+               (flatmap (lambda (expr) (compile-expr expr local-vars)) stmt-args)
+               (list syscall-instruction))))
           ((equal? stmt-type 'label)
            (list (car (cdr stmt))))
           ((equal? stmt-type 'goto)
@@ -318,8 +346,9 @@
     '()
     '()
     '(
-      (call ,(car set-64-proc) ,(+ 8 buffer) 44)
-      (call ,(car set-64-proc) ,buffer 42)
+      (syscall ,buffer 39 1 2 3 4 5 6)
+      ;(call ,(car set-64-proc) ,(+ 8 buffer) 44)
+      ;(call ,(car set-64-proc) ,buffer 42)
       )))
 
 (define instructions
@@ -371,5 +400,7 @@
 
 (enable-REPL-print)
 (native-call fpointer)
+"getpid"
+(syscall 39 1 2 3 4 5 6)
 (read-mem-i64 buffer)
 (read-mem-i64 (+ 8 buffer))
