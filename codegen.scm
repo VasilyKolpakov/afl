@@ -48,6 +48,18 @@
 
 (define set-64-instruction (list 5 generate-set-64 "set-64"))
 
+(define deref-instruction
+  (list 5
+        (lambda (ptr)
+          (begin
+            (write-mem-byte ptr       #x5f) ; pop rdi
+            (write-mem-byte (+ 1 ptr) #x48) ; mov rax,QWORD PTR [rdi]
+            (write-mem-byte (+ 2 ptr) #x8b)
+            (write-mem-byte (+ 3 ptr) #x07)
+            (write-mem-byte (+ 4 ptr) #x50) ; push rax 
+            ))
+        "deref"))
+
 (define (generate-add-rsp ptr value)
   (write-mem-byte ptr       #x48) ; add rsp, value (signed byte)
   (write-mem-byte (+ 1 ptr) #x83)
@@ -189,7 +201,9 @@
 
 (define symbol-to-instruction
   (list
-    (list '+ 2 add-instruction)))
+    (list '+ 2 add-instruction)
+    (list 'deref 1 deref-instruction)
+    ))
 
 (define symbol-to-cond-goto-instruction
   (list
@@ -313,6 +327,7 @@
       (cons new-label instructions))))
 
 (define buffer (syscall-mmap-anon 1000))
+(write-mem-i64 buffer 41)
 (define the-label (generate-label))
 (define label-if-equal (generate-label))
 (define label-end-if (generate-label))
@@ -346,7 +361,9 @@
     '()
     '()
     '(
-      (syscall ,buffer 39 1 2 3 4 5 6)
+      (set-64 ,buffer (+ 1 (deref ,buffer)))
+      ;(set-64 ,buffer 1 )
+      ;(syscall ,buffer 39 1 2 3 4 5 6)
       ;(call ,(car set-64-proc) ,(+ 8 buffer) 44)
       ;(call ,(car set-64-proc) ,buffer 42)
       )))
