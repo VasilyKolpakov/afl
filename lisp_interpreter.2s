@@ -177,6 +177,52 @@ constant "backslash_char" 92 ;
 constant "comma_char" string_first_char "," ;
 
 # <char> -> <bool>
+def "is_escape_char" {
+    drop swap
+    lazy_or { = double_quote_char dup }
+    lazy_or { = backslash_char dup }
+    lazy_or { = tab_char dup }
+              = newline_char dup
+} ;
+se_check_last_defined_function ;
+
+# <char> -> <char>
+def "escape_string_literal_char"
+    when { = tab_char dup } then { t_char drop } otherwise
+    when { = newline_char dup } then { n_char drop } otherwise
+    when { = backslash_char dup } then { backslash_char drop } otherwise
+    when { = double_quote_char dup } then { double_quote_char drop } otherwise
+    { 
+        0
+        assert "escapable char" false
+        print_newline
+        write_byte_to_stdout single_quote_char
+        write_byte_to_stdout
+        write_byte_to_stdout backslash_char
+        write_byte_to_stdout single_quote_char
+        print_string "bad escapable char: "
+    }
+;
+se_check_last_defined_function ;
+
+# <char> -> <char>
+def "unescape_string_literal_char"
+    when { = t_char dup } then { tab_char drop } otherwise
+    when { = n_char dup } then { newline_char drop } otherwise
+    when { = backslash_char dup } then { backslash_char drop } otherwise
+    when { = double_quote_char dup } then { double_quote_char drop } otherwise
+    { 
+        0
+        assert "correct escape sequence" false
+        print_newline
+        write_byte_to_stdout
+        write_byte_to_stdout backslash_char
+        print_string "bad escape sequence: "
+    }
+;
+se_check_last_defined_function ;
+
+# <char> -> <bool>
 def "is_whitespace_char" {
     drop swap
     lazy_or { lazy_or { = space_char dup } = tab_char dup } = newline_char dup
@@ -281,10 +327,11 @@ def "read_next_token_double_quote" {
     while { not is_double_quote_or_newline scanner_peek } {
         scanner_advance
         if { = backslash_char scanner_peek } {
-            keep { byte_vector_append dip { scanner_peek } } 
+            keep { byte_vector_append dip { unescape_string_literal_char scanner_peek } } 
             scanner_advance
-        } { }
-        keep { byte_vector_append dip { scanner_peek } } 
+        } {
+            keep { byte_vector_append dip { scanner_peek } } 
+        }
     }
     scanner_advance
     byte_vector_new
@@ -846,7 +893,21 @@ def "print_obj_quoted"
     } otherwise
     when { = string_obj_type_id obj_get_type_id dup } then {
         write_byte_to_stdout double_quote_char
-        print_buffer bi { obj_string_get_buffer } { obj_string_get_size }
+        3drop
+        while { > 2dup } {
+            dip {
+                + 1
+                if { is_escape_char dup } {
+                    write_byte_to_stdout escape_string_literal_char
+                    write_byte_to_stdout backslash_char
+                } {
+                    write_byte_to_stdout
+                }
+                read_mem_byte + 2dup
+            }
+        } # <size> <index> <buffer>
+        dip { 0 }
+        bi { obj_string_get_size } { obj_string_get_buffer }
         write_byte_to_stdout double_quote_char
     } otherwise
     when { = builtin_func_obj_type_id obj_get_type_id dup } then {
@@ -1504,36 +1565,11 @@ register_lisp_instruction "print_instruction" {
     print_obj lisp_value_stack_pop
 } ;
 
-# <char> -> <char>
-def "unescape_string_char"
-    when { = t_char dup } then {
-        tab_char drop
-    } otherwise
-    when { = n_char dup } then {
-        newline_char drop
-    } otherwise
-    { 0 exit 1 write_byte_to_stdout print_string "bad char in string: " }
-;
-se_check_last_defined_function ;
-
 register_lisp_instruction "print_string_instruction" {
     lisp_value_stack_push 0
-    3drop
-    while { > 2dup } {
-        dip {
-            + 1
-            if { = backslash_char read_mem_byte + 2dup } {
-                write_byte_to_stdout unescape_string_char read_mem_byte + 2dup
-                + 1
-            } {
-                write_byte_to_stdout read_mem_byte + 2dup
-            }
-        }
-    } # <size> <index> <buffer>
-    dip { 0 }
-    bi { obj_string_get_size } { obj_string_get_buffer }
+    print_buffer bi { obj_string_get_buffer } { obj_string_get_size }
+    lisp_assert_type "print-string arg is string" string_obj_type_id dup
     lisp_value_stack_pop
-    assert "print-string arg is string" = string_obj_type_id obj_get_type_id lisp_value_stack_peek_top
 } ;
 
 register_lisp_instruction "make_cell_instruction" {
@@ -1597,8 +1633,9 @@ def "lisp_obj_is_i64" {
 se_check_last_defined_function ;
 
 def "syscall_pop_i64" {
-    obj_i64_get_value lisp_value_stack_pop
-    assert "syscall arg is i64" lisp_obj_is_i64 lisp_value_stack_peek_top
+    obj_i64_get_value 
+    lisp_assert_type "syscall arg is i64" i64_obj_type_id dup
+    lisp_value_stack_pop
 } ;
 
 register_lisp_instruction "syscall_instruction" {
@@ -2475,6 +2512,14 @@ lisp_register_builtin_function "bitwise-lshift" 2 {
 
 lisp_register_builtin_function "string-length" 1 string_length_instruction ;
 lisp_register_builtin_function "string-get-byte" 2 string_get_byte_instruction ;
+lisp_register_builtin_function "string-to-native-buffer" 2 {
+    lisp_value_stack_push 0
+    memcopy bi { obj_string_get_size } { obj_string_get_buffer }
+    # <string obj> <buffer>
+    lisp_assert_type "write-string-to-native-buffer: first arg is string" string_obj_type_id dup lisp_value_stack_pop
+    obj_i64_get_value
+    lisp_assert_type "write-string-to-native-buffer: second arg (native buffer) is i64" i64_obj_type_id dup lisp_value_stack_pop
+} ;
 lisp_register_builtin_function "string-from-native-buffer" 2 {
     lisp_value_stack_push alloc_string_from_buffer
     # <length> <buffer>
