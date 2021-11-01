@@ -2386,6 +2386,30 @@ lisp_register_builtin_function "print-string" 1 print_string_instruction ;
 lisp_register_builtin_function "car" 1 car_instruction ;
 lisp_register_builtin_function "cdr" 1 cdr_instruction ;
 lisp_register_builtin_function "cons" 2 cons_instruction ;
+lisp_register_builtin_function "nth" 2 {
+    if { lazy_and { not = 0 dup } = 0 } { # n should be 0 and list should not be '()
+        2drop
+        lisp_value_stack_push obj_pair_car
+    } {
+        exit 1
+        print_newline
+        .
+        print_string ", index is: "
+        . obj_list_length
+        print_string "nth: out of range: list length is "
+        drop
+    }
+    # <n> <list> <original list> <original n>
+    swap
+    while { lazy_and { < 0 over } not = 0 dup } {
+        swap + -1 swap
+        obj_pair_cdr
+    }
+    2dup # <list obj> <n>
+    assert "nth: first arg is list" obj_is_list dup lisp_value_stack_pop
+    obj_i64_get_value
+    assert "nth: second arg is i64" lisp_obj_is_i64 dup lisp_value_stack_pop
+} ;
 
 lisp_register_builtin_function "cell" 1 make_cell_instruction ;
 lisp_register_builtin_function "cell-get" 1 cell_get_instruction ;
@@ -2614,6 +2638,7 @@ def "print_string_instruction_func" { call print_string_instruction } ;
 se_check_last_defined_function ;
 
 #se_enable ;
+se_check_function_by_name "lisp builtin: nth" ;
 se_check_function_by_name "lisp builtin: import" ;
 se_check_function_by_name "lisp builtin: +" ;
 se_check_function_by_name "lisp builtin: -" ;
