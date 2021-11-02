@@ -2406,9 +2406,18 @@ lisp_register_builtin_function "nth" 2 {
         obj_pair_cdr
     }
     2dup # <list obj> <n>
-    assert "nth: first arg is list" obj_is_list dup lisp_value_stack_pop
+    swap
     obj_i64_get_value
-    assert "nth: second arg is i64" lisp_obj_is_i64 dup lisp_value_stack_pop
+    assert "nth: first arg is i64" lisp_obj_is_i64 dup lisp_value_stack_pop
+    assert "nth: second arg is list" obj_is_list dup lisp_value_stack_pop
+} ;
+lisp_register_builtin_function "first" 1 car_instruction ;
+lisp_register_builtin_function "second" 1 {
+    lisp_value_stack_push
+    obj_pair_car obj_pair_cdr
+    assert "second: list length >= 2" <= 2 obj_list_length dup
+    assert "second: arg is list" obj_is_list dup
+    lisp_value_stack_pop
 } ;
 
 lisp_register_builtin_function "cell" 1 make_cell_instruction ;
