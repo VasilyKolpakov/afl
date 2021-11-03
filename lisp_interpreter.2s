@@ -2417,6 +2417,12 @@ lisp_register_builtin_function "second" 1 {
     obj_pair_car obj_pair_cdr
     assert "second: list length >= 2" <= 2 obj_list_length dup
     assert "second: arg is list" obj_is_list dup
+    if { not obj_is_list dup } {
+        exit 1
+        print_newline
+        print_obj dup
+        print_string "second: list expected, but was: "
+    } { }
     lisp_value_stack_pop
 } ;
 
@@ -2647,6 +2653,7 @@ def "print_string_instruction_func" { call print_string_instruction } ;
 se_check_last_defined_function ;
 
 #se_enable ;
+se_check_function_by_name "lisp builtin: second" ;
 se_check_function_by_name "lisp builtin: nth" ;
 se_check_function_by_name "lisp builtin: import" ;
 se_check_function_by_name "lisp builtin: +" ;
