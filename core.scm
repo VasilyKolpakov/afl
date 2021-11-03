@@ -308,3 +308,10 @@
 
 (define (flatten xs) (foldr append '() xs))
 (define (flatmap f xs) (flatten (map f xs)))
+
+(define (alist-add-unique l k v)
+  (if (empty? (alist-lookup l k))
+      (cons (cons k v) l)
+      (panic "key is already present in alist" (list k l))))
+
+
