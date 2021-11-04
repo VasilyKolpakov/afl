@@ -56,7 +56,7 @@
             (write-mem-byte (+ 1 ptr) #x48) ; mov rax,QWORD PTR [rdi]
             (write-mem-byte (+ 2 ptr) #x8b)
             (write-mem-byte (+ 3 ptr) #x07)
-            (write-mem-byte (+ 4 ptr) #x50) ; push rax 
+            (write-mem-byte (+ 4 ptr) #x50) ; push rax
             ))
         "deref"))
 
@@ -75,7 +75,7 @@
 (define (generate-push-var-ref ptr index)
   (assert-stmt "index >= 0" (>= index 0))
   (assert-stmt "index < 15" (< index 15))
-  (write-mem-byte ptr       #x48) ; lea rax,[rbp-index*8] 
+  (write-mem-byte ptr       #x48) ; lea rax,[rbp-index*8]
   (write-mem-byte (+ 1 ptr) #x8d)
   (write-mem-byte (+ 2 ptr) #x45)
   (write-mem-byte (+ 3 ptr) (- 0 (* (+ 1 index) 8)))
@@ -214,14 +214,14 @@
 (define (compile-list expr rest local-vars)
   (cond
     ((equal? 'ref (car expr))
-     (let ((var (car (cdr expr))) 
+     (let ((var (car (cdr expr)))
            (var-index (index-of local-vars var)))
        (if (empty? var-index) (panic "ref: bad variable:" var) '())
        (list (push-var-ref-instruction var-index))))
     (else
       (let ((arg-count-and-inst (assert (alist-lookup symbol-to-instruction (car expr)) not-empty?)))
         (assert-stmt "arg count matches" (= (length (cdr expr)) (car arg-count-and-inst)))
-        (foldr 
+        (foldr
           (lambda (expr rest) (compile-expr-rec expr rest local-vars))
           (cons (car (cdr arg-count-and-inst)) rest)
           (cdr expr))))))
@@ -237,7 +237,7 @@
 (define (compile-expr expr local-vars)
   (compile-expr-rec expr '() local-vars))
 
-(define (compile-statement stmt local-vars)
+(define (compile-statement stmt local-vars procedure-list)
   (let ((stmt-type (car stmt))
         (stmt-args (cdr stmt)))
     (cond ((equal? stmt-type 'set-64)
@@ -255,7 +255,7 @@
                (list (set-var-instruction var-index))
                local-vars)))
           ((equal? stmt-type 'call)
-           (let ((proc (car (cdr stmt)))
+           (let ((proc (assert (alist-lookup procedure-list (car (cdr stmt))) not-empty?))
                  (proc-args (cdr (cdr stmt)))
                  (proc-label (car proc))
                  (proc-arg-count (car (cdr proc))))
@@ -287,15 +287,18 @@
                    (arg-count (car arg-count-and-cond-inst))
                    (cond-inst-gen (car (cdr arg-count-and-cond-inst))))
                (assert-stmt "cond expr: arg count matches" (= (length (cdr cond-expr)) arg-count))
-               (foldr 
+               (foldr
                  (lambda (expr rest) (compile-expr-rec expr rest local-vars))
                  (list (cond-inst-gen label))
-                 (cdr cond-expr))))) 
+                 (cdr cond-expr)))))
           (else (panic "bad statement" stmt)))))
 
 
 
-(define (compile-procedure args local-vars-with-inits statements)
+(define (compile-procedure args
+                           local-vars-with-inits
+                           statements
+                           procedure-list)
   (let ((local-var-inits (map (lambda (v) (car (cdr v))) local-vars-with-inits))
         (local-vars (append args (map car local-vars-with-inits))))
     (append
@@ -304,7 +307,7 @@
         (add-rsp-instruction (- 0 (* 8 (length args)))))
       (flatmap (lambda (var-init) (compile-expr var-init '()))
                local-var-inits)
-      (flatmap (lambda (stmt) (compile-statement stmt local-vars))
+      (flatmap (lambda (stmt) (compile-statement stmt local-vars procedure-list))
                statements)
       (list
         (add-rsp-instruction (* 8 (length local-vars)))
@@ -318,13 +321,6 @@
     id))
 
 (define (label? v) (number? v))
-
-(define (make-procedure args locals stmts)
-  (let ((new-label (generate-label))
-        (instructions (compile-procedure args locals stmts)))
-    (list
-      (list new-label (length args))
-      (cons new-label instructions))))
 
 (define buffer (syscall-mmap-anon 1000))
 (write-mem-i64 buffer 41)
@@ -347,27 +343,62 @@
     return-instruction
     ))
 
-(define set-64-proc (make-procedure
-    '(ptr val)
-    '()
-    '(
-      (goto-if (> 9 9) ,the-label)
-      (set-64 (ref val) (+ val 100))
-      (set-64 ptr val)
-      (label ,the-label)
-      )))
+(define test-string-buffer (syscall-mmap-anon 1000))
+(define test-string "test")
+(define test-string-length (string-length test-string))
+(string-to-native-buffer test-string test-string-buffer)
 
-(define main-proc (make-procedure
-    '()
-    '()
-    '(
-      (set-64 ,buffer (+ 1 (deref ,buffer)))
-      ;(set-64 ,buffer 1 )
-      ;(syscall ,buffer 39 1 2 3 4 5 6)
-      ;(call ,(car set-64-proc) ,(+ 8 buffer) 44)
-      ;(call ,(car set-64-proc) ,buffer 42)
-      )))
 
+(define upl-code '(
+  (proc set-64-proc (ptr val) ()
+        (
+         (goto-if (> 9 9) the-label)
+         (set-64 (ref val) (+ val 100))
+         (set-64 ptr val)
+         (label the-label)
+         )
+        )
+  (proc main-proc () ()
+        (
+         (syscall ,buffer 1 1 ,test-string-buffer ,test-string-length 1 2 3)
+         ;(set-64 ,buffer (+ 1 (deref ,buffer)))
+         ;(set-64 ,buffer 1 )
+         ;(syscall ,buffer 39 1 2 3 4 5 6)
+         (call set-64-proc ,(+ 8 buffer) 44)
+         (call set-64-proc ,buffer 42)
+         )
+        )
+  ))
+
+(define (compile-upl procedures)
+  (println (map (lambda (p) (list p (generate-label))) procedures))
+  (let ((procs-with-labels
+          (map (lambda (p) (list p (generate-label))) procedures))
+        (procedure-list
+          (map (lambda (p-with-l)
+                 (let ((name (second (first p-with-l)))
+                       (label (second p-with-l))
+                       (arg-count (length (nth 2 (first p-with-l)))))
+                   (list name label arg-count)))
+               procs-with-labels)))
+    (list
+      procedure-list
+      (flatmap
+        (lambda (p-with-l)
+          (let ((proc (first p-with-l))
+                (args (nth 2 proc))
+                (local-vars-with-inits (nth 3 proc))
+                (statements (nth 4 proc)))
+            (compile-procedure args local-vars-with-inits statements procedure-list)))
+        procs-with-labels))))
+
+
+
+
+(println "=================")
+;(foreach println upl-code)
+(foreach println (second (compile-upl upl-code)))
+(exit 1)
 (define instructions
   (append
     (car (cdr main-proc))
