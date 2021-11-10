@@ -63,19 +63,19 @@
         pop         r14
 %endmacro
 
+%macro  jump_to_next_instruction 0
+        sub         r14, 8
+        jmp         [r14 + 8]
+%endmacro
 
 data_stack_size:        equ    10240
 return_stack_size:      equ    102400
 
         section   .text
 
-; r12 - data stack pointer, points to the next slot
-; r13 - return stack pointer, points to the next slot
+; r12 - data stack pointer, points to the next free slot
+; r13 - return stack pointer, points to the next free slot
 ; r14 - instruction pointer, points to the next instruction
-
-iloop:  
-        sub         r14, 8
-        jmp         [r14 + 8]
 
 ; noop handler, all logic is in the restorer
 sigsegv_handler:
@@ -91,31 +91,31 @@ sigsegv_restorer:
         bump_data_stack 1
         mov         [r12 - 8], r14 ; push instruction pointer to the data stack
         mov         r14, [sigsegv_handler_pointer]
-        jmp iloop
+        jump_to_next_instruction
 
 data_stack_overflow_handler:
         mov         r12, data_stack
         mov         r13, return_stack
         mov         r14, f_data_stack_overflow_handler
-        jmp iloop
+        jump_to_next_instruction
         
 data_stack_underflow_handler:
         mov         r12, data_stack
         mov         r13, return_stack
         mov         r14, f_data_stack_underflow_handler
-        jmp iloop
+        jump_to_next_instruction
 
 return_stack_overflow_handler:
         mov         r12, data_stack
         mov         r13, return_stack
         mov         r14, f_return_stack_overflow_handler
-        jmp iloop
+        jump_to_next_instruction
 
 return_stack_underflow_handler:
         mov         r12, data_stack
         mov         r13, return_stack
         mov         r14, f_return_stack_underflow_handler
-        jmp iloop
+        jump_to_next_instruction
 
 ; <number> <number> -> <number>
 i_mul:
@@ -125,7 +125,7 @@ i_mul:
         add         r12, 8
         imul        rax, rdi
         mov         [r12 - 8], rax
-        jmp iloop
+        jump_to_next_instruction
 
 ; <number> <number> -> <bool> <number>
 i_checked_mul:
@@ -137,11 +137,11 @@ i_checked_mul:
         jo i_checked_add_overflow
         mov QWORD   [r12 - 8], 1
         mov         [r12 - 16], rax
-        jmp iloop
+        jump_to_next_instruction
 i_checked_mul_overflow:
         mov QWORD   [r12 - 8], 0
         mov         [r12 - 16], rax
-        jmp iloop
+        jump_to_next_instruction
 
 ; <a> <b> -> <a / b>
 i_div:
@@ -152,7 +152,7 @@ i_div:
         cqo                                 ; mov sign-extend of rax to rdx
         idiv         rdi                    ; divide rdx:rax by rdi
         mov         [r12 - 8], rax          ; rax is the quotient
-        jmp iloop
+        jump_to_next_instruction
 
 ; <a> <b> -> <a % b>
 i_mod:
@@ -163,7 +163,7 @@ i_mod:
         cqo                                 ; mov sign-extend of rax to rdx
         idiv         rdi                    ; divide rdx:rax by rdi
         mov         [r12 - 8], rdx          ; rdx is the remainder
-        jmp iloop
+        jump_to_next_instruction
 
 ; <number> <number> -> <number>
 i_add:
@@ -173,7 +173,7 @@ i_add:
         add         r12, 8
         add         rax, rdi
         mov         [r12 - 8], rax
-        jmp iloop
+        jump_to_next_instruction
 
 ; <number> <number> -> <bool> <number>
 i_checked_add:
@@ -185,11 +185,11 @@ i_checked_add:
         jo i_checked_add_overflow
         mov QWORD   [r12 - 8], 1
         mov         [r12 - 16], rax
-        jmp iloop
+        jump_to_next_instruction
 i_checked_add_overflow:
         mov QWORD   [r12 - 8], 0
         mov         [r12 - 16], rax
-        jmp iloop
+        jump_to_next_instruction
 
 ; <a> <b> -> <a - b>
 i_sub:
@@ -199,7 +199,7 @@ i_sub:
         add         r12, 8
         sub         rax, rdi
         mov         [r12 - 8], rax
-        jmp iloop
+        jump_to_next_instruction
 
 ; <a> <b> -> <a ^ b>
 i_bit_xor_64:
@@ -209,7 +209,7 @@ i_bit_xor_64:
         add         r12, 8
         xor         rax, rdi
         mov         [r12 - 8], rax
-        jmp iloop
+        jump_to_next_instruction
 
 ; <a> <b> -> <a | b>
 i_bit_or_64:
@@ -219,7 +219,7 @@ i_bit_or_64:
         add         r12, 8
         or          rax, rdi
         mov         [r12 - 8], rax
-        jmp iloop
+        jump_to_next_instruction
 
 ; <a> <b> -> <a & b>
 i_bit_and_64:
@@ -229,7 +229,7 @@ i_bit_and_64:
         add         r12, 8
         and         rax, rdi
         mov         [r12 - 8], rax
-        jmp iloop
+        jump_to_next_instruction
 
 ; <a> <b> -> <a << b>
 i_bit_rshift_i64:
@@ -239,7 +239,7 @@ i_bit_rshift_i64:
         add         r12, 8
         sar         rax, cl
         mov         [r12 - 8], rax
-        jmp iloop
+        jump_to_next_instruction
 
 ; <a> <b> -> <a << b>
 i_bit_lshift_i64:
@@ -249,7 +249,7 @@ i_bit_lshift_i64:
         add         r12, 8
         sal         rax, cl
         mov         [r12 - 8], rax
-        jmp iloop
+        jump_to_next_instruction
 
 ; <true> -> <false>
 ; <false> -> <true>
@@ -260,10 +260,10 @@ i_not:
         cmp         rax, 0
         je          i_not__true_branch
         mov QWORD   [r12 - 8], 0
-        jmp iloop
+        jump_to_next_instruction
 i_not__true_branch:
         mov QWORD   [r12 - 8], 1
-        jmp iloop
+        jump_to_next_instruction
 
 ; <a> <b> -> <a && b>
 i_and:
@@ -276,10 +276,10 @@ i_and:
         cmp         rdi, 0
         je          i_and__false_branch
         mov QWORD   [r12 - 8], 1
-        jmp iloop
+        jump_to_next_instruction
 i_and__false_branch:
         mov QWORD   [r12 - 8], 0
-        jmp iloop
+        jump_to_next_instruction
 
 ; <a> <b> -> <a || b>
 i_or:
@@ -292,10 +292,10 @@ i_or:
         cmp         rdi, 0
         jne          i_or__true_branch
         mov QWORD   [r12 - 8], 0
-        jmp iloop
+        jump_to_next_instruction
 i_or__true_branch:
         mov QWORD   [r12 - 8], 1
-        jmp iloop
+        jump_to_next_instruction
 
 ; <a> <b> -> <a == b>
 i_equal:
@@ -306,10 +306,10 @@ i_equal:
         cmp         rax, rdi
         je          i_equal__true_branch
         mov QWORD   [r12 - 8], 0
-        jmp iloop
+        jump_to_next_instruction
 i_equal__true_branch:
         mov QWORD   [r12 - 8], 1
-        jmp iloop
+        jump_to_next_instruction
 
 ; <a> <b> -> <a < b>
 i_less:
@@ -320,10 +320,10 @@ i_less:
         cmp         rax, rdi
         jl          i_less__true_branch
         mov QWORD   [r12 - 8], 0
-        jmp iloop
+        jump_to_next_instruction
 i_less__true_branch:
         mov QWORD   [r12 - 8], 1
-        jmp iloop
+        jump_to_next_instruction
 
 ; <a> <b> -> <a <= b>
 i_less_or_equal:
@@ -334,10 +334,10 @@ i_less_or_equal:
         cmp         rax, rdi
         jle         i_less__true_branch
         mov QWORD   [r12 - 8], 0
-        jmp iloop
+        jump_to_next_instruction
 i_less_or_equal__true_branch:
         mov QWORD   [r12 - 8], 1
-        jmp iloop
+        jump_to_next_instruction
 
 ; <a> <b> -> <a > b>
 i_greater:
@@ -348,10 +348,10 @@ i_greater:
         cmp         rax, rdi
         jg          i_greater__true_branch
         mov QWORD   [r12 - 8], 0
-        jmp iloop
+        jump_to_next_instruction
 i_greater__true_branch:
         mov QWORD   [r12 - 8], 1
-        jmp iloop
+        jump_to_next_instruction
 
 ; <a> <b> -> <a >= b>
 i_greater_or_equal:
@@ -362,10 +362,10 @@ i_greater_or_equal:
         cmp         rax, rdi
         jge          i_greater__true_branch
         mov QWORD   [r12 - 8], 0
-        jmp iloop
+        jump_to_next_instruction
 i_greater_or_equal__true_branch:
         mov QWORD   [r12 - 8], 1
-        jmp iloop
+        jump_to_next_instruction
 
 ; <address> <value>
 i_write_mem_i64:
@@ -373,7 +373,7 @@ i_write_mem_i64:
         mov         rax,  [r12 + 8*1]        ; address
         mov         rdi,  [r12 + 8*0]        ; value
         mov         [rax], rdi
-        jmp iloop
+        jump_to_next_instruction
         
 ; <address> -> <value>
 i_read_mem_i64:
@@ -382,7 +382,7 @@ i_read_mem_i64:
         mov         rdi, [rax]
         mov         [r12], rdi
         add         r12, 8
-        jmp iloop
+        jump_to_next_instruction
 
 ; <address> <value>
 i_write_mem_i32:
@@ -390,7 +390,7 @@ i_write_mem_i32:
         mov         rax,  [r12 + 8*1]        ; address
         mov         rdi,  [r12 + 8*0]        ; value
         mov         [rax], edi
-        jmp iloop
+        jump_to_next_instruction
         
 ; <address> -> <value>
 i_read_mem_i32:
@@ -400,7 +400,7 @@ i_read_mem_i32:
         mov         edi, [rax]
         mov         [r12], rdi
         add         r12, 8
-        jmp iloop
+        jump_to_next_instruction
 
 ; <address> <value>
 i_write_mem_byte:
@@ -408,7 +408,7 @@ i_write_mem_byte:
         mov         rax,  [r12 + 8*1]        ; address
         mov         rdi,  [r12 + 8*0]        ; value
         mov         [rax], dil
-        jmp iloop
+        jump_to_next_instruction
 
 ; <address> -> <value>
 i_read_mem_byte:
@@ -418,17 +418,17 @@ i_read_mem_byte:
         mov         dil, [rax]
         mov         [r12], rdi
         add         r12, 8
-        jmp iloop
+        jump_to_next_instruction
 
 i_jmp:
         mov         r14, [r14]             ; next word is the instruction pointer
-        jmp iloop
+        jump_to_next_instruction
 
 i_indirect_jmp:
         drop_data_stack 1
         mov         rax, [r12]              ; top of the data stack is the instruciton pointer
         mov         r14, rax                ; jump to callee
-        jmp iloop
+        jump_to_next_instruction
 
 ;<bool>
 i_jmp_if:
@@ -439,7 +439,7 @@ i_jmp_if:
         je          i_jmp_if__false_branch
         mov         r14, [r14 + 8]          ; next word is the instruction pointer
 i_jmp_if__false_branch:
-        jmp iloop
+        jump_to_next_instruction
 
 i_call:
         bump_return_stack 1
@@ -447,7 +447,7 @@ i_call:
         sub         r14, 8                  ; move instruction pointer to the next instruction
         mov         [r13 - 8], r14          ; save return pointer
         mov         r14, rax                ; jump to callee
-        jmp iloop
+        jump_to_next_instruction
 
 i_indirect_call:
         drop_data_stack 1
@@ -455,7 +455,7 @@ i_indirect_call:
         bump_return_stack 1
         mov         [r13 - 8], r14          ; save return pointer
         mov         r14, rax                ; jump to callee
-        jmp iloop
+        jump_to_next_instruction
 
 i_native_indirect_call:
         drop_data_stack 1
@@ -463,7 +463,7 @@ i_native_indirect_call:
         call        rax
         add         r12, 8
         mov         [r12 - 8*1], rax        ; write return value to data stack
-        jmp iloop
+        jump_to_next_instruction
 
 native_indirect_call_test:
         mov         rbx, -9223372036854775808
@@ -483,7 +483,7 @@ i_late_bind_and_call_word:
         add         r11, 16
         mov         [r12 - 8*2], r11        ; write ip to data stack
         mov         r14, f_late_bind_and_call_word ; jump to bind_and_call function
-        jmp iloop
+        jump_to_next_instruction
 
 ; <a> <b> <true> -> <a>
 ; <a> <b> <false> -> <b>
@@ -496,10 +496,10 @@ i_value_if:
         cmp         r9, 0
         je          i_value_if__false_branch
         mov         [r12 - 8*1], r10
-        jmp iloop
+        jump_to_next_instruction
 i_value_if__false_branch:
         mov         [r12 - 8*1], r8
-        jmp iloop
+        jump_to_next_instruction
 
 ; peeks n-th value from return stack
 ; <number>
@@ -507,7 +507,7 @@ i_peek_ret_stack_first:
         bump_data_stack 1
         mov         rax, [r13 - 8]          ; read value from return stack
         mov         [r12 - 8*1], rax        ; write value to data stack
-        jmp iloop
+        jump_to_next_instruction
 
 ; peeks n-th value from return stack
 ; <number>
@@ -521,26 +521,26 @@ i_peek_ret_stack:
         add         r13, rax                ; restore stack pointer
         mov         [r12], rdi              ; write value to data stack
         add         r12, 8                  ; bump data stack
-        jmp iloop
+        jump_to_next_instruction
 
 i_push_to_ret_stack:
         drop_data_stack 1
         bump_return_stack 1
         mov         rax, [r12]              ; top of the data stack
         mov         [r13 - 8], rax          ; save value
-        jmp iloop
+        jump_to_next_instruction
         
 i_pop_from_ret_stack:
         drop_return_stack 1
         bump_data_stack 1
         mov         rax, [r13]              ; restore value
         mov         [r12 - 8], rax          ; write to stack
-        jmp iloop
+        jump_to_next_instruction
 
 i_return:
         drop_return_stack 1
         mov         r14, [r13]              ; restore return pointer
-        jmp iloop
+        jump_to_next_instruction
 
 ; linux syscall args [ %rdi, %rsi, %rdx, %r10, %r8, %r9 ]        
 ; <syscall num> <arg 0> <arg 1> ... <arg 5>
@@ -556,12 +556,12 @@ i_syscall:
         syscall
         mov         [r12], rax
         bump_data_stack 1
-        jmp iloop
+        jump_to_next_instruction
 
 i_ret_stack_top:
         bump_data_stack 1
         mov         [r12 - 8*1], r13
-        jmp iloop
+        jump_to_next_instruction
 
 i_stack_depth:
         mov         rax, r12
@@ -572,7 +572,7 @@ i_stack_depth:
 
         bump_data_stack 1
         mov         [r12 - 8*1], rax    ; rax is the quotient
-        jmp iloop
+        jump_to_next_instruction
 
 i_ret_stack_depth:
         mov         rax, r13
@@ -583,7 +583,7 @@ i_ret_stack_depth:
 
         bump_data_stack 1
         mov         [r12 - 8*1], rax    ; rax is the quotient
-        jmp iloop
+        jump_to_next_instruction
 
 i_dup:
         drop_data_stack 1
@@ -591,7 +591,7 @@ i_dup:
         bump_data_stack 2
         mov         [r12 - 8*1], rax
         mov         [r12 - 8*2], rax
-        jmp iloop
+        jump_to_next_instruction
 
 i_over:
         drop_data_stack 2
@@ -601,7 +601,7 @@ i_over:
         mov         [r12 - 8*1], rdi
         mov         [r12 - 8*2], rax
         mov         [r12 - 8*3], rdi
-        jmp iloop
+        jump_to_next_instruction
 
 i_2dup:
         drop_data_stack 2
@@ -612,7 +612,7 @@ i_2dup:
         mov         [r12 - 8*2], rdi
         mov         [r12 - 8*3], rax
         mov         [r12 - 8*4], rdi
-        jmp iloop
+        jump_to_next_instruction
 
 ; <a> <b> <c> -> <c> <a> <b>
 i_rot:
@@ -624,7 +624,7 @@ i_rot:
         mov         [r12 - 8*1], r10
         mov         [r12 - 8*2], r8
         mov         [r12 - 8*3], r9
-        jmp iloop
+        jump_to_next_instruction
 
 ; <a> <b> <c> -> <b> <c> <a>
 i_rev_rot:
@@ -636,7 +636,7 @@ i_rev_rot:
         mov         [r12 - 8*1], r9
         mov         [r12 - 8*2], r10
         mov         [r12 - 8*3], r8
-        jmp iloop
+        jump_to_next_instruction
 
 ; <n> -> <a>
 i_dup_n:
@@ -649,7 +649,7 @@ i_dup_n:
         add         r12, rax
         add         r12, 8
         mov         [r12 - 8*1], rdi
-        jmp iloop
+        jump_to_next_instruction
 
 i_swap:
         drop_data_stack 2
@@ -658,29 +658,29 @@ i_swap:
         bump_data_stack 2
         mov         [r12 - 8*1], rdi
         mov         [r12 - 8*2], rax
-        jmp iloop
+        jump_to_next_instruction
                 
 i_drop:
         drop_data_stack 1
-        jmp iloop
+        jump_to_next_instruction
                 
 i_push_to_stack:
         bump_data_stack 1
         mov         rax, [r14]              ; next word is value
         mov         [r12 - 8], rax          ; write to stack
         sub         r14, 8                  ; move instruction pointer to the next instruction
-        jmp iloop
+        jump_to_next_instruction
 
 i_argc:
         bump_data_stack 1
         mov         rax, [rsp]
         mov         [r12 - 8], rax
-        jmp iloop
+        jump_to_next_instruction
 i_argv:
         bump_data_stack 1
         mov         rax, [rsp + 8]
         mov         [r12 - 8], rax
-        jmp iloop
+        jump_to_next_instruction
 
 _start: 
         mov         r15, rdi
@@ -697,7 +697,7 @@ _start:
         mov         r14, f_start
         mov         r12, data_stack
         mov         r13, return_stack
-        jmp         iloop        
+        jump_to_next_instruction
 
         section   .data
 
