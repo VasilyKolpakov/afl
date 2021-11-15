@@ -2392,6 +2392,7 @@ lisp_register_builtin_function "nth" 2 {
         lisp_value_stack_push obj_pair_car
     } {
         exit 1
+        stacktrace_print_return_stack_except_n_slots 1
         print_newline
         .
         print_string ", index is: "

@@ -18,12 +18,12 @@
       #f)))
 
 (define assert
-  (lambda (v p)
+  (lambda (v p m)
     (if (p v)
       v
       (begin
         (print-string "assertion failed: ")
-        (print p)
+        (print m)
         (print-string " on ")
         (println v)
         (print-stack-trace)
@@ -38,7 +38,7 @@
         (alist-lookup-rec (cdr l) k)))))
 
 (define alist-lookup
-  (lambda (l k) (alist-lookup-rec (assert l list?) k)))
+  (lambda (l k) (alist-lookup-rec (assert l list? "alist-lookup") k)))
 
 (define fixed-point-with-limit
   (lambda (f l i)

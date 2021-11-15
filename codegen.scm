@@ -56,7 +56,7 @@
             (write-mem-byte (+ 1 ptr) #x48) ; mov rax,QWORD PTR [rdi]
             (write-mem-byte (+ 2 ptr) #x8b)
             (write-mem-byte (+ 3 ptr) #x07)
-            (write-mem-byte (+ 4 ptr) #x50) ; push rax 
+            (write-mem-byte (+ 4 ptr) #x50) ; push rax
             ))
         "deref"))
 
@@ -75,7 +75,7 @@
 (define (generate-push-var-ref ptr index)
   (assert-stmt "index >= 0" (>= index 0))
   (assert-stmt "index < 15" (< index 15))
-  (write-mem-byte ptr       #x48) ; lea rax,[rbp-index*8] 
+  (write-mem-byte ptr       #x48) ; lea rax,[rbp-index*8]
   (write-mem-byte (+ 1 ptr) #x8d)
   (write-mem-byte (+ 2 ptr) #x45)
   (write-mem-byte (+ 3 ptr) (- 0 (* (+ 1 index) 8)))
@@ -130,7 +130,7 @@
 (define (jmp-instruction target-label)
   (list 5
         (lambda (ptr label-locs)
-          (generate-jmp ptr (assert (alist-lookup label-locs target-label) not-empty?)))
+          (generate-jmp ptr (assert (alist-lookup label-locs target-label) not-empty? "jmp target")))
         (list "jmp" target-label)))
 
 (define (generate-call ptr target)
@@ -166,7 +166,7 @@
 (define (call-instruction target-label)
   (list 5
         (lambda (ptr label-locs)
-          (generate-call ptr (assert (alist-lookup label-locs target-label) not-empty?)))
+          (generate-call ptr (assert (alist-lookup label-locs target-label) not-empty? "call target")))
         (list "call" target-label)))
 
 (define (generate-cond-jmp code ptr target)
@@ -186,7 +186,7 @@
 (define (cond-jmp-instruction cond-code target-label)
   (list 11
         (lambda (ptr label-locs)
-          (generate-cond-jmp cond-code ptr (assert (alist-lookup label-locs target-label) not-empty?)))
+          (generate-cond-jmp cond-code ptr (assert (alist-lookup label-locs target-label) not-empty? "cond-jmp target")))
         (list "cond-jmp" cond-code target-label)))
 
 (define (cond-jmp-instruction-gen cond-code)
@@ -214,14 +214,14 @@
 (define (compile-list expr rest local-vars)
   (cond
     ((equal? 'ref (car expr))
-     (let ((var (car (cdr expr))) 
+     (let ((var (car (cdr expr)))
            (var-index (index-of local-vars var)))
        (if (empty? var-index) (panic "ref: bad variable:" var) '())
        (list (push-var-ref-instruction var-index))))
     (else
-      (let ((arg-count-and-inst (assert (alist-lookup symbol-to-instruction (car expr)) not-empty?)))
+      (let ((arg-count-and-inst (assert (alist-lookup symbol-to-instruction (car expr)) not-empty? "compile-list")))
         (assert-stmt "arg count matches" (= (length (cdr expr)) (car arg-count-and-inst)))
-        (foldr 
+        (foldr
           (lambda (expr rest) (compile-expr-rec expr rest local-vars))
           (cons (car (cdr arg-count-and-inst)) rest)
           (cdr expr))))))
@@ -237,7 +237,25 @@
 (define (compile-expr expr local-vars)
   (compile-expr-rec expr '() local-vars))
 
-(define (compile-statement stmt local-vars)
+(define (compile-boolean-expression cond-expr local-vars)
+  (let ((arg-count-and-cond-inst
+          (assert
+            (alist-lookup symbol-to-cond-goto-instruction (car cond-expr))
+            not-empty?
+            (list "bool expr" cond-expr)))
+        (arg-count (car arg-count-and-cond-inst))
+        (cond-inst-gen (car (cdr arg-count-and-cond-inst)))
+        (label (new-label)))
+    (assert-stmt "cond expr: arg count matches" (= (length (cdr cond-expr)) arg-count))
+    (list
+      #t
+      label
+      (foldr
+        (lambda (expr rest) (compile-expr-rec expr rest local-vars))
+        (list (cond-inst-gen label))
+        (cdr cond-expr)))))
+
+(define (compile-statement stmt local-vars procedure-list)
   (let ((stmt-type (car stmt))
         (stmt-args (cdr stmt)))
     (cond ((equal? stmt-type 'set-64)
@@ -255,7 +273,7 @@
                (list (set-var-instruction var-index))
                local-vars)))
           ((equal? stmt-type 'call)
-           (let ((proc (car (cdr stmt)))
+           (let ((proc (assert (alist-lookup procedure-list (car (cdr stmt))) not-empty? "call"))
                  (proc-args (cdr (cdr stmt)))
                  (proc-label (car proc))
                  (proc-arg-count (car (cdr proc))))
@@ -272,30 +290,43 @@
              (append
                (flatmap (lambda (expr) (compile-expr expr local-vars)) stmt-args)
                (list syscall-instruction))))
-          ((equal? stmt-type 'label)
-           (list (car (cdr stmt))))
-          ((equal? stmt-type 'goto)
-           (let ((label (car (cdr stmt))))
-             (list (jmp-instruction label))))
-          ((equal? stmt-type 'goto-if)
-           (let ((cond-expr (car (cdr stmt)))
-                 (label (car (cdr (cdr stmt)))))
-             (let ((arg-count-and-cond-inst
-                     (assert
-                       (alist-lookup symbol-to-cond-goto-instruction (car cond-expr))
-                       not-empty?))
-                   (arg-count (car arg-count-and-cond-inst))
-                   (cond-inst-gen (car (cdr arg-count-and-cond-inst))))
-               (assert-stmt "cond expr: arg count matches" (= (length (cdr cond-expr)) arg-count))
-               (foldr 
+          ((equal? stmt-type 'if)
+           (let ((cond-expr (car stmt-args))
+                 (then-branch (car (cdr stmt-args)))
+                 (else-branch (car (cdr (cdr stmt-args))))
+                 (then-label (new-label))
+                 (end-label (new-label))
+                 (arg-count-and-cond-inst
+                   (assert
+                     (alist-lookup symbol-to-cond-goto-instruction (car cond-expr))
+                     not-empty?
+                     (list "bool expr" cond-expr)))
+                 (arg-count (car arg-count-and-cond-inst))
+                 (cond-inst-gen (car (cdr arg-count-and-cond-inst)))
+                 (compile-substatement (lambda (s) (compile-statement s local-vars procedure-list)))
+                 (compiled-bool-expression (compile-boolean-expression cond-expr local-vars))
+                 (is-then-label (first compiled-bool-expression))
+                 (label (second compiled-bool-expression))
+                 (cond-instructions (nth 2 compiled-bool-expression)))
+             (assert-stmt "cond expr: arg count matches" (= (length (cdr cond-expr)) arg-count))
+             (append
+               (foldr
                  (lambda (expr rest) (compile-expr-rec expr rest local-vars))
-                 (list (cond-inst-gen label))
-                 (cdr cond-expr))))) 
+                 (list (cond-inst-gen then-label))
+                 (cdr cond-expr))
+               (flatmap compile-substatement else-branch)
+               (list (jmp-instruction end-label)
+                     then-label)
+               (flatmap compile-substatement then-branch)
+               (list end-label)
+               )))
           (else (panic "bad statement" stmt)))))
 
 
-
-(define (compile-procedure args local-vars-with-inits statements)
+(define (compile-procedure args
+                           local-vars-with-inits
+                           statements
+                           procedure-list)
   (let ((local-var-inits (map (lambda (v) (car (cdr v))) local-vars-with-inits))
         (local-vars (append args (map car local-vars-with-inits))))
     (append
@@ -304,7 +335,7 @@
         (add-rsp-instruction (- 0 (* 8 (length args)))))
       (flatmap (lambda (var-init) (compile-expr var-init '()))
                local-var-inits)
-      (flatmap (lambda (stmt) (compile-statement stmt local-vars))
+      (flatmap (lambda (stmt) (compile-statement stmt local-vars procedure-list))
                statements)
       (list
         (add-rsp-instruction (* 8 (length local-vars)))
@@ -312,25 +343,15 @@
 
 (define next-label-id (cell 0))
 
-(define (generate-label)
+(define (new-label)
   (let ((id (cell-get next-label-id)))
     (cell-set next-label-id (+ id 1))
     id))
 
 (define (label? v) (number? v))
 
-(define (make-procedure args locals stmts)
-  (let ((new-label (generate-label))
-        (instructions (compile-procedure args locals stmts)))
-    (list
-      (list new-label (length args))
-      (cons new-label instructions))))
-
 (define buffer (syscall-mmap-anon 1000))
-(write-mem-i64 buffer 41)
-(define the-label (generate-label))
-(define label-if-equal (generate-label))
-(define label-end-if (generate-label))
+
 (define instructions_
   (list
     set-frame-pointer-instruction
@@ -347,31 +368,58 @@
     return-instruction
     ))
 
-(define set-64-proc (make-procedure
-    '(ptr val)
-    '()
-    '(
-      (goto-if (> 9 9) ,the-label)
-      (set-64 (ref val) (+ val 100))
-      (set-64 ptr val)
-      (label ,the-label)
-      )))
+(define test-string-buffer (syscall-mmap-anon 1000))
+(define test-string "test\n")
+(define test-string-length (string-length test-string))
+(string-to-native-buffer test-string test-string-buffer)
 
-(define main-proc (make-procedure
-    '()
-    '()
-    '(
-      (set-64 ,buffer (+ 1 (deref ,buffer)))
-      ;(set-64 ,buffer 1 )
-      ;(syscall ,buffer 39 1 2 3 4 5 6)
-      ;(call ,(car set-64-proc) ,(+ 8 buffer) 44)
-      ;(call ,(car set-64-proc) ,buffer 42)
-      )))
 
-(define instructions
-  (append
-    (car (cdr main-proc))
-    (car (cdr set-64-proc))))
+(define upl-code 
+  '((proc set-64-proc (ptr val add100) ()
+          (
+           (if (= add100 0) 
+             (
+              (set-64 (ref val) (+ val 200))
+              )
+             (
+              (set-64 (ref val) (+ val 100))
+              ))
+           (set-64 ptr val)
+           ))
+    (proc main-proc () ()
+          (
+           (syscall ,buffer 1 1 ,test-string-buffer ,test-string-length 1 2 3)
+           ;(set-64 ,buffer (+ 1 (deref ,buffer)))
+           ;(set-64 ,buffer 1 )
+           ;(syscall ,buffer 39 1 2 3 4 5 6)
+           (call set-64-proc ,(+ 8 buffer) 44 0)
+           (call set-64-proc ,buffer 42 1)
+           )
+          )
+    ))
+
+(define (compile-upl procedures)
+  (let ((procs-with-labels
+          (map (lambda (p) (list p (new-label))) procedures))
+        (procedure-list
+          (map (lambda (p-with-l)
+                 (let ((name (second (first p-with-l)))
+                       (label (second p-with-l))
+                       (arg-count (length (nth 2 (first p-with-l)))))
+                   (list name label arg-count)))
+               procs-with-labels)))
+    (list
+      procedure-list
+      (flatmap
+        (lambda (p-with-l)
+          (let ((proc (first p-with-l))
+                (args (nth 2 proc))
+                (local-vars-with-inits (nth 3 proc))
+                (statements (nth 4 proc))
+                (label (second p-with-l)))
+            (cons label (compile-procedure args local-vars-with-inits statements procedure-list))))
+        procs-with-labels))))
+
 
 (define (instruction? i)
   (and
@@ -380,44 +428,63 @@
     (number? (car i))
     (callable? (car (cdr i)))))
 
+(define (validate-stack-machine-code code)
+  (foreach (lambda (i)
+             (if (or (label? i) (instruction? i))
+               '()
+               (panic "bad instruction:" i)))
+           code))
+
 (define (instruction-size i)
   (cond
     ((label? i) 0)
     ((instruction? i) (car i))
     (else (panic "bad instruction:" i))))
 
-(define fpointer (syscall-mmap-anon-exec 1000))
-
-(println fpointer)
-
-(let ((inst-locations (map
-                        (lambda (l) (+ l fpointer))
-                        (prefix-sum (map instruction-size instructions))))
-      (with-locations (zip instructions inst-locations))
-      (insts-and-locations (filter (lambda (x) (not (label? (car x)))) with-locations))
-      (labels-and-locations (filter (lambda (x) (label? (car x))) with-locations)))
-  (foreach (lambda (i-and-loc)
-             (let ((inst (car i-and-loc))
-                   (loc (cdr i-and-loc))
-                   (generator (car (cdr inst))))
-               (if (= (arity generator) 2)
-                   (generator loc labels-and-locations)
-                   (generator loc))))
-           insts-and-locations))
-
-(println "========== instructions ============")
-(foreach
-  println
-  (map
-    (lambda (i)
-      (if (label? i)
+(define (print-instruction instructions)
+  (foreach
+    println
+    (map
+      (lambda (i)
+        (if (label? i)
           (list 'label i)
           (drop i 2)))
-    instructions))
+      instructions)))
+
+(define (compile-upl-to-native fpointer upl-code)
+  (let ((proc-list-and-insts (compile-upl upl-code))
+        (proc-list (first proc-list-and-insts))
+        (instructions (second proc-list-and-insts))
+        (_ (validate-stack-machine-code instructions))
+        (inst-locations (map
+                          (lambda (l) (+ l fpointer))
+                          (prefix-sum (map instruction-size instructions))))
+        (with-locations (zip instructions inst-locations))
+        (insts-and-locations (filter (lambda (x) (not (label? (car x)))) with-locations))
+        (labels-and-locations (filter (lambda (x) (label? (car x))) with-locations)))
+    (foreach (lambda (i-and-loc)
+               (let ((inst (car i-and-loc))
+                     (loc (cdr i-and-loc))
+                     (generator (car (cdr inst))))
+                 (if (= (arity generator) 2)
+                   (generator loc labels-and-locations)
+                   (generator loc))))
+             insts-and-locations)
+    (map (lambda (proc) (cons
+                          (first proc)
+                          (alist-lookup labels-and-locations (second proc))))
+         proc-list)))
+
+(define fpointer (syscall-mmap-anon-exec 1000))
+
+(define proc-list (compile-upl-to-native fpointer upl-code))
+(println fpointer)
+
 
 (enable-REPL-print)
-(native-call fpointer)
-"getpid"
-(syscall 39 1 2 3 4 5 6)
+(native-call (alist-lookup proc-list 'main-proc))
+;"getpid"
+;(syscall 39 1 2 3 4 5 6)
+"==========================="
 (read-mem-i64 buffer)
 (read-mem-i64 (+ 8 buffer))
