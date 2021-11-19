@@ -238,22 +238,33 @@
   (compile-expr-rec expr '() local-vars))
 
 (define (compile-boolean-expression cond-expr local-vars)
-  (let ((arg-count-and-cond-inst
-          (assert
-            (alist-lookup symbol-to-cond-goto-instruction (car cond-expr))
-            not-empty?
-            (list "bool expr" cond-expr)))
-        (arg-count (car arg-count-and-cond-inst))
-        (cond-inst-gen (car (cdr arg-count-and-cond-inst)))
-        (label (new-label)))
-    (assert-stmt "cond expr: arg count matches" (= (length (cdr cond-expr)) arg-count))
-    (list
-      #t
-      label
-      (foldr
-        (lambda (expr rest) (compile-expr-rec expr rest local-vars))
-        (list (cond-inst-gen label))
-        (cdr cond-expr)))))
+  (let ((cond-type (car cond-expr)))
+    (cond ((equal? cond-type 'not)
+           (let ((compiled-child (compile-boolean-expression (second cond-expr) local-vars))
+                 (then-branch? (first compiled-child))
+                 (label (second compiled-child))
+                 (instructions (nth 2 compiled-child)))
+             (list
+               (not then-branch?)
+               label
+               instructions)))
+          (else 
+            (let ((arg-count-and-cond-inst
+                    (assert
+                      (alist-lookup symbol-to-cond-goto-instruction (car cond-expr))
+                      not-empty?
+                      (list "bool expr" cond-expr)))
+                  (arg-count (car arg-count-and-cond-inst))
+                  (cond-inst-gen (car (cdr arg-count-and-cond-inst)))
+                  (label (new-label)))
+              (assert-stmt "cond expr: arg count matches" (= (length (cdr cond-expr)) arg-count))
+              (list
+                #t
+                label
+                (foldr
+                  (lambda (expr rest) (compile-expr-rec expr rest local-vars))
+                  (list (cond-inst-gen label))
+                  (cdr cond-expr))))))))
 
 (define (compile-statement stmt local-vars procedure-list)
   (let ((stmt-type (car stmt))
@@ -292,32 +303,20 @@
                (list syscall-instruction))))
           ((equal? stmt-type 'if)
            (let ((cond-expr (car stmt-args))
-                 (then-branch (car (cdr stmt-args)))
-                 (else-branch (car (cdr (cdr stmt-args))))
-                 (then-label (new-label))
-                 (end-label (new-label))
-                 (arg-count-and-cond-inst
-                   (assert
-                     (alist-lookup symbol-to-cond-goto-instruction (car cond-expr))
-                     not-empty?
-                     (list "bool expr" cond-expr)))
-                 (arg-count (car arg-count-and-cond-inst))
-                 (cond-inst-gen (car (cdr arg-count-and-cond-inst)))
+                 (then-branch (second stmt-args))
+                 (else-branch (nth 2 stmt-args))
                  (compile-substatement (lambda (s) (compile-statement s local-vars procedure-list)))
                  (compiled-bool-expression (compile-boolean-expression cond-expr local-vars))
                  (is-then-label (first compiled-bool-expression))
                  (label (second compiled-bool-expression))
+                 (end-label (new-label))
                  (cond-instructions (nth 2 compiled-bool-expression)))
-             (assert-stmt "cond expr: arg count matches" (= (length (cdr cond-expr)) arg-count))
              (append
-               (foldr
-                 (lambda (expr rest) (compile-expr-rec expr rest local-vars))
-                 (list (cond-inst-gen then-label))
-                 (cdr cond-expr))
-               (flatmap compile-substatement else-branch)
+               cond-instructions
+               (flatmap compile-substatement (if is-then-label else-branch then-branch))
                (list (jmp-instruction end-label)
-                     then-label)
-               (flatmap compile-substatement then-branch)
+                     label)
+               (flatmap compile-substatement (if is-then-label then-branch else-branch))
                (list end-label)
                )))
           (else (panic "bad statement" stmt)))))
@@ -352,22 +351,6 @@
 
 (define buffer (syscall-mmap-anon 1000))
 
-(define instructions_
-  (list
-    set-frame-pointer-instruction
-    (push-imm-instruction 42)
-    (push-var-ref-instruction 0)
-    (push-imm-instruction 4422)
-    set-64-instruction
-    (push-imm-instruction buffer)
-    (push-var-instruction 0)
-    set-64-instruction
-    (add-rsp-instruction (* 1 8))
-    ;(call-instruction the-label)
-
-    return-instruction
-    ))
-
 (define test-string-buffer (syscall-mmap-anon 1000))
 (define test-string "test\n")
 (define test-string-length (string-length test-string))
@@ -377,7 +360,8 @@
 (define upl-code 
   '((proc set-64-proc (ptr val add100) ()
           (
-           (if (= add100 0) 
+           (if (not (= add100 0))
+           ;(if (= add100 0)
              (
               (set-64 (ref val) (+ val 200))
               )
@@ -392,8 +376,8 @@
            ;(set-64 ,buffer (+ 1 (deref ,buffer)))
            ;(set-64 ,buffer 1 )
            ;(syscall ,buffer 39 1 2 3 4 5 6)
-           (call set-64-proc ,(+ 8 buffer) 44 0)
-           (call set-64-proc ,buffer 42 1)
+           (call set-64-proc ,buffer 1 1)
+           (call set-64-proc ,(+ 8 buffer) 2 0)
            )
           )
     ))
