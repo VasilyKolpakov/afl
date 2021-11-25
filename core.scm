@@ -69,7 +69,9 @@
 (define apply-all-macro
   (lambda (expr)
     (if (non-empty-list? expr)
-      (let ((newexpr (map apply-all-macro expr)))
+      (let ((newexpr (if (equal? 'quote (car expr)) ; do not macro-exprand quote contents
+                       expr
+                       (map apply-all-macro expr))))
         (apply-single-macro newexpr))
       expr)))
 
