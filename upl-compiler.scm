@@ -205,10 +205,28 @@
     (list 'deref 1 deref-instruction)
     ))
 
-(define symbol-to-cond-goto-instruction
+(define symbol-to-cmp-instructions
   (list
-    (list '= 2 (cond-jmp-instruction-gen #x84))
-    (list '> 2 (cond-jmp-instruction-gen #x87))
+    (list '=
+          (cond-jmp-instruction-gen #x84)
+          (cond-jmp-instruction-gen #x85))
+    (list '!=
+          (cond-jmp-instruction-gen #x85)
+          (cond-jmp-instruction-gen #x84))
+
+    (list '<= 
+          (cond-jmp-instruction-gen #x8e)
+          (cond-jmp-instruction-gen #x8f))
+    (list '>
+          (cond-jmp-instruction-gen #x8f)
+          (cond-jmp-instruction-gen #x8e))
+
+    (list '>= 
+          (cond-jmp-instruction-gen #x8d)
+          (cond-jmp-instruction-gen #x8c))
+    (list '<
+          (cond-jmp-instruction-gen #x8c)
+          (cond-jmp-instruction-gen #x8d))
     ))
 
 (define (compile-list expr rest local-vars)
@@ -237,34 +255,41 @@
 (define (compile-expr expr local-vars)
   (compile-expr-rec expr '() local-vars))
 
-(define (compile-boolean-expression cond-expr local-vars)
-  (let ((cond-type (car cond-expr)))
+(define (compile-boolean-expression cond-expr local-vars label true-label?)
+  (let ((cond-type (car cond-expr))
+        (cond-args (cdr cond-expr)))
+    (println cond-expr)
     (cond ((equal? cond-type 'not)
-           (let ((compiled-child (compile-boolean-expression (second cond-expr) local-vars))
-                 (then-branch? (first compiled-child))
-                 (label (second compiled-child))
-                 (instructions (nth 2 compiled-child)))
-             (list
-               (not then-branch?)
-               label
-               instructions)))
+           (compile-boolean-expression (second cond-expr) local-vars label (not true-label?)))
+          ((equal? cond-type 'and)
+           (let ((first-child (first cond-args))
+                 (second-child (second cond-args)))
+             (assert-stmt "and expression has 2 children" (= (length cond-args) 2))
+             (if true-label?
+               (let ((false-label (new-label)))
+                 (append
+                   (compile-boolean-expression first-child local-vars false-label #f)
+                   (compile-boolean-expression second-child local-vars label #t)
+                   (list false-label)))
+               (append
+                   (compile-boolean-expression first-child local-vars label #f)
+                   (compile-boolean-expression second-child local-vars label #f)))))
+
           (else 
-            (let ((arg-count-and-cond-inst
+            (let ((true-and-false-instrs
                     (assert
-                      (alist-lookup symbol-to-cond-goto-instruction (car cond-expr))
+                      (alist-lookup symbol-to-cmp-instructions (car cond-expr))
                       not-empty?
                       (list "bool expr" cond-expr)))
-                  (arg-count (car arg-count-and-cond-inst))
-                  (cond-inst-gen (car (cdr arg-count-and-cond-inst)))
-                  (label (new-label)))
-              (assert-stmt "cond expr: arg count matches" (= (length (cdr cond-expr)) arg-count))
-              (list
-                #t
-                label
-                (foldr
-                  (lambda (expr rest) (compile-expr-rec expr rest local-vars))
-                  (list (cond-inst-gen label))
-                  (cdr cond-expr))))))))
+                  (cond-inst-gen
+                    (if true-label?
+                      (first true-and-false-instrs)
+                      (second true-and-false-instrs))))
+              (assert-stmt "cond expr: cmp functions should have 2 args" (= (length cond-args) 2))
+              (foldr
+                (lambda (expr rest) (compile-expr-rec expr rest local-vars))
+                (list (cond-inst-gen label))
+                cond-args))))))
 
 (define (compile-statement stmt local-vars procedure-list)
   (let ((stmt-type (car stmt))
@@ -306,17 +331,17 @@
                  (then-branch (second stmt-args))
                  (else-branch (nth 2 stmt-args))
                  (compile-substatement (lambda (s) (compile-statement s local-vars procedure-list)))
-                 (compiled-bool-expression (compile-boolean-expression cond-expr local-vars))
-                 (is-then-label (first compiled-bool-expression))
-                 (label (second compiled-bool-expression))
+                 (else-label (new-label))
                  (end-label (new-label))
-                 (cond-instructions (nth 2 compiled-bool-expression)))
+                 (_ (println (list "compile-statement stmt" stmt)))
+                 (_ (println (list "compile-statement cond expr" cond-expr)))
+                 (cond-instructions (compile-boolean-expression cond-expr local-vars else-label #f)))
              (append
                cond-instructions
-               (flatmap compile-substatement (if is-then-label else-branch then-branch))
+               (flatmap compile-substatement then-branch)
                (list (jmp-instruction end-label)
-                     label)
-               (flatmap compile-substatement (if is-then-label then-branch else-branch))
+                     else-label)
+               (flatmap compile-substatement else-branch)
                (list end-label)
                )))
           (else (panic "bad statement" stmt)))))
@@ -356,31 +381,6 @@
 (define test-string-length (string-length test-string))
 (string-to-native-buffer test-string test-string-buffer)
 
-
-(define upl-code 
-  '((proc set-64-proc (ptr val add100) ()
-          (
-           (if (not (= add100 0))
-           ;(if (= add100 0)
-             (
-              (set-64 (ref val) (+ val 200))
-              )
-             (
-              (set-64 (ref val) (+ val 100))
-              ))
-           (set-64 ptr val)
-           ))
-    (proc main-proc () ()
-          (
-           (syscall ,buffer 1 1 ,test-string-buffer ,test-string-length 1 2 3)
-           ;(set-64 ,buffer (+ 1 (deref ,buffer)))
-           ;(set-64 ,buffer 1 )
-           ;(syscall ,buffer 39 1 2 3 4 5 6)
-           (call set-64-proc ,buffer 1 1)
-           (call set-64-proc ,(+ 8 buffer) 2 0)
-           )
-          )
-    ))
 
 (define (compile-upl procedures)
   (let ((procs-with-labels
@@ -435,6 +435,33 @@
           (drop i 2)))
       instructions)))
 
+(define upl-code 
+  '((proc set-64-proc (ptr val add100) ()
+          (
+           ;(if (not (= add100 0))
+           ; MACRO!!!!!
+           (if (and (= add100 200) (= 0 0))
+             (
+              (set-64 (ref val) (+ val 200))
+              )
+             (
+              (set-64 (ref val) (+ val 100))
+              ))
+           (set-64 ptr val)
+           ))
+    (proc main-proc () ()
+          (
+           (syscall ,buffer 1 1 ,test-string-buffer ,test-string-length 1 2 3)
+           ;(set-64 ,buffer (+ 1 (deref ,buffer)))
+           ;(set-64 ,buffer 1 )
+           ;(syscall ,buffer 39 1 2 3 4 5 6)
+           (call set-64-proc ,buffer 1 200)
+           (call set-64-proc ,(+ 8 buffer) 2 0)
+           )
+          )
+    ))
+
+(println upl-code)
 (define (compile-upl-to-native fpointer upl-code)
   (let ((proc-list-and-insts (compile-upl upl-code))
         (proc-list (first proc-list-and-insts))
