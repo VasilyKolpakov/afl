@@ -2485,6 +2485,13 @@ lisp_register_builtin_function "callable?" 1 {
     lisp_value_stack_pop
 } ;
 lisp_register_builtin_function "list?" 1 list_q_instruction ;
+lisp_register_builtin_function "pair?" 1 {
+    if { obj_is_pair lisp_value_stack_pop } {
+        lisp_value_stack_push obj_bool_true
+    } {
+        lisp_value_stack_push obj_bool_false
+    }
+} ;
 lisp_register_builtin_function "length" 1 {
     lisp_value_stack_push
     alloc_i64 obj_list_length

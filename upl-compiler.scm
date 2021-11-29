@@ -258,7 +258,6 @@
 (define (compile-boolean-expression cond-expr local-vars label true-label?)
   (let ((cond-type (car cond-expr))
         (cond-args (cdr cond-expr)))
-    (println cond-expr)
     (cond ((equal? cond-type 'not)
            (compile-boolean-expression (second cond-expr) local-vars label (not true-label?)))
           ((equal? cond-type 'and)
@@ -326,6 +325,22 @@
              (append
                (flatmap (lambda (expr) (compile-expr expr local-vars)) stmt-args)
                (list syscall-instruction))))
+          ((equal? stmt-type 'while)
+           (begin
+             (assert-stmt "while has 2 args" (= 2 (length stmt-args)))
+             (let ((cond-expr (car stmt-args))
+                   (body-statements (second stmt-args))
+                   (compile-substatement (lambda (s) (compile-statement s local-vars procedure-list)))
+                   (loop-label (new-label))
+                   (end-label (new-label))
+                   (cond-instructions (compile-boolean-expression cond-expr local-vars end-label #f)))
+               (append
+                 (list loop-label)
+                 cond-instructions
+                 (flatmap compile-substatement body-statements)
+                 (list (jmp-instruction loop-label)
+                       end-label)
+                 ))))
           ((equal? stmt-type 'if)
            (let ((cond-expr (car stmt-args))
                  (then-branch (second stmt-args))
@@ -333,8 +348,6 @@
                  (compile-substatement (lambda (s) (compile-statement s local-vars procedure-list)))
                  (else-label (new-label))
                  (end-label (new-label))
-                 (_ (println (list "compile-statement stmt" stmt)))
-                 (_ (println (list "compile-statement cond expr" cond-expr)))
                  (cond-instructions (compile-boolean-expression cond-expr local-vars else-label #f)))
              (append
                cond-instructions
@@ -351,19 +364,22 @@
                            local-vars-with-inits
                            statements
                            procedure-list)
-  (let ((local-var-inits (map (lambda (v) (car (cdr v))) local-vars-with-inits))
-        (local-vars (append args (map car local-vars-with-inits))))
-    (append
-      (list
-        set-frame-pointer-instruction
-        (add-rsp-instruction (- 0 (* 8 (length args)))))
-      (flatmap (lambda (var-init) (compile-expr var-init '()))
-               local-var-inits)
-      (flatmap (lambda (stmt) (compile-statement stmt local-vars procedure-list))
-               statements)
-      (list
-        (add-rsp-instruction (* 8 (length local-vars)))
-        return-instruction))))
+  (begin
+    (assert-stmt (list "local vars must have init values, for example: (proc foo (a b) ((i 42)) ..., but was " local-vars-with-inits)
+                 (andmap pair? local-vars-with-inits))
+    (let ((local-var-inits (map (lambda (v) (car (cdr v))) local-vars-with-inits))
+          (local-vars (append args (map car local-vars-with-inits))))
+      (append
+        (list
+          set-frame-pointer-instruction
+          (add-rsp-instruction (- 0 (* 8 (length args)))))
+        (flatmap (lambda (var-init) (compile-expr var-init '()))
+                 local-var-inits)
+        (flatmap (lambda (stmt) (compile-statement stmt local-vars procedure-list))
+                 statements)
+        (list
+          (add-rsp-instruction (* 8 (length local-vars)))
+          return-instruction)))))
 
 (define next-label-id (cell 0))
 
@@ -436,17 +452,17 @@
       instructions)))
 
 (define upl-code 
-  '((proc set-64-proc (ptr val add100) ()
+  '((proc set-64-proc (ptr val add100) ((i 0))
           (
            ;(if (not (= add100 0))
-           ; MACRO!!!!!
            (if (and (= add100 200) (= 0 0))
-             (
-              (set-64 (ref val) (+ val 200))
-              )
-             (
-              (set-64 (ref val) (+ val 100))
-              ))
+             ((while (< i 200)
+                     (
+                      (set-64 (ref val) (+ val 1))
+                      (set-var i (+ i 1))
+                      )
+                     ))
+             ((set-64 (ref val) (+ val 100))))
            (set-64 ptr val)
            ))
     (proc main-proc () ()
@@ -461,7 +477,6 @@
           )
     ))
 
-(println upl-code)
 (define (compile-upl-to-native fpointer upl-code)
   (let ((proc-list-and-insts (compile-upl upl-code))
         (proc-list (first proc-list-and-insts))

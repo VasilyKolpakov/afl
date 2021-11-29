@@ -129,7 +129,7 @@
       '()
       (begin
         (print-string "assertion failed: ")
-        (print-string message)
+        (print message)
         (print-string "\n")
         (print-stack-trace)
         (exit 1))))
@@ -316,4 +316,10 @@
       (cons (cons k v) l)
       (panic "key is already present in alist" (list k l))))
 
+(define (andmap f l)
+  (if (empty? l)
+    #t
+    (if (f (car l))
+      (andmap f (cdr l))
+      #f)))
 
