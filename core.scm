@@ -211,6 +211,7 @@
   (print-string " ")
   (print obj)
   (print-string "\n")
+  (print-stack-trace)
   (exit 1))
 
 (define syscall-mmap 9)

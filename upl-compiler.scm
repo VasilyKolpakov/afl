@@ -38,17 +38,19 @@
 
 (define add-instruction (list 6 generate-add "add"))
 
-(define (generate-set-64 ptr)
-  (write-mem-byte ptr #x5f) ; pop rdi
-  (write-mem-byte (+ 1 ptr) #x58) ; pop rax
-  (write-mem-byte (+ 2 ptr) #x48) ; mov [rax], rdi
-  (write-mem-byte (+ 3 ptr) #x89)
-  (write-mem-byte (+ 4 ptr) #x38)
-  )
+(define set-i64-instruction
+  (list 5 
+        (lambda (ptr)
+          (begin
+            (write-mem-byte ptr #x5f) ; pop rdi
+            (write-mem-byte (+ 1 ptr) #x58) ; pop rax
+            (write-mem-byte (+ 2 ptr) #x48) ; mov [rax], rdi
+            (write-mem-byte (+ 3 ptr) #x89)
+            (write-mem-byte (+ 4 ptr) #x38)
+            ))
+        "set-i64"))
 
-(define set-64-instruction (list 5 generate-set-64 "set-64"))
-
-(define deref-instruction
+(define get-i64-instruction
   (list 5
         (lambda (ptr)
           (begin
@@ -58,7 +60,34 @@
             (write-mem-byte (+ 3 ptr) #x07)
             (write-mem-byte (+ 4 ptr) #x50) ; push rax
             ))
-        "deref"))
+        "get-i64"))
+
+(define set-u8-instruction
+  (list 5
+        (lambda (ptr)
+          (begin
+            (write-mem-byte ptr       #x5f) ; pop rdi
+            (write-mem-byte (+ 1 ptr) #x58) ; pop rax
+            (write-mem-byte (+ 2 ptr) #x40) ; mov [rax], dil
+            (write-mem-byte (+ 3 ptr) #x88)
+            (write-mem-byte (+ 4 ptr) #x38)
+            ))
+        "set-u8"))
+
+(define get-u8-instruction
+  (list 8
+        (lambda (ptr)
+          (begin
+            (write-mem-byte ptr       #x58) ; pop rax
+            (write-mem-byte (+ 1 ptr) #x48) ; xor rdi,rdi
+            (write-mem-byte (+ 2 ptr) #x31)
+            (write-mem-byte (+ 3 ptr) #xff)
+            (write-mem-byte (+ 4 ptr) #x40) ; mov dil, [rax]
+            (write-mem-byte (+ 5 ptr) #x8a)
+            (write-mem-byte (+ 6 ptr) #x38)
+            (write-mem-byte (+ 7 ptr) #x57) ; push rdi
+            ))
+        "get-u8"))
 
 (define (generate-add-rsp ptr value)
   (write-mem-byte ptr       #x48) ; add rsp, value (signed byte)
@@ -201,8 +230,9 @@
 
 (define symbol-to-instruction
   (list
-    (list '+ 2 add-instruction)
-    (list 'deref 1 deref-instruction)
+    (list '+       2 add-instruction)
+    (list 'get-i64 1 get-i64-instruction)
+    (list 'get-u8  1 get-u8-instruction)
     ))
 
 (define symbol-to-cmp-instructions
@@ -250,7 +280,7 @@
       ((not-empty? var-index) (cons (push-var-instruction var-index) rest))
       ((number? expr) (cons (push-imm-instruction expr) rest))
       ((list? expr) (compile-list expr rest local-vars))
-      (else (panic "bad expr: " (list expr local-vars))))))
+      (else (panic "bad expression: " (list "expression:" expr "local-vars:" local-vars))))))
 
 (define (compile-expr expr local-vars)
   (compile-expr-rec expr '() local-vars))
@@ -293,11 +323,16 @@
 (define (compile-statement stmt local-vars procedure-list)
   (let ((stmt-type (car stmt))
         (stmt-args (cdr stmt)))
-    (cond ((equal? stmt-type 'set-64)
+    (cond ((equal? stmt-type 'set-i64)
            (append
-             (compile-expr (car (cdr stmt)) local-vars)
-             (compile-expr (car (cdr (cdr stmt))) local-vars)
-             (list set-64-instruction)))
+             (compile-expr (first stmt-args) local-vars)
+             (compile-expr (second stmt-args) local-vars)
+             (list set-i64-instruction)))
+          ((equal? stmt-type 'set-u8)
+           (append
+             (compile-expr (first stmt-args) local-vars)
+             (compile-expr (second stmt-args) local-vars)
+             (list set-u8-instruction)))
           ((equal? stmt-type 'set-var)
            (let ((var (car stmt-args))
                  (var-index (index-of local-vars var))
@@ -308,7 +343,7 @@
                (list (set-var-instruction var-index))
                local-vars)))
           ((equal? stmt-type 'call)
-           (let ((proc (assert (alist-lookup procedure-list (car (cdr stmt))) not-empty? "call"))
+           (let ((proc (assert (alist-lookup procedure-list (car (cdr stmt))) not-empty? (list "undefined function:" (first stmt-args))))
                  (proc-args (cdr (cdr stmt)))
                  (proc-label (car proc))
                  (proc-arg-count (car (cdr proc))))
@@ -390,14 +425,6 @@
 
 (define (label? v) (number? v))
 
-(define buffer (syscall-mmap-anon 1000))
-
-(define test-string-buffer (syscall-mmap-anon 1000))
-(define test-string "test\n")
-(define test-string-length (string-length test-string))
-(string-to-native-buffer test-string test-string-buffer)
-
-
 (define (compile-upl procedures)
   (let ((procs-with-labels
           (map (lambda (p) (list p (new-label))) procedures))
@@ -451,28 +478,30 @@
           (drop i 2)))
       instructions)))
 
+(define buffer (syscall-mmap-anon 1000))
+
+(define test-string-buffer (syscall-mmap-anon 1000))
+(define test-string "test\n")
+(define test-string-length (string-length test-string))
+(string-to-native-buffer test-string test-string-buffer)
+
 (define upl-code 
-  '((proc set-64-proc (ptr val add100) ((i 0))
+  '((proc write-hello (ptr) ()
           (
-           ;(if (not (= add100 0))
-           (if (and (= add100 200) (= 0 0))
-             ((while (< i 200)
-                     (
-                      (set-64 (ref val) (+ val 1))
-                      (set-var i (+ i 1))
-                      )
-                     ))
-             ((set-64 (ref val) (+ val 100))))
-           (set-64 ptr val)
+           (set-u8 ,buffer 104)
+           (set-u8 ,(+ 1 buffer) 101)
+           (set-u8 ,(+ 2 buffer) 108)
+           (set-u8 ,(+ 3 buffer) 108)
+           (set-u8 ,(+ 4 buffer) 111)
            ))
-    (proc main-proc () ()
+    (proc main-proc () ((i 0))
           (
-           (syscall ,buffer 1 1 ,test-string-buffer ,test-string-length 1 2 3)
-           ;(set-64 ,buffer (+ 1 (deref ,buffer)))
-           ;(set-64 ,buffer 1 )
+           ;(syscall ,buffer 1 1 ,test-string-buffer ,test-string-length 1 2 3)
            ;(syscall ,buffer 39 1 2 3 4 5 6)
-           (call set-64-proc ,buffer 1 200)
-           (call set-64-proc ,(+ 8 buffer) 2 0)
+           (call write-hello ,buffer)
+           (while (< i 5)
+                  ((set-u8 (+ i ,buffer) (+ 1 (get-u8 (+ i ,buffer))))
+                   (set-var i (+ i 1))))
            )
           )
     ))
@@ -504,13 +533,13 @@
 (define fpointer (syscall-mmap-anon-exec 1000))
 
 (define proc-list (compile-upl-to-native fpointer upl-code))
-(println fpointer)
-
 
 (enable-REPL-print)
 (native-call (alist-lookup proc-list 'main-proc))
+(string-from-native-buffer buffer 6)
 ;"getpid"
 ;(syscall 39 1 2 3 4 5 6)
 "==========================="
 (read-mem-i64 buffer)
 (read-mem-i64 (+ 8 buffer))
+
