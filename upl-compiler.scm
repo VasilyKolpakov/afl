@@ -360,6 +360,12 @@
              (append
                (flatmap (lambda (expr) (compile-expr expr local-vars)) stmt-args)
                (list syscall-instruction))))
+          ((equal? stmt-type 'return)
+           (begin
+             (assert-stmt "return has 0 args" (= 0 (length stmt-args)))
+             (list
+               (add-rsp-instruction (* 8 (length local-vars)))
+               return-instruction)))
           ((equal? stmt-type 'while)
            (begin
              (assert-stmt "while has 2 args" (= 2 (length stmt-args)))
@@ -494,13 +500,17 @@
            (set-u8 ,(+ 3 buffer) 108)
            (set-u8 ,(+ 4 buffer) 111)
            ))
+    (proc number-string-length (length-ptr num) ((l 0))
+          (
+           (set-var length-ptr 0)
+           ))
     (proc main-proc () ((i 0))
           (
            ;(syscall ,buffer 1 1 ,test-string-buffer ,test-string-length 1 2 3)
            ;(syscall ,buffer 39 1 2 3 4 5 6)
            (call write-hello ,buffer)
            (while (< i 5)
-                  ((set-u8 (+ i ,buffer) (+ 1 (get-u8 (+ i ,buffer))))
+                  ((set-u8 (+ i ,buffer) (+ 0 (get-u8 (+ i ,buffer))))
                    (set-var i (+ i 1))))
            )
           )
