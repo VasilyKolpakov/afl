@@ -38,6 +38,63 @@
 
 (define add-instruction (list 6 generate-add "add"))
 
+(define sub-instruction
+  (list 6
+        (lambda (ptr)
+          (begin
+            (write-mem-byte ptr       #x5f) ; pop rdi
+            (write-mem-byte (+ 1 ptr) #x58) ; pop rax
+            (write-mem-byte (+ 2 ptr) #x48) ; sub rax,rdi
+            (write-mem-byte (+ 3 ptr) #x29)
+            (write-mem-byte (+ 4 ptr) #xf8)
+            (write-mem-byte (+ 5 ptr) #x50) ; push rax
+            ))
+        "sub"))
+
+(define mul-instruction
+  (list 7
+        (lambda (ptr)
+          (begin
+            (write-mem-byte ptr       #x5f) ; pop rdi
+            (write-mem-byte (+ 1 ptr) #x58) ; pop rax
+            (write-mem-byte (+ 2 ptr) #x48) ; imul rax,rdi
+            (write-mem-byte (+ 3 ptr) #x0f)
+            (write-mem-byte (+ 4 ptr) #xaf)
+            (write-mem-byte (+ 5 ptr) #xc7)
+            (write-mem-byte (+ 6 ptr) #x50) ; push rax
+            ))
+        "mul"))
+
+(define div-instruction
+  (list 8
+        (lambda (ptr)
+          (begin
+            (write-mem-byte ptr       #x5f) ; pop rdi
+            (write-mem-byte (+ 1 ptr) #x58) ; pop rax
+            (write-mem-byte (+ 2 ptr) #x48) ; cqo ; mov sign-extend of rax to rdx
+            (write-mem-byte (+ 3 ptr) #x99)
+            (write-mem-byte (+ 4 ptr) #x48) ; idiv rdi ; divide rdx:rax by rdi
+            (write-mem-byte (+ 5 ptr) #xf7)
+            (write-mem-byte (+ 6 ptr) #xff)
+            (write-mem-byte (+ 7 ptr) #x50) ; push rax
+            ))
+        "div"))
+
+(define mod-instruction
+  (list 8
+        (lambda (ptr)
+          (begin
+            (write-mem-byte ptr       #x5f) ; pop rdi
+            (write-mem-byte (+ 1 ptr) #x58) ; pop rax
+            (write-mem-byte (+ 2 ptr) #x48) ; cqo ; mov sign-extend of rax to rdx
+            (write-mem-byte (+ 3 ptr) #x99)
+            (write-mem-byte (+ 4 ptr) #x48) ; idiv rdi ; divide rdx:rax by rdi
+            (write-mem-byte (+ 5 ptr) #xf7)
+            (write-mem-byte (+ 6 ptr) #xff)
+            (write-mem-byte (+ 7 ptr) #x52) ; push rax
+            ))
+        "mod"))
+
 (define set-i64-instruction
   (list 5 
         (lambda (ptr)
@@ -101,7 +158,7 @@
   (assert-stmt "value >= 128" (>= value -128))
   (list 4 (lambda (ptr) (generate-add-rsp ptr value)) (list "add-rsp" value)))
 
-(define (generate-push-var-ref ptr index)
+(define (generate-push-var-addr ptr index)
   (assert-stmt "index >= 0" (>= index 0))
   (assert-stmt "index < 15" (< index 15))
   (write-mem-byte ptr       #x48) ; lea rax,[rbp-index*8]
@@ -111,8 +168,8 @@
   (write-mem-byte (+ 4 ptr) #x50) ; push rax
   )
 
-(define (push-var-ref-instruction index)
-  (list 5 (lambda (ptr) (generate-push-var-ref ptr index)) (list "push-var-ref" index)))
+(define (push-var-addr-instruction index)
+  (list 5 (lambda (ptr) (generate-push-var-addr ptr index)) (list "push-var-addr" index)))
 
 (define (generate-push-var ptr index)
   (assert-stmt "index >= 0" (>= index 0))
@@ -231,6 +288,10 @@
 (define symbol-to-instruction
   (list
     (list '+       2 add-instruction)
+    (list '-       2 sub-instruction)
+    (list '*       2 mul-instruction)
+    (list '/       2 div-instruction)
+    (list '%       2 mod-instruction)
     (list 'get-i64 1 get-i64-instruction)
     (list 'get-u8  1 get-u8-instruction)
     ))
@@ -261,13 +322,13 @@
 
 (define (compile-list expr rest local-vars)
   (cond
-    ((equal? 'ref (car expr))
+    ((equal? 'var-addr (car expr))
      (let ((var (car (cdr expr)))
            (var-index (index-of local-vars var)))
        (if (empty? var-index) (panic "ref: bad variable:" var) '())
-       (list (push-var-ref-instruction var-index))))
+       (list (push-var-addr-instruction var-index))))
     (else
-      (let ((arg-count-and-inst (assert (alist-lookup symbol-to-instruction (car expr)) not-empty? "compile-list")))
+      (let ((arg-count-and-inst (assert (alist-lookup symbol-to-instruction (car expr)) not-empty? (list "undefined operator:" (car expr)))))
         (assert-stmt "arg count matches" (= (length (cdr expr)) (car arg-count-and-inst)))
         (foldr
           (lambda (expr rest) (compile-expr-rec expr rest local-vars))
@@ -504,16 +565,18 @@
           (
            (set-var length-ptr 0)
            ))
-    (proc main-proc () ((i 0))
+    (proc main-proc () ((a 10) (b 11))
           (
+           (set-i64 ,buffer (- a b))
+           (set-i64 (+ 8 ,buffer) (* a b))
            ;(syscall ,buffer 1 1 ,test-string-buffer ,test-string-length 1 2 3)
            ;(syscall ,buffer 39 1 2 3 4 5 6)
-           (call write-hello ,buffer)
-           (while (< i 5)
-                  ((set-u8 (+ i ,buffer) (+ 0 (get-u8 (+ i ,buffer))))
-                   (set-var i (+ i 1))))
-           )
-          )
+           ;(call write-hello ,buffer)
+           ;(while (< i 5)
+           ;       ((set-u8 (+ i ,buffer) (+ 0 (get-u8 (+ i ,buffer))))
+           ;        (set-var i (+ i 1))))
+           ;)
+          ))
     ))
 
 (define (compile-upl-to-native fpointer upl-code)
@@ -546,7 +609,7 @@
 
 (enable-REPL-print)
 (native-call (alist-lookup proc-list 'main-proc))
-(string-from-native-buffer buffer 6)
+(string-from-native-buffer buffer 5)
 ;"getpid"
 ;(syscall 39 1 2 3 4 5 6)
 "==========================="
