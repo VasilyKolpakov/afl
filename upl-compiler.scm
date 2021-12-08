@@ -394,6 +394,11 @@
              (compile-expr (first stmt-args) local-vars)
              (compile-expr (second stmt-args) local-vars)
              (list set-u8-instruction)))
+          ((equal? stmt-type 'inc-var)
+           (let ((var (car stmt-args))
+                 (var-index (index-of local-vars var))
+                 (val-expr (car (cdr stmt-args))))
+             (compile-statement '(set-var ,var (+ ,var ,val-expr)) local-vars procedure-list)))
           ((equal? stmt-type 'set-var)
            (let ((var (car stmt-args))
                  (var-index (index-of local-vars var))
@@ -535,7 +540,7 @@
     ((instruction? i) (car i))
     (else (panic "bad instruction:" i))))
 
-(define (print-instruction instructions)
+(define (print-instructions instructions)
   (foreach
     println
     (map
@@ -551,33 +556,6 @@
 (define test-string "test\n")
 (define test-string-length (string-length test-string))
 (string-to-native-buffer test-string test-string-buffer)
-
-(define upl-code 
-  '((proc write-hello (ptr) ()
-          (
-           (set-u8 ,buffer 104)
-           (set-u8 ,(+ 1 buffer) 101)
-           (set-u8 ,(+ 2 buffer) 108)
-           (set-u8 ,(+ 3 buffer) 108)
-           (set-u8 ,(+ 4 buffer) 111)
-           ))
-    (proc number-string-length (length-ptr num) ((l 0))
-          (
-           (set-var length-ptr 0)
-           ))
-    (proc main-proc () ((a 10) (b 11))
-          (
-           (set-i64 ,buffer (- a b))
-           (set-i64 (+ 8 ,buffer) (* a b))
-           ;(syscall ,buffer 1 1 ,test-string-buffer ,test-string-length 1 2 3)
-           ;(syscall ,buffer 39 1 2 3 4 5 6)
-           ;(call write-hello ,buffer)
-           ;(while (< i 5)
-           ;       ((set-u8 (+ i ,buffer) (+ 0 (get-u8 (+ i ,buffer))))
-           ;        (set-var i (+ i 1))))
-           ;)
-          ))
-    ))
 
 (define (compile-upl-to-native fpointer upl-code)
   (let ((proc-list-and-insts (compile-upl upl-code))
@@ -603,16 +581,72 @@
                           (alist-lookup labels-and-locations (second proc))))
          proc-list)))
 
+(define upl-code 
+  '((proc write-hello (ptr) ()
+          (
+           (set-u8 ,buffer 104)
+           (set-u8 ,(+ 1 buffer) 101)
+           (set-u8 ,(+ 2 buffer) 108)
+           (set-u8 ,(+ 3 buffer) 108)
+           (set-u8 ,(+ 4 buffer) 111)
+           ))
+    (proc number-string-length (length-ptr num) ((l 0))
+          (
+           (if (= num 0)
+             ((set-i64 length-ptr 1)
+              (return)) ())
+           (if (< num 0)
+             ((inc-var l 1)) ())
+           (while (!= num 0)
+                  ((inc-var l 1)
+                   (set-var num (/ num 10))))
+           (set-i64 length-ptr l)
+           ))
+    (proc number-to-string (buf num) ((char-ptr 0))
+          (
+           (call number-string-length (var-addr char-ptr) num)
+           (set-var char-ptr (+ (- char-ptr 1) buf)) ; start printing the number from the end
+           (if (= num 0)
+             ((set-u8 char-ptr 48)
+              (return)) ())
+           (if (> num 0)
+             ((while (not (= num 0))
+                    ((set-u8 char-ptr (+ 48 (% num 10)))
+                     (inc-var char-ptr -1)
+                     (set-var num (/ num 10)))))
+             ((while (not (= num 0))
+                    ((set-u8 char-ptr (+ 48 (* (% num 10) -1)))
+                     (inc-var char-ptr -1)
+                     (set-var num (/ num 10))))
+              (set-u8 char-ptr 45))) ; minus sign
+           ))
+    (proc main-proc () ((num -9223372036854775808) (syscall-ret-val 0))
+          (
+           (call number-string-length ,buffer num)
+           (call number-to-string ,(+ buffer 8) num)
+           (set-u8 (+ (+ ,buffer 8) (get-i64 ,buffer)) 10)
+           (syscall (var-addr syscall-ret-val) 1 1 ,(+ buffer 8) (+ 1 (get-i64 ,buffer)) 1 2 3)
+           ;(syscall ,buffer 39 1 2 3 4 5 6)
+           ;(call write-hello ,buffer)
+           ;(while (< i 5)
+           ;       ((set-u8 (+ i ,buffer) (+ 0 (get-u8 (+ i ,buffer))))
+           ;        (set-var i (+ i 1))))
+           ;)
+          ))
+    ))
+
 (define fpointer (syscall-mmap-anon-exec 1000))
 
 (define proc-list (compile-upl-to-native fpointer upl-code))
 
 (enable-REPL-print)
 (native-call (alist-lookup proc-list 'main-proc))
-(string-from-native-buffer buffer 5)
+"number:"
+(string-from-native-buffer (+ buffer 8) (read-mem-i64 buffer))
 ;"getpid"
 ;(syscall 39 1 2 3 4 5 6)
 "==========================="
+"string length:"
 (read-mem-i64 buffer)
 (read-mem-i64 (+ 8 buffer))
 
