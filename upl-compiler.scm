@@ -550,12 +550,6 @@
           (drop i 2)))
       instructions)))
 
-(define buffer (syscall-mmap-anon 1000))
-
-(define test-string-buffer (syscall-mmap-anon 1000))
-(define test-string "test\n")
-(define test-string-length (string-length test-string))
-(string-to-native-buffer test-string test-string-buffer)
 
 (define (compile-upl-to-native fpointer upl-code)
   (let ((proc-list-and-insts (compile-upl upl-code))
@@ -580,6 +574,23 @@
                           (first proc)
                           (alist-lookup labels-and-locations (second proc))))
          proc-list)))
+
+(define upl-print-static-string
+  (let ((ret-val-buffer (syscall-mmap-anon 100))
+        (str-buffer-size 10000)
+        (str-buffer (syscall-mmap-anon str-buffer-size))
+        (bump-index (cell 0)))
+    (lambda (str)
+      (let ((str-length (string-length str))
+            (original-bump-index (cell-get bump-index)))
+        (begin
+          (assert-stmt "bump-index + string length <= str-buffer-size"
+                       (<= (+ (cell-get bump-index) str-length) str-buffer-size))
+          (string-to-native-buffer str (+ str-buffer (cell-get bump-index)))
+          (cell-set bump-index (+ str-length (cell-get bump-index)))
+          '(syscall ,ret-val-buffer 1 1 ,(+ str-buffer original-bump-index) ,str-length 1 2 3))))))
+
+(define buffer (syscall-mmap-anon 1000))
 
 (define upl-code 
   '((proc write-hello (ptr) ()
@@ -626,6 +637,8 @@
            (call number-to-string ,(+ buffer 8) num)
            (set-u8 (+ (+ ,buffer 8) (get-i64 ,buffer)) 10)
            (syscall (var-addr syscall-ret-val) 1 1 ,(+ buffer 8) (+ 1 (get-i64 ,buffer)) 1 2 3)
+           ,(upl-print-static-string "test print-string\n")
+           ,(upl-print-static-string "test print-string 2\n")
            ;(syscall ,buffer 39 1 2 3 4 5 6)
            ;(call write-hello ,buffer)
            ;(while (< i 5)
