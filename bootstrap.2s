@@ -73,3 +73,13 @@ rename_word "ac" "argc"
 rename_word "av" "argv"
 
 rename_word "r0" "f_read_from_std_in"
+
+rename_word "p1" "f_read_compile_run_loop"
+rename_word "p2" "f_read_compile_run"
+rename_word "p3" "f_read_compile_run_next_token"
+rename_word "p4" "f_free"
+rename_word "p5" "f_realloc"
+rename_word "p6" "f_read_and_compile_code__emit_code_for_string_literal"
+rename_word "p7" "f_read_and_compile_code__emit_code_for_num"
+rename_word "p8" "f_read_and_compile_code__emit_code_for_word"
+rename_word "p9" "f_malloc"

@@ -2007,6 +2007,7 @@ f_func_concat: equ     $-8
 ; reads and compiles code
 ; <scanner> <dict> -> <ok bool> <code vector>
 ; loop invariant: <ok bool> <token> <scanner> <word def> <dict>
+f_read_and_compile_code__emit_code_for_string_literal_end:
         dq          i_return                                ; [ok bool] [scanner] [code vector] [dict]
         dq          val(1)                                  ; [scanner] [code vector] [dict]
         dq          call(f_byte_vector_append_i64), i_swap, val(i_push_to_stack), i_over ; [scanner] [code vector] [dict]
@@ -2014,6 +2015,7 @@ f_func_concat: equ     $-8
         dq          call(f_byte_vector_destroy), i_swap                     ; [string] [token] [scanner] [code vector] [dict]
         dq          i_drop, call(f_string_literal_token_to_string), i_dup   ; [token] [scanner] [code vector] [dict]
 f_read_and_compile_code__emit_code_for_string_literal: equ     $-8
+        dq          f_read_and_compile_code__emit_code_for_string_literal_end
         dq          i_return
         dq          i_equal
         dq              val('"')                                        ; [first byte] [token]
@@ -2038,6 +2040,7 @@ f_read_and_compile_code__is_open_paren: equ     $-8
         dq          i_return
         dq          call(f_is_number_token), i_dup
 f_read_and_compile_code__is_num: equ     $-8
+f_read_and_compile_code__emit_code_for_num_end:
         dq          i_return
         dq          val(1)                                  ; <ok bool> <scanner> <code vector> <dict>
         dq          call(f_byte_vector_append_i64), i_swap, val(i_push_to_stack), i_over ; <scanner> <code vector> <dict>
@@ -2047,6 +2050,7 @@ f_read_and_compile_code__is_num: equ     $-8
         dq          call(f_byte_vector_pointer), i_over     ; <token pointer> <token size> <token> <scanner> <code vector> <dict>
         dq          call(f_byte_vector_size), i_dup         ; <token size> <token> <scanner> <code vector> <dict>
 f_read_and_compile_code__emit_code_for_num: equ     $-8
+        dq          f_read_and_compile_code__emit_code_for_num_end
         dq          i_return                                    ; [ok bool] [scanner] [code vector] [dict]
         dq          i_pop_from_ret_stack                        ; [scanner] [code vector] [dict]
         dq          call(f_free), i_pop_from_ret_stack ; partially destroy sub vector [scanner] [code vector] [dict]
@@ -2086,6 +2090,7 @@ f_read_and_compile_code__emit_word: equ     $-8
         dq          call(f_create_struct_dict_string), i_dup_n, val(4) ; [token] [scanner] [code vector] [dict]
         dq          i_drop ; drop null pointer ; [null record] [token] [scanner] [code vector] [dict]
 f_read_and_compile_code__no_such_word_case: equ     $-8
+f_read_and_compile_code__emit_code_for_word_end:
         dq          i_return
         dq          call(f_if), val(f_id), val(f_read_and_compile_code__no_such_word_case), val(f_read_and_compile_code__emit_word)
         dq          i_equal, val(0), i_dup                  ; <bool> <record pointer> <token> <scanner> <code vector> <dict>
@@ -2094,6 +2099,7 @@ f_read_and_compile_code__no_such_word_case: equ     $-8
         dq          i_read_mem_i64                          ; <record pointer> <token> <scanner> <code vector> <dict>
         dq          i_dup_n, val(4)                         ; <dict> <token> <scanner> <code vector> <dict>
 f_read_and_compile_code__emit_code_for_word: equ     $-8
+        dq          f_read_and_compile_code__emit_code_for_word_end
         dq          i_return
         dq          call(f_print_newline)
         dq          call(f_byte_vector_destroy), call(f_print_byte_vector), i_dup, call(f_byte_vector_from_bytes)
@@ -2107,6 +2113,7 @@ f_read_and_compile_code__print_unmatched_paren: equ     $-8
         dq          call(f_if), val(f_id), val(f_id), val(f_read_and_compile_code__print_unmatched_paren), i_dup  ; [is not bad paren] [ok bool] [token] [scanner] [code vector] [dict]
         dq          i_not, call(f_is_close_paren_token), i_over     ; [ok bool] [token] [scanner] [code vector] [dict]
 f_read_and_compile_code__is_not_semicolon_and_fail_on_close_paren: equ     $-8
+f_read_and_compile_code__emit_code_for_next_token_end:
         dq          i_return
         dq          i_swap, call(f_read_next_token)
         dq          i_over
@@ -2119,6 +2126,7 @@ f_read_and_compile_code__is_not_semicolon_and_fail_on_close_paren: equ     $-8
         dq          call(f_cond_start)
         dq          i_drop ; drop ok bool [ok bool] [token] [scanner] [code vector] [dict]
 f_read_and_compile_code__emit_code_for_next_token: equ     $-8
+        dq          f_read_and_compile_code__emit_code_for_next_token_end
         dq          i_return        ; [ok bool] [code vector]
         dq          i_drop, i_rot   ; [ok bool] [code vector] [dict]
         dq          i_drop, i_swap  ; [ok bool] [scanner] [code vector] [dict]
@@ -2161,9 +2169,11 @@ f_read_and_compile_code__sub: equ     $-8
         dq          call(f_is_semicolon_token), i_dup       ; [token] [scanner]
         dq          call(f_read_next_token), i_dup          ; [scanner]
 f_read_and_compile_code_skip_to_semicolon: equ     $-8
+f_read_and_compile_code_end:
         dq          i_return
         dq          call(f_read_and_compile_code__main)
 f_read_and_compile_code: equ     $-8
+        dq          f_read_and_compile_code_end
 
 
 ; <dict> <string> -> <struct>
@@ -2221,9 +2231,11 @@ f_f_read_compile_run_loop__error: equ     $-8
         dq          call(f_read_and_compile_code)   ; <ok bool> <code vector> <scanner> <dict>
         dq          i_2dup
 f_f_read_compile_run_loop__loop: equ     $-8
+f_read_compile_run_loop_end:
         dq          i_return
         dq          call(f_while), val(f_true), val(f_f_read_compile_run_loop__loop)
 f_read_compile_run_loop: equ     $-8
+        dq          f_read_compile_run_loop_end
 
         dq          i_return
         dq          call(f_exit_0)
@@ -2681,9 +2693,6 @@ f_tests: equ     $-8
                     def_function_word_2 'n', 'l', f_print_newline
                     def_function_word_2 '.', 'c', f_write_byte_to_stdout
                     def_function_word_2 'r', '0', f_read_from_std_in
-                    def_function_word_2 'f', '0', f_malloc
-                    def_function_word_2 'f', '1', f_free
-                    def_function_word_2 'f', '2', f_realloc
 
 
                     def_function_word 'p', f_print_byte_vector
@@ -2704,6 +2713,15 @@ f_tests: equ     $-8
                     def_constant_word_2 'h','p', sigsegv_handler_pointer    
                     def_constant_word_2 'i','j', i_jmp    
 
+                    def_function_word_2 'p','1', f_read_compile_run_loop
+                    def_function_word_2 'p','2', f_read_and_compile_code
+                    def_function_word_2 'p','3', f_read_and_compile_code__emit_code_for_next_token
+                    def_function_word_2 'p','4', f_free
+                    def_function_word_2 'p','5', f_realloc
+                    def_function_word_2 'p','6', f_read_and_compile_code__emit_code_for_string_literal
+                    def_function_word_2 'p','7', f_read_and_compile_code__emit_code_for_num
+                    def_function_word_2 'p','8', f_read_and_compile_code__emit_code_for_word
+                    def_function_word_2 'p','9', f_malloc
         dq          i_push_to_ret_stack, val(the_dictionary)
 f_start: equ     $-8
 

@@ -59,7 +59,7 @@
         (write-mem-i64 (+ 16 buf) remote-addr)
         (write-mem-i64 (+ 24 buf) len)
         (if (> (process-vm-readv pid buf 1 (+ buf 16) 1) -1)
-          nil
+          '()
           (begin (print-string "process-vm-readv error\n") (exit 1)))))))
 
 
@@ -81,7 +81,7 @@
   (let ((buf (syscall-mmap-anon 4096)))
     (lambda (pid dict-record-ptr)
       (if (equal? dict-record-ptr 0)
-        nil
+        '()
         (let
           ((dict-record-name-2s-string (ptrace-peek pid dict-record-ptr))
            (dict-record-word-def (ptrace-peek pid (+ dict-record-ptr 8)))
@@ -101,8 +101,8 @@
                  (read-process-dict-rec pid dict-record-next)))))))))
 
 (define (find-function-name-in-dict process-dict inst-ptr)
-  (if (nil? process-dict)
-    nil
+  (if (empty? process-dict)
+    '()
     (let ((dict-item (car process-dict)))
       (let ((func-start-ptr (car dict-item))
             (func-last-ptr (car (cdr dict-item)))
@@ -122,7 +122,7 @@
           (read-process-mem pid s2-return-stack-ptr buf return-stack-byte-size)
           (write-mem-i64 (+ buf return-stack-byte-size) (ptrace-get-reg pid 'r14))
           ;(read-process-mem pid (- (ptrace-get-reg pid 'r13) 80) buf 80)
-          (filter (lambda (item) (not (nil? item)))
+          (filter (lambda (item) (not (empty? item)))
                   (map (lambda (i)
                          (find-function-name-in-dict
                            process-dict
@@ -159,8 +159,25 @@
               (ptrace PTRACE_CONT child-pid 0 0))))
     (exit 0)))
 
+(define (string-to-c-string str buf)
+  (string-to-native-buffer str buf)
+  (write-mem-byte (+ buf (string-length str)) 0)
+  (+ (string-length str) 1))
+
+(define (execve exec-filename)
+  (let ((filename-buf (syscall-mmap-anon (+ (string-length exec-filename) 1)))
+        (argv-buf (syscall-mmap-anon 4096))
+        (envp-buf (syscall-mmap-anon 4096)))
+    (string-to-c-string exec-filename filename-buf)
+    (write-mem-i64 argv-buf filename-buf)
+    (write-mem-i64 (+ argv-buf 8) 0)
+    (write-mem-i64 envp-buf 0)
+    (checked-syscall 59 filename-buf argv-buf envp-buf 0 0 0)))
+
 (let ((child-pid (fork)))
   (if (equal? 0 child-pid)
-    (child-code)
+    (begin
+      (println (ptrace PTRACE_TRACEME 0 0 0))
+      (execve "./test.sh"))
     (parent-code child-pid)))
 
