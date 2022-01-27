@@ -2059,7 +2059,7 @@ f_capture_end:
         dq          i_write_mem_i64, i_add, val(8), i_peek_ret_stack, val(1)
         dq          i_write_mem_i64, i_add, val(16), i_peek_ret_stack, val(1), val(i_push_to_stack)
         dq          i_write_mem_i64, i_add, val(24), i_peek_ret_stack, val(1), i_peek_ret_stack, val(1) 
-        dq          i_push_to_ret_stack, call(f_malloc), val(32)
+        dq          i_push_to_ret_stack, call(f_perm_malloc), val(32)
 f_capture: equ     $-8
         dq          f_capture_end
 
@@ -2073,7 +2073,7 @@ f_func_concat_end:
         dq          i_write_mem_i64, i_add, val(8*3), i_peek_ret_stack, val(1)
         dq          i_write_mem_i64, i_add, val(8*4), i_peek_ret_stack, val(1), val(i_call)
         dq          i_write_mem_i64, i_add, val(8*5), i_peek_ret_stack, val(1), i_peek_ret_stack, val(1) 
-        dq          i_push_to_ret_stack, call(f_malloc), val(8*6)
+        dq          i_push_to_ret_stack, call(f_perm_malloc), val(8*6)
         dq          i_swap
 f_func_concat: equ     $-8
         dq          f_func_concat_end
@@ -2255,7 +2255,7 @@ f_read_and_compile_code: equ     $-8
         dq          i_pop_from_ret_stack
         dq          i_write_mem_i64, i_add, val(8), i_peek_ret_stack_first ; [string]
         dq          i_write_mem_i64, i_peek_ret_stack_first ; [dict] [string]
-        dq          i_push_to_ret_stack, call(f_malloc), val(16) ; [dict] [string]
+        dq          i_push_to_ret_stack, call(f_perm_malloc), val(16) ; [dict] [string]
 f_create_struct_dict_string: equ     $-8
 
         dq          call(f_exit), val(1) 
