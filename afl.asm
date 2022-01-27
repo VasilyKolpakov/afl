@@ -1898,27 +1898,22 @@ f_print_bool: equ     $-8
 ; print number
 f_print_number_end:
         dq              i_return
-        dq              call(f_free), i_pop_from_ret_stack
         dq              call(f_print_buffer),
-        dq                  i_peek_ret_stack, val(1)
+        dq                  val(tmp_buffer)
         dq                  call(f_i64_to_string)
         dq                      i_rot
-        dq                      i_peek_ret_stack, val(1)
+        dq                      val(tmp_buffer)
         dq                      val(20)
-        dq              i_push_to_ret_stack, call(f_malloc), val(20)
 f_print_number: equ     $-8
         dq              f_print_number
 
 ; print char (byte)
 f_write_byte_to_stdout_end:
         dq              i_return
-        dq              call(f_free), i_pop_from_ret_stack
         dq              call(f_print_buffer),
-        dq                  i_peek_ret_stack, val(1)
+        dq                  val(tmp_buffer)
         dq                  val(1)
-        dq                  i_write_mem_byte
-        dq                      i_peek_ret_stack, val(1)
-        dq              i_push_to_ret_stack, call(f_malloc), val(1)
+        dq              i_write_mem_byte, val(tmp_buffer)
 f_write_byte_to_stdout: equ     $-8
         dq              f_write_byte_to_stdout_end
 
@@ -2814,6 +2809,7 @@ sigaction:
         dq          0, ; sig mask
 
         section   .bss
+tmp_buffer:         resb    1024
 data_stack:         resb    data_stack_size
 return_stack:       resb    return_stack_size
 sigsegv_handler_pointer:
