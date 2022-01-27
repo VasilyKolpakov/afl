@@ -1340,7 +1340,7 @@ f_i64_to_string: equ     $-8
 ; scanner_make
         dq          i_return
         dq          i_drop, call(f_read_from_std_in), i_over, val(1)
-        dq          call(f_malloc), val(1)
+        dq          call(f_perm_malloc), val(1)
 f_scanner_make: equ     $-8
 ; <scanner> -> <byte>
 ; scanner_peek
@@ -1688,7 +1688,7 @@ f_memcmp: equ     $-8
         dq          i_return
         dq          i_write_mem_i64, i_swap, val(0)
         dq          i_dup                                       ; <pointer> <pointer>
-        dq          call(f_malloc), val(8*3)
+        dq          call(f_perm_malloc), val(8*3)
 f_dictionary_make: equ     $-8
 
 ; creates dictionary record
@@ -1698,7 +1698,7 @@ f_dictionary_make: equ     $-8
         dq          i_write_mem_i64, i_add, val(16), i_peek_ret_stack, val(1)
         dq          i_write_mem_i64, i_add, val(8), i_peek_ret_stack, val(1)
         dq          i_write_mem_i64, i_peek_ret_stack, val(1)
-        dq          i_push_to_ret_stack, call(f_malloc), val(8*3)
+        dq          i_push_to_ret_stack, call(f_perm_malloc), val(8*3)
 f_dictionary_make_record: equ     $-8
 
 ; <dict record> -> <name>
@@ -1726,7 +1726,7 @@ f_dictionary_record_next: equ     $-8
         dq          i_pop_from_ret_stack
         dq          i_write_mem_i64, i_add, val(8), i_peek_ret_stack, val(1)
         dq          i_write_mem_i64, i_peek_ret_stack, val(1)
-        dq          i_push_to_ret_stack, call(f_malloc), val(16)
+        dq          i_push_to_ret_stack, call(f_perm_malloc), val(16)
 f_word_def_make: equ     $-8
 
 ; <word def> -> <func pointer or instruction>
