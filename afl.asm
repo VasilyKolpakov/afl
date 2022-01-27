@@ -70,6 +70,7 @@
 
 data_stack_size:        equ    10240
 return_stack_size:      equ    102400
+perm_mem_size:          equ    1024000
 
         section   .text
 
@@ -420,6 +421,32 @@ i_read_mem_byte:
         add         r12, 8
         jump_to_next_instruction
 
+i_memcopy:
+        drop_data_stack 3
+        mov         rcx,  [r12 + 8*2]        ; count
+        mov         rsi,  [r12 + 8*1]        ; src address
+        mov         rdi,  [r12 + 8*0]        ; dest address
+i_memcopy_loop_8_bytes:
+        cmp         rcx, 7
+        jle         i_memcopy_loop_byte
+        mov         rdx, [rsi]
+        mov         [rdi], rdx
+        sub         rcx, 8
+        add         rsi, 8
+        add         rdi, 8
+        jmp         i_memcopy_loop_8_bytes
+i_memcopy_loop_byte:
+        cmp         rcx, 0
+        jle         i_memcopy_end
+        mov         dl, [rsi]
+        mov         [rdi], dl
+        sub         rcx, 1
+        add         rsi, 1
+        add         rdi, 1
+        jmp         i_memcopy_loop_byte
+i_memcopy_end:
+        jump_to_next_instruction
+
 i_jmp:
         mov         r14, [r14]             ; next word is the instruction pointer
         jump_to_next_instruction
@@ -733,6 +760,8 @@ def_nl_terminated_static_string ss_data_stack_underflow, "Data stack underflow"
 def_nl_terminated_static_string ss_return_stack_overflow, "Return stack overflow"
 def_nl_terminated_static_string ss_return_stack_underflow, "Return stack underflow"
 
+def_nl_terminated_static_string ss_perm_mem_exausted, "Perm mem is exausted, increase perm_mem_size"
+
 def_nl_terminated_static_string ss_sigsegv_handler_msg, "Segmentation fault, to set sigsegv handler use sigsegv_handler_pointer constant"
 
 %define val(value) value, i_push_to_stack
@@ -926,6 +955,18 @@ f_malloc_end:
 f_malloc: equ     $-8
         dq          f_malloc_end
 
+; <size> -> <addr>
+; malloc
+f_perm_malloc_end:
+        dq          i_return
+        dq          i_write_mem_i64, val(perm_mem_ptr), i_add ; [size] [perm_mem_ptr] [perm_mem_ptr]
+        dq          i_rot, i_dup, i_read_mem_i64, val(perm_mem_ptr)   ; [size]
+        dq          call(f_panic_msg_if), val(ss_perm_mem_exausted), val(ss_perm_mem_exausted_size)  ; [perm_mem exausted?] [size]
+        dq          i_less, val(perm_mem + perm_mem_size)   ; [size + perm_mem_ptr] [size]
+        dq          i_add, i_read_mem_i64, val(perm_mem_ptr), i_dup  ; [size]
+f_perm_malloc: equ     $-8
+        dq          f_perm_malloc_end
+
 ; <addr> <new size> -> <addr>
 ; realloc
 f_realloc_end:
@@ -1042,11 +1083,23 @@ f_log_syscall_error: equ     $-8
         dq          i_return,
         dq          i_write_mem_i64, i_swap, call(f_malloc), val(1)         ; <addr>  write pointer
         dq          i_add, val(8 * 2), i_dup                                ; <pointer addr> <addr>
-        dq          i_write_mem_i64, i_swap, val(1), i_add, val(8), i_dup   ; <cap addr> <addr>  write capacity
+        dq          i_write_mem_i64, i_swap, val(4098), i_add, val(8), i_dup   ; <cap addr> <addr>  write capacity
         dq          i_write_mem_i64, i_swap, val(0), i_dup                  ; <size addr> <addr> write size
         dq          call(f_malloc), val(8 * 3)                              ; <addr>
 f_byte_vector_make: equ     $-8
 
+; copy byte vector to perm_mem 
+; <vector-> -> <vector>
+        dq          i_return,
+        dq          i_drop, i_pop_from_ret_stack, i_pop_from_ret_stack
+        dq          i_write_mem_i64, i_add, val(16), i_peek_ret_stack_first ; [perm buffer]
+        dq          i_memcopy, call(f_byte_vector_size), i_peek_ret_stack_first, call(f_byte_vector_pointer), i_peek_ret_stack, val(2), i_dup ; [perm buffer]
+        dq          call(f_perm_malloc), call(f_byte_vector_size), i_peek_ret_stack, val(2) ;
+        dq          i_write_mem_i64, i_add, val(8), i_peek_ret_stack_first, call(f_byte_vector_size), i_peek_ret_stack, val(2) ; set cap = size
+        dq          i_write_mem_i64, i_peek_ret_stack_first, call(f_byte_vector_size), i_peek_ret_stack, val(2)
+        dq          i_push_to_ret_stack, call(f_perm_malloc), val(8 * 3)
+        dq          i_push_to_ret_stack ; [vector]
+f_byte_vector_copy_to_perm: equ     $-8
 ; byte vector size
 ; <addr> -> <n>
         dq          i_return, i_read_mem_i64
@@ -1338,13 +1391,14 @@ f_read_next_token__read_non_string_literal: equ     $-8
         dq          call(f_while), val(f_read_next_token__is_not_quote_or_newline), val(f_read_next_token__read_next_byte_with_escape)
         dq          call(f_read_next_token__read_next_byte_with_escape)
 f_read_next_token__read_string_literal: equ     $-8
+f_read_next_token_end:
         dq          i_return
         dq          i_drop, i_swap
         dq          call(f_if), val(f_read_next_token__is_quote), val(f_read_next_token__read_string_literal), val(f_read_next_token__read_non_string_literal)
         dq          call(f_byte_vector_make)                ; <token byte vector> <scanner>
         dq          call(f_skip_comments_and_whitespace), i_dup
 f_read_next_token: equ     $-8
-
+        dq          f_read_next_token_end
 ; <byte> -> <bool>
         dq          i_return
         dq          i_drop, i_pop_from_ret_stack
@@ -1507,6 +1561,7 @@ f_string_literal_token_to_string__continue: equ     $-8
         dq          i_swap, i_2dup              ; <token vector> <n> <n> <token vector> <string vector>
         dq          i_drop                      ; <n> <token vector> <string vector>
 f_string_literal_token_to_string__loop_body: equ     $-8
+f_string_literal_token_to_string_end:
         dq          i_return
         dq          i_drop, i_drop, i_rev_rot
         dq          call(f_while)           ; <ok bool> <n> <token vector> <string vector>
@@ -1518,9 +1573,11 @@ f_string_literal_token_to_string__loop_body: equ     $-8
         dq          i_swap
         dq          call(f_byte_vector_make)
 f_string_literal_token_to_string: equ     $-8
+        dq          f_string_literal_token_to_string_end
 
 ; checks bad string literal tokens
 ; <token vector> -> <bool>
+f_is_bad_string_literal_token_end:
         dq          i_return
         dq          i_and
         dq          call(f_byte_vector_destroy), i_swap
@@ -1529,6 +1586,7 @@ f_string_literal_token_to_string: equ     $-8
         dq              val('"')
         dq              call(f_byte_vector_get), i_swap, val(0), i_dup
 f_is_bad_string_literal_token: equ     $-8
+        dq          f_is_bad_string_literal_token_end
 
 ; decodes escape chars, returns -1 if not an escaped char
 ; <escaped char code>  -> <char>
@@ -1721,13 +1779,17 @@ f_dictionary_find_record__case_non_zero: equ     $-8
         dq          call(f_dictionary_record_name)
         dq          i_2dup
 f_dictionary_find_record__if_names_are_equal: equ     $-8
-        dq          f_dictionary_find_record, i_jmp
+        dq          f_dictionary_find_record_loop, i_jmp
         dq          call(f_dictionary_record_next)
 f_dictionary_find_record__case_names_are_not_equal: equ     $-8
         dq          f_if, i_jmp, val(f_dictionary_find_record__equal_zero)
         dq          val(f_dictionary_find_record__case_zero), val(f_dictionary_find_record__case_non_zero)
+f_dictionary_find_record_loop: equ     $-8
+f_dictionary_find_record_end:
+        dq          i_return
+        dq          call(f_dictionary_find_record_loop)
 f_dictionary_find_record: equ     $-8
-
+        dq          f_dictionary_find_record_end
 
 ; dictionary_add <dict> <name vector> <word def>
 ;                    # tries to find a record with the name
@@ -1753,6 +1815,7 @@ f_dictionary_add__equal_zero: equ     $-8
         dq          call(f_dictionary_find_record)  ; <found record pointer> <name> <word def> <dict>
         dq          i_swap, i_over  ; <record pointer> <name> <name> <word def> <dict>
         dq          i_read_mem_i64, i_dup_n, val(3)         ; <record pointer> <name> <word def> <dict>
+        dq          call(f_byte_vector_copy_to_perm)   ; <name> <word def> <dict>
         dq          i_rev_rot   ; <name> <word def> <dict>
 f_dictionary_add: equ     $-8
 
@@ -1763,6 +1826,17 @@ f_panic_if__do_panic: equ     $-8
         dq          i_return,
         dq          call(f_if), i_rot, val(f_panic_if__do_panic), val(f_id)
 f_panic_if: equ     $-8
+
+; panic_msg_if function
+; <msg> <msg size> <bool?
+        dq          i_return, i_drop, i_drop
+f_panic_msg_if__do_not_panic: equ     $-8
+        dq          call(f_exit_0), call(f_print_buffer)
+f_panic_msg_if__do_panic: equ     $-8
+        dq          i_return,
+        dq          call(f_if), val(f_id), val(f_panic_msg_if__do_panic), val(f_panic_msg_if__do_not_panic)
+        dq          i_rot
+f_panic_msg_if: equ     $-8
 
 ; print newline
 f_print_newline_end:
@@ -2246,7 +2320,6 @@ f_rename_word_word_exists: equ     $-8
 ; <dict> <old name> <new name> ->
         dq          i_return
         dq          call(f_dictionary_record_set_name) ; [the record] [new name]
-        dq          call(f_byte_vector_destroy), call(f_dictionary_record_name), i_dup ; destroy old name [the record] [new name]
         dq          call(f_if), val(f_id), val(f_rename_word_word_exists), val(f_id), i_equal, val(0), i_dup ; [the record] [new name]
         dq          call(f_dictionary_find_record)  ; [record] [old name] [new name]
         dq          i_read_mem_i64  ; [dict] [old name] [new name]
@@ -2675,6 +2748,7 @@ f_tests: equ     $-8
                     def_instruction_word_2 'r', 'i', i_read_mem_i32
                     def_instruction_word_2 'w', 'l', i_write_mem_i64
                     def_instruction_word_2 'r', 'l', i_read_mem_i64
+                    def_instruction_word_2 'm', 'c', i_memcopy
                     
                     def_instruction_word_2 's', 'c', i_syscall
                     def_instruction_word_2 'a', 'c', i_argc
@@ -2709,6 +2783,9 @@ f_tests: equ     $-8
 
                     def_function_word_2 'f','c', f_func_concat
                     def_function_word_2 'c','a', f_capture
+
+                    def_function_word_2 'c','p', f_byte_vector_copy_to_perm
+                    def_function_word_2 'p','m', f_perm_malloc
                     
                     def_constant_word_2 'h','p', sigsegv_handler_pointer    
                     def_constant_word_2 'i','j', i_jmp    
@@ -2722,7 +2799,12 @@ f_tests: equ     $-8
                     def_function_word_2 'p','7', f_read_and_compile_code__emit_code_for_num
                     def_function_word_2 'p','8', f_read_and_compile_code__emit_code_for_word
                     def_function_word_2 'p','9', f_malloc
+                    def_function_word_2 'p','a', f_dictionary_find_record
+                    def_function_word_2 'p','b', f_is_bad_string_literal_token
+                    def_function_word_2 'p','c', f_read_next_token
+                    def_function_word_2 'p','d', f_string_literal_token_to_string
         dq          i_push_to_ret_stack, val(the_dictionary)
+        dq          i_write_mem_i64, val(perm_mem_ptr), val(perm_mem)
 f_start: equ     $-8
 
 sigaction:
@@ -2738,3 +2820,7 @@ sigsegv_handler_pointer:
                     resq    1
 the_dictionary:
                     resq    1
+perm_mem_ptr:
+                    resq    1
+perm_mem:
+                    resb    perm_mem_size
