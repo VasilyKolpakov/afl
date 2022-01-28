@@ -1004,7 +1004,7 @@ f_free: equ     $-8
 f_exit: equ     $-8
 
 ; exit_0
-        dq          i_return, i_syscall, 
+        dq          i_return, i_drop, i_syscall, 
         dq          val(60)                     ; syscall num
         dq          val(0)                      ; exit code
         dq          val(1), val(1), val(1), val(1), val(1) ; filler
@@ -1028,21 +1028,6 @@ f_rstack_overflow: equ     $-8
         dq          val(f_print_hello_world)
         dq          val(f_print_data_overflow)
 f_test_peek_ret_stack: equ     $-8
-
-; test malloc/free
-        dq          i_read_mem_i64
-        dq          call(f_free)
-        dq          i_dup
-        dq          call(f_print_bool)
-        dq          i_equal
-        dq          val(42)
-        dq          i_read_mem_i64
-        dq          i_dup
-        dq          i_write_mem_i64, i_swap, val(42)
-        dq          i_dup
-        dq          call(f_malloc), val(100)
-f_test_malloc_free: equ     $-8
-
 
         dq          i_return
         dq          call(f_print_debug)
@@ -1083,7 +1068,7 @@ f_log_syscall_error: equ     $-8
         dq          i_return,
         dq          i_write_mem_i64, i_swap, call(f_malloc), val(1)         ; <addr>  write pointer
         dq          i_add, val(8 * 2), i_dup                                ; <pointer addr> <addr>
-        dq          i_write_mem_i64, i_swap, val(4098), i_add, val(8), i_dup   ; <cap addr> <addr>  write capacity
+        dq          i_write_mem_i64, i_swap, val(1), i_add, val(8), i_dup   ; <cap addr> <addr>  write capacity
         dq          i_write_mem_i64, i_swap, val(0), i_dup                  ; <size addr> <addr> write size
         dq          call(f_malloc), val(8 * 3)                              ; <addr>
 f_byte_vector_make: equ     $-8
@@ -1831,6 +1816,7 @@ f_panic_if: equ     $-8
 ; <msg> <msg size> <bool?
         dq          i_return, i_drop, i_drop
 f_panic_msg_if__do_not_panic: equ     $-8
+        dq          i_return
         dq          call(f_exit_0), call(f_print_buffer)
 f_panic_msg_if__do_panic: equ     $-8
         dq          i_return,
@@ -2122,12 +2108,11 @@ f_read_and_compile_code__emit_code_for_num: equ     $-8
         dq          f_read_and_compile_code__emit_code_for_num_end
         dq          i_return                                    ; [ok bool] [scanner] [code vector] [dict]
         dq          i_pop_from_ret_stack                        ; [scanner] [code vector] [dict]
-        dq          call(f_free), i_pop_from_ret_stack ; partially destroy sub vector [scanner] [code vector] [dict]
         dq          call(f_byte_vector_append_i64), i_swap, val(i_push_to_stack), i_over ; [scanner] [code vector] [dict]
         dq          call(f_byte_vector_append_i64), i_dup_n, val(3) ; [sub func pointer] [scanner] [code vector] [dict]
         dq          i_add, val(-16)                              ; [sub func pointer + 16] [scanner] [code vector] [dict] ; code vector has function end pointer as the last element
         dq          i_add
-        dq              call(f_byte_vector_pointer), i_peek_ret_stack, val(1)
+        dq              call(f_byte_vector_pointer), i_pop_from_ret_stack 
         dq              call(f_byte_vector_size), i_peek_ret_stack, val(1)
         dq          i_push_to_ret_stack, i_push_to_ret_stack    ; [sub ok bool] [sub code vector] [scanner] [code vector] [dict]
         dq          call(f_read_and_compile_code__sub)          ; [scanner] [dict] [scanner] [code vector] [dict]
@@ -2220,7 +2205,11 @@ f_read_and_compile_code__main: equ     $-8
         dq          i_not, call(f_is_semicolon_token), i_over       ; [ok bool] [token] [scanner] [code vector] [dict]
 f_read_and_compile_code__check_not_close_paren_and_fail_on_semicolon: equ     $-8
         dq          i_return        ; [ok bool] [code vector]
-        dq          i_swap, call(f_byte_vector_append_i64), i_swap, call(f_byte_vector_pointer), i_dup, i_dup    ; [code vector] [ok bool]
+        dq          i_swap ; [code vector] [ok bool]
+        dq          call(f_byte_vector_append_i64), i_swap, call(f_byte_vector_pointer), i_dup, i_dup    ; [code vector] [ok bool]
+        dq          i_write_mem_i64, i_swap, i_add, val(-8), i_read_mem_i64, i_dup, i_dup ; [code vector] [ok bool] ; remove last 8 bytes (size -= 8)
+        dq          call(f_byte_vector_copy_to_perm) ; [code vector] [ok bool]
+        dq          call(f_byte_vector_append_i64), i_swap, val(0), i_dup  ; [code vector] [ok bool] ; append dummy val
         dq          i_swap          ; [ok bool] [code vector]
         dq          i_drop, i_rot   ; [ok bool] [code vector] [dict]
         dq          i_drop, i_swap  ; [ok bool] [scanner] [code vector] [dict]
@@ -2295,7 +2284,7 @@ f_f_read_compile_run_loop__run: equ     $-8
         dq          val(6), val('e'), val('r'), val('r'), val('o'), val('r'), val(10)
 f_f_read_compile_run_loop__error: equ     $-8
         dq          i_return
-        dq          call(f_byte_vector_destroy)     ; <scanner> <dict> TODO: destroy sub-functions
+        dq          i_drop     ; <scanner> <dict> TODO: destroy sub-functions
         dq          call(f_if), val(f_id), val(f_f_read_compile_run_loop__run), val(f_f_read_compile_run_loop__error)
         dq          call(f_read_and_compile_code)   ; <ok bool> <code vector> <scanner> <dict>
         dq          i_2dup
