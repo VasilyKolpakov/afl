@@ -1439,15 +1439,13 @@ f_skip_comments_and_whitespace: equ     $-8
 ; tests if token is a number
 ; <token byte vector> -> <bool>
         dq          i_return
-        dq          call(f_free), i_pop_from_ret_stack              ; <bool>
         dq          i_equal, val(0), call(f_memcmp)                 ; <bool>
-        dq              i_peek_ret_stack, val(1)                    ; <number str addr> <token addr> <number str size>
+        dq              val(tmp_buffer)                    ; <number str addr> <token addr> <number str size>
         dq              call(f_byte_vector_pointer)                 ; <token addr> <number str size>
         dq          i_swap                                          ; <token> <number str size>
         dq          i_drop, call(f_i64_to_string),                  ; <number str size> <token>
-        dq              i_swap, i_peek_ret_stack, val(1)            ; <number> <temp buffer> <number str size> <number str size> <token>
+        dq              i_swap, val(tmp_buffer)            ; <number> <temp buffer> <number str size> <number str size> <token>
         dq              i_rot, i_dup                                ; <number> <number str size> <number str size> <token>
-        dq          i_push_to_ret_stack, call(f_malloc), i_dup      ; <number str size> <number> <token>
         dq          i_drop                                          ; <number str size> <number> <token>
 f_is_number_token__check_string: equ     $-8
         dq          i_return
