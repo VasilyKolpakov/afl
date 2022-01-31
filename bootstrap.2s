@@ -33,7 +33,6 @@ rename_word "p" "print_string" ;
 rename_word ".b" "print_bool" ;
 rename_word ".c" "write_byte_to_stdout" ;
 
-
 rename_word "du" "dup" ;
 rename_word "dn" "pick" ;
 rename_word "2d" "2dup" ;
@@ -67,25 +66,27 @@ rename_word "di" "the_dictionary" ;
 rename_word "fc" "func_compose" ; # <func1> <func2> -> <func that calls func2 first, then call func1>
 rename_word "ca" "func_capture" ; # <value> -> <func that puts value on the stack>
 
-rename_word "hp" "sigsegv_handler_pointer"
-rename_word "ij" "jmp_instruction_code"
+rename_word "hp" "sigsegv_handler_pointer" ;
+rename_word "ij" "jmp_instruction_code" ;
 
 
-rename_word "ac" "argc"
-rename_word "av" "argv"
+rename_word "ac" "argc" ;
+rename_word "av" "argv" ;
 
-rename_word "r0" "f_read_from_std_in"
+rename_word "r0" "f_read_from_std_in" ;
 
-rename_word "p1" "f_read_compile_run_loop"
-rename_word "p2" "f_read_compile_run"
-rename_word "p3" "f_read_compile_next_token"
-rename_word "p4" "f_free"
-rename_word "p5" "f_realloc"
-rename_word "p6" "f_read_and_compile_code__emit_code_for_string_literal"
-rename_word "p7" "f_read_and_compile_code__emit_code_for_num"
-rename_word "p8" "f_read_and_compile_code__emit_code_for_word"
-rename_word "p9" "f_malloc"
-rename_word "pa" "f_dictionary_find_record"
-rename_word "pb" "f_is_bad_string_literal_token"
-rename_word "pc" "f_read_next_token"
-rename_word "pd" "f_string_literal_token_to_string"
+rename_word "p1" "f_read_compile_run_loop" ;
+rename_word "p2" "f_read_compile_run" ;
+rename_word "p3" "f_read_compile_next_token" ;
+rename_word "p4" "f_free" ;
+#rename_word "p5" "f_realloc" ;
+rename_word "p6" "f_read_and_compile_code__emit_code_for_string_literal" ;
+rename_word "p7" "f_read_and_compile_code__emit_code_for_num" ;
+rename_word "p8" "f_read_and_compile_code__emit_code_for_word" ;
+rename_word "p9" "f_malloc" ;
+rename_word "pa" "f_dictionary_find_record" ;
+rename_word "pb" "f_is_bad_string_literal_token" ;
+rename_word "pc" "f_read_next_token" ;
+rename_word "pd" "f_string_literal_token_to_string" ;
+
+;

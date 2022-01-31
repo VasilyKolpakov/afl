@@ -71,6 +71,7 @@
 data_stack_size:        equ    10240
 return_stack_size:      equ    102400
 perm_mem_size:          equ    1024000
+arena_mem_size:         equ    1024000
 
         section   .text
 
@@ -747,7 +748,7 @@ def_static_string ss_false, "false"
 def_nl_terminated_static_string ss_newline, ""
 
 
-def_nl_terminated_static_string ss_test_atoi, "-123"
+def_nl_terminated_static_string ss_test_atoi, "111"
 
 def_static_string ss_syscall_error, "syscall error: "
 def_nl_terminated_static_string ss_panic, "panic"
@@ -761,6 +762,7 @@ def_nl_terminated_static_string ss_return_stack_overflow, "Return stack overflow
 def_nl_terminated_static_string ss_return_stack_underflow, "Return stack underflow"
 
 def_nl_terminated_static_string ss_perm_mem_exausted, "Perm mem is exausted, increase perm_mem_size"
+def_nl_terminated_static_string ss_arena_mem_exausted, "Arena mem is exausted, increase arena_mem_size"
 
 def_nl_terminated_static_string ss_sigsegv_handler_msg, "Segmentation fault, to set sigsegv handler use sigsegv_handler_pointer constant"
 
@@ -946,12 +948,11 @@ f_mremap: equ     $-8
 ; malloc
 f_malloc_end:
         dq          i_return
-        dq          i_add, val(8)                       ; <addr>
-        dq          i_write_mem_i64                     ; <addr>
-        dq          i_rev_rot, i_dup                    ; <addr> <size> <addr>
-        dq          call(f_log_syscall_error)           ; <addr> <size>
-        dq          call(f_mmap_anon)                   ; <addr> <size>
-        dq          i_dup, i_add, val(8)                ; <size> <size>
+        dq          i_write_mem_i64, val(arena_mem_ptr), i_add ; [size] [perm_mem_ptr] [perm_mem_ptr]
+        dq          i_rot, i_dup, i_read_mem_i64, val(arena_mem_ptr)   ; [size]
+        dq          call(f_panic_msg_if), val(ss_arena_mem_exausted), val(ss_arena_mem_exausted_size)  ; [perm_mem exausted?] [size]
+        dq          i_less, val(arena_mem + arena_mem_size)   ; [size + perm_mem_ptr] [size]
+        dq          i_add, i_read_mem_i64, val(arena_mem_ptr), i_dup  ; [size]
 f_malloc: equ     $-8
         dq          f_malloc_end
 
@@ -967,30 +968,16 @@ f_perm_malloc_end:
 f_perm_malloc: equ     $-8
         dq          f_perm_malloc_end
 
-; <addr> <new size> -> <addr>
-; realloc
-f_realloc_end:
-        dq          i_return
-        dq          i_add, val(8)                       ; <addr>
-        dq          i_write_mem_i64                     ; <addr>
-        dq          i_rev_rot, i_dup                    ; <addr> <new size> <addr>
-        dq          call(f_log_syscall_error)           ; <addr> <new size>
-        dq          call(f_mremap),                     ; <addr> <new size>
-        dq          i_swap, i_read_mem_i64, i_dup       ; <orig addr> <old size> <new size> <new size>
-        dq          i_add, val(-8)                      ; <orig addr> <new size> <new size>
-        dq          i_rot, i_dup, i_add, val(8), i_swap ; <addr> <new size> <new size>
-f_realloc: equ     $-8
-        dq          f_realloc_end
-
 ; <addr>
 ; free
 f_free_end:
         dq          i_return
-        dq          i_drop, call(f_log_syscall_error)
-        dq          call(f_munmap)                      ; <err code>
-        dq          i_swap                              ; <addr> <size>
-        dq          i_read_mem_i64, i_dup               ; <size> <addr>
-        dq          i_add, val(-8)                      ; <addr>
+        ;dq          i_drop, call(f_log_syscall_error)
+        ;dq          call(f_munmap)                      ; <err code>
+        ;dq          i_swap                              ; <addr> <size>
+        ;dq          i_read_mem_i64, i_dup               ; <size> <addr>
+        ;dq          i_add, val(-8)                      ; <addr>
+        dq          i_drop
 f_free: equ     $-8
         dq          f_free_end
 
@@ -1066,10 +1053,10 @@ f_log_syscall_error: equ     $-8
 ; make byte vector [size, capacity, pointer]
 ; -> <addr>
         dq          i_return,
-        dq          i_write_mem_i64, i_swap, call(f_malloc), val(1)         ; <addr>  write pointer
-        dq          i_add, val(8 * 2), i_dup                                ; <pointer addr> <addr>
-        dq          i_write_mem_i64, i_swap, val(1), i_add, val(8), i_dup   ; <cap addr> <addr>  write capacity
-        dq          i_write_mem_i64, i_swap, val(0), i_dup                  ; <size addr> <addr> write size
+        dq          i_write_mem_i64, i_swap, call(f_malloc), val(160)        ; <array pointer> <addr>  write pointer
+        dq          i_add, val(8 * 2), i_dup                                ; <addr>
+        dq          i_write_mem_i64, i_swap, val(160), i_add, val(8), i_dup  ; <addr>  write capacity
+        dq          i_write_mem_i64, i_swap, val(0), i_dup                  ; <addr> write size
         dq          call(f_malloc), val(8 * 3)                              ; <addr>
 f_byte_vector_make: equ     $-8
 
@@ -1135,13 +1122,16 @@ f_byte_vector_set: equ     $-8
 
 ; byte vector append byte
 ; <addr> <byte value>
-        dq          i_return
-        dq          i_write_mem_i64, i_add, val(8 * 2), i_over              ; <addr> <value>
-        dq          call(f_realloc)                                         ; <new array addr> <addr> <value>
-        dq          i_read_mem_i64, i_add, val(8*2), i_over                 ; <array addr> <capacity * 2> <addr> <value> write capacity
-        dq          i_write_mem_i64, i_add, val(8), i_swap, i_2dup          ; <capacity * 2> <addr> <value> write capacity
-        dq          i_mul, val(2)                                           ; <capacity * 2> <addr> <value>
-        dq          i_read_mem_i64, i_add, val(8), i_dup                    ; <capacity> <addr> <value>
+        dq          i_return                                                        ; [vector]
+        dq          i_pop_from_ret_stack
+        dq          i_write_mem_i64, i_add, val(8), i_peek_ret_stack_first,         ; [capacity * 2]
+        dq          i_mul, val(2), i_read_mem_i64, i_add, val(8), i_peek_ret_stack_first  
+        dq          i_write_mem_i64, i_add, val(16), i_peek_ret_stack_first         ; [new array]
+        dq          i_memcopy, i_read_mem_i64, i_add, val(8), i_peek_ret_stack_first               ; [old array] [new array] [new array]
+        dq          i_read_mem_i64, i_add, val(16), i_peek_ret_stack_first, i_dup   ; [new array]
+        dq          call(f_malloc), i_mul, val(2)                                   ; [capacity]
+        dq          i_read_mem_i64, i_add, val(8), i_peek_ret_stack_first
+        dq          i_push_to_ret_stack                                             ; [vector]
 f_byte_vector_append_byte__double_capacity: equ     $-8
         dq          i_return, i_equal
 f_byte_vector_append_byte__is_equal: equ     $-8
@@ -1178,8 +1168,9 @@ f_byte_vector_append_i64: equ     $-8
         dq          i_read_mem_i64, i_add, val(8 * 2)
 f_byte_vector_pointer: equ     $-8
         dq          i_return
-        dq          call(f_free), call(f_free)
-        dq          i_read_mem_i64, i_add, val(8 * 2), i_dup                ; <array pointer> <addr>
+        ;dq          call(f_free), call(f_free)
+        ;dq          i_read_mem_i64, i_add, val(8 * 2), i_dup                ; <array pointer> <addr>
+        dq          i_drop
 f_byte_vector_destroy: equ     $-8
 
 ; write byte vector to stdout
@@ -1209,7 +1200,7 @@ f_atoi__add_one: equ     $-8
 f_atoi__first_char_is_minus: equ     $-8
         dq          i_return
         dq          i_not, i_or
-        dq              i_equal, i_dup_n, val(2), i_dup_n, val(5) ; size == char index
+        dq              i_equal, i_dup_n, val(3), i_dup_n, val(5) ; [is_in_range] [char index] [number] [buffer] [string size] ; size == char index
         dq              i_or
         dq                  i_less, val(57)
         dq                  i_swap
@@ -1325,7 +1316,7 @@ f_i64_to_string: equ     $-8
 ; scanner_make
         dq          i_return
         dq          i_drop, call(f_read_from_std_in), i_over, val(1)
-        dq          call(f_perm_malloc), val(1)
+        dq          call(f_perm_malloc), val(8)
 f_scanner_make: equ     $-8
 ; <scanner> -> <byte>
 ; scanner_peek
@@ -1546,6 +1537,7 @@ f_string_literal_token_to_string__continue: equ     $-8
 f_string_literal_token_to_string__loop_body: equ     $-8
 f_string_literal_token_to_string_end:
         dq          i_return
+        dq          i_swap, call(f_byte_vector_copy_to_perm), i_swap ; [ok bool] [string vector]
         dq          i_drop, i_drop, i_rev_rot
         dq          call(f_while)           ; <ok bool> <n> <token vector> <string vector>
         dq          val(f_string_literal_token_to_string__continue), val(f_string_literal_token_to_string__loop_body)
@@ -2009,9 +2001,7 @@ f_echo_tokens__is_bad_string_literal: equ     $-8
         dq          i_return
         dq          call(f_is_semicolon_token), i_dup
 f_echo_tokens__is_semicolon: equ     $-8
-        dq          i_return
-        dq          call(f_byte_vector_destroy),
-
+        dq          i_return, i_drop
         dq          call(f_cond_end)
         dq          call(f_cond_default), val(f_echo_tokens__print_word)
         dq          call(f_cond_when), val(f_echo_tokens__is_bad_string_literal), val(f_echo_tokens__print_bad_string_literal)
@@ -2019,7 +2009,9 @@ f_echo_tokens__is_semicolon: equ     $-8
         dq          call(f_cond_when), val(f_echo_tokens__is_num), val(f_echo_tokens__print_number)
         dq          call(f_cond_when), val(f_echo_tokens__is_semicolon), val(f_echo_tokens__print_semicolon)
         dq          call(f_cond_start)
+f_print_token: equ     $-8
         
+        dq          call(f_print_token)
         dq          call(f_print_newline)
         dq          call(f_print_byte_vector), i_dup
         dq          call(f_read_next_token), i_dup
@@ -2139,7 +2131,7 @@ f_read_and_compile_code__emit_word: equ     $-8
         dq          val(1) ; [scanner] [code vector] [dict]
         dq          call(f_byte_vector_append_i64), i_swap, val(i_late_bind_and_call_word), i_over  ; [scanner] [code vector] [dict]
         dq          call(f_byte_vector_append_i64), i_dup_n, val(3) ; [struct] [scanner] [code vector] [dict]
-        dq          call(f_create_struct_dict_string), i_dup_n, val(4) ; [token] [scanner] [code vector] [dict]
+        dq          call(f_create_struct_dict_string), i_dup_n, val(4), call(f_byte_vector_copy_to_perm) ; [token] [scanner] [code vector] [dict]
         dq          i_drop ; drop null pointer ; [null record] [token] [scanner] [code vector] [dict]
 f_read_and_compile_code__no_such_word_case: equ     $-8
 f_read_and_compile_code__emit_code_for_word_end:
@@ -2243,7 +2235,7 @@ f_create_struct_dict_string: equ     $-8
         dq          call(f_exit), val(1) 
         dq          call(f_print_newline)
         dq          call(f_print_byte_vector)
-        dq          call(f_byte_vector_destroy), call(f_print_byte_vector), i_dup, call(f_byte_vector_from_bytes), val(10), val('b'), val('a'), val('d'), val(' '), val('w'), val('o'), val('r'), val('d'), val(':'), val(' ')
+        dq          call(f_print_byte_vector), call(f_byte_vector_from_bytes), val(10), val('b'), val('a'), val('d'), val(' '), val('w'), val('o'), val('r'), val('d'), val(':'), val(' ')
         dq          i_drop ; drop null pointer ; <token>
 f_late_bind_and_call_word_no_such_word_case: equ     $-8
 ; <struct <dict> <string>> <instruction pointer> -> ... 
@@ -2264,6 +2256,7 @@ f_late_bind_and_call_word: equ     $-8
 ; <scanner> <dict> ->
 ; loop invariant: <scanner> <dict>
         dq          i_return
+        dq          i_write_mem_i64, val(arena_mem_ptr), val(arena_mem) ; reset allocator
         dq          i_pop_from_ret_stack
         dq          i_pop_from_ret_stack
         dq          i_pop_from_ret_stack
@@ -2297,13 +2290,15 @@ f_read_compile_run_loop: equ     $-8
         dq          call(f_exit_0)
         dq          call(f_print_panic)
         dq          call(f_print_newline)
-        dq          call(f_print_byte_vector)
+        dq          call(f_print_byte_vector), i_over
 f_rename_word_word_exists: equ     $-8
 ; <dict> <old name> <new name> ->
         dq          i_return
         dq          call(f_dictionary_record_set_name) ; [the record] [new name]
-        dq          call(f_if), val(f_id), val(f_rename_word_word_exists), val(f_id), i_equal, val(0), i_dup ; [the record] [new name]
-        dq          call(f_dictionary_find_record)  ; [record] [old name] [new name]
+        dq          i_drop, i_swap ; [the record] [old_name[ [new name]
+        dq          call(f_if), val(f_id), val(f_rename_word_word_exists), val(f_id), i_equal, val(0), i_dup ; [the record] [old_name] [new name]
+        dq          call(f_dictionary_find_record)  ; [record] [old_name] [old name] [new name]
+        dq          i_rot, i_dup, i_swap ; [record] [old name] [new name]
         dq          i_read_mem_i64  ; [dict] [old name] [new name]
 f_rename_word: equ     $-8
         
@@ -2407,15 +2402,13 @@ f_define_word: equ     $-8
 ; test f_i64_to_string <number> <buffer address> <buffer size>
 %macro  test_i64_to_string__atoi__roundtrip 1
         dq          i_and
-        dq              call(f_free), i_pop_from_ret_stack
         dq              i_equal
         dq                  val(%1)
-        dq                  call(f_atoi), i_peek_ret_stack, val(1), val(100)
+        dq                  call(f_atoi), val(tmp_buffer), val(100)
         dq              i_and
         dq                  i_equal
         dq                      call(f_i64_str_size), val(%1)
-        dq                      call(f_i64_to_string), val(%1), i_peek_ret_stack, val(1), val(100)
-        dq              i_push_to_ret_stack, call(f_malloc), val(100)
+        dq                      call(f_i64_to_string), val(%1), val(tmp_buffer), val(100)
 %endmacro
                     test_i64_to_string__atoi__roundtrip(0)
                     test_i64_to_string__atoi__roundtrip(100)
@@ -2423,28 +2416,6 @@ f_define_word: equ     $-8
                     test_i64_to_string__atoi__roundtrip(-1)
                     test_i64_to_string__atoi__roundtrip(-11)
                     test_i64_to_string__atoi__roundtrip(-9223372036854775808)
-
-        dq          i_and
-        dq              call(f_free), i_pop_from_ret_stack
-        dq              i_equal
-        dq                  val(42)
-        dq                  i_read_mem_i64, i_peek_ret_stack, val(1)
-        dq                  i_drop, i_read_mem_i64, i_add, val(9000), i_peek_ret_stack, val(1)
-        dq              i_push_to_ret_stack, call(f_realloc), i_pop_from_ret_stack, val(10000)
-        ;dq                  i_write_mem_i64, i_add, val(9000) i_peek_ret_stack, val(1), val(42)
-        dq                  i_write_mem_i64, i_peek_ret_stack, val(1), val(42)
-        dq              i_push_to_ret_stack, call(f_malloc), val(100)
-        dq          i_and
-        dq              call(f_free), i_pop_from_ret_stack
-        dq              i_equal
-        dq                  val(42)
-        dq                  i_read_mem_i64, i_add, val(1024 * 8), i_peek_ret_stack, val(1)
-        dq              i_write_mem_i64
-        dq                  i_add, val(1024 * 8), i_peek_ret_stack, val(1)
-        dq                  val(42)
-        dq              i_push_to_ret_stack, call(f_realloc)
-        dq                  call(f_malloc), val(100)
-        dq                  val(10000)
 
         dq          i_and
         dq              call(f_free), i_pop_from_ret_stack
@@ -2616,6 +2587,26 @@ f_define_word: equ     $-8
         dq          i_push_to_ret_stack, i_stack_depth
         dq          val(1)
 
+        dq          call(f_exit_0)
+        dq              i_drop, i_pop_from_ret_stack
+        dq                  call(f_print_buffer)
+        dq                  call(f_byte_vector_pointer), i_peek_ret_stack, val(1)
+        dq                  call(f_byte_vector_size), i_peek_ret_stack, val(1)
+        dq                  call(f_byte_vector_append_byte), i_peek_ret_stack, val(1), val(48)
+        dq                  call(f_byte_vector_append_byte), i_peek_ret_stack, val(1), val(57)
+        dq                  call(f_byte_vector_append_byte), i_peek_ret_stack, val(1), val(56)
+        dq                  call(f_byte_vector_append_byte), i_peek_ret_stack, val(1), val(55)
+        dq                  call(f_byte_vector_append_byte), i_peek_ret_stack, val(1), val(54)
+        dq                  call(f_byte_vector_append_byte), i_peek_ret_stack, val(1), val(53)
+        dq                  call(f_byte_vector_append_byte), i_peek_ret_stack, val(1), val(52)
+        dq                  call(f_byte_vector_append_byte), i_peek_ret_stack, val(1), val(51)
+        dq                  call(f_byte_vector_append_byte), i_peek_ret_stack, val(1), val(50)
+        dq                  call(f_byte_vector_append_byte), i_peek_ret_stack, val(1), val(49)
+        dq              i_push_to_ret_stack, call(f_byte_vector_make)
+        dq          val(1)
+        dq          call(f_exit_0)
+        dq          call(f_print_newline), call(f_print_number)
+        dq          call(f_atoi), val(ss_test_atoi), val(1)
 f_tests: equ     $-8
 
 
@@ -2776,7 +2767,7 @@ f_tests: equ     $-8
                     def_function_word_2 'p','2', f_read_and_compile_code
                     def_function_word_2 'p','3', f_read_and_compile_code__emit_code_for_next_token
                     def_function_word_2 'p','4', f_free
-                    def_function_word_2 'p','5', f_realloc
+
                     def_function_word_2 'p','6', f_read_and_compile_code__emit_code_for_string_literal
                     def_function_word_2 'p','7', f_read_and_compile_code__emit_code_for_num
                     def_function_word_2 'p','8', f_read_and_compile_code__emit_code_for_word
@@ -2786,7 +2777,10 @@ f_tests: equ     $-8
                     def_function_word_2 'p','c', f_read_next_token
                     def_function_word_2 'p','d', f_string_literal_token_to_string
         dq          i_push_to_ret_stack, val(the_dictionary)
+        ;dq          call(f_tests)
+        ;dq          call(f_echo_tokens)
         dq          i_write_mem_i64, val(perm_mem_ptr), val(perm_mem)
+        dq          i_write_mem_i64, val(arena_mem_ptr), val(arena_mem)
 f_start: equ     $-8
 
 sigaction:
@@ -2807,3 +2801,7 @@ perm_mem_ptr:
                     resq    1
 perm_mem:
                     resb    perm_mem_size
+arena_mem_ptr:
+                    resq    1
+arena_mem:
+                    resb    arena_mem_size
