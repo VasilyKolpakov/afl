@@ -90,18 +90,6 @@ def "memset" {
     rot
 } ;
 
-# <count> <src address> <dest address> ->
-def "memcopy" {
-    2drop
-    do_n_times swap {
-        swap + 1 swap
-        + 1 # <src address> <dest address>
-        write_mem_byte swap # <byte> <dest address> <src address> <dest address>
-        read_mem_byte
-        2dup
-    }
-} ;
-
 # <size> <pointer 1> <pointer 2> -> <-1 or 0 or 1>
 def "memcmp" {
     dip { 2drop } drop
