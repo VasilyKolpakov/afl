@@ -448,6 +448,34 @@ i_memcopy_loop_byte:
 i_memcopy_end:
         jump_to_next_instruction
 
+i_memcmp:
+        drop_data_stack 3
+        mov         rcx,  [r12 + 8*2]        ; count
+        mov         rsi,  [r12 + 8*1]        ; first address
+        mov         rdi,  [r12 + 8*0]        ; second address
+        add         r12, 8
+i_memcmp_loop:
+        cmp         rcx, 0
+        jle         i_memcmp_end_equal
+        mov         dl, [rsi]
+        mov         al, [rdi]
+        cmp         dl, al
+        ja          i_memcmp_end_greater
+        jb          i_memcmp_end_less
+        sub         rcx, 1
+        add         rsi, 1
+        add         rdi, 1
+        jmp         i_memcmp_loop
+i_memcmp_end_equal:
+        mov QWORD   [r12 - 8], 0
+        jump_to_next_instruction
+i_memcmp_end_greater:
+        mov QWORD   [r12 - 8], 1
+        jump_to_next_instruction
+i_memcmp_end_less:
+        mov QWORD   [r12 - 8], -1
+        jump_to_next_instruction
+
 i_jmp:
         mov         r14, [r14]             ; next word is the instruction pointer
         jump_to_next_instruction
@@ -1635,27 +1663,7 @@ f_is_close_paren_token: equ     $-8
 ; <addr1> <addr2> <n> -> <bool>
 ; loop invariant: <previous cmp> <addr1> <addr2> <n>
         dq          i_return,
-        dq          i_and,
-        dq              i_equal, val(0), i_over
-        dq              i_not, i_equal, val(0), i_dup_n, val(4)
-f_memcmp__equal_and_n_is_nonzero: equ     $-8
-        dq          i_return,
-        dq          i_swap, i_add, val(1), i_pop_from_ret_stack   ; <cmp> <addr 1 + 1> <addr 2 + 1> <n - 1>
-        dq          i_swap, i_add, val(1), i_pop_from_ret_stack   ; <cmp> <addr 2 + 1> <n - 1>
-        dq          i_swap, i_add, val(-1), i_swap                ; <cmp> <n - 1>
-        dq          i_sub                                         ; <cmp> <n>
-        dq              i_read_mem_byte, i_peek_ret_stack, val(2) ; addr 1
-        dq              i_read_mem_byte, i_peek_ret_stack, val(1) ; addr 2
-        dq          i_push_to_ret_stack     ; addr 2
-        dq          i_push_to_ret_stack     ; addr 1
-        dq          i_drop
-f_memcmp__loop: equ     $-8
-        dq          i_return,
-        dq          i_drop, i_swap
-        dq          i_drop, i_drop, i_rev_rot,
-        dq          call(f_while), val(f_memcmp__equal_and_n_is_nonzero), val(f_memcmp__loop)
-        dq          val(0)
-        dq          call(f_panic_if), val(f_id), i_greater, val(0), i_dup_n, val(3)
+        dq          i_memcmp, i_rot
 f_memcmp: equ     $-8
 
 ; creates empty dictionary
@@ -2722,6 +2730,7 @@ f_tests: equ     $-8
                     def_instruction_word_2 'w', 'l', i_write_mem_i64
                     def_instruction_word_2 'r', 'l', i_read_mem_i64
                     def_instruction_word_2 'm', 'c', i_memcopy
+                    def_instruction_word_2 'c', 'm', i_memcmp
                     
                     def_instruction_word_2 's', 'c', i_syscall
                     def_instruction_word_2 'a', 'c', i_argc

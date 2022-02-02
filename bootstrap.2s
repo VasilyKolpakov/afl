@@ -58,6 +58,7 @@ rename_word "wl" "write_mem_i64" ;
 rename_word "rl" "read_mem_i64" ;
 
 rename_word "mc" "memcopy" ;
+rename_word "cm" "memcmp" ;
 
 rename_word "sc" "syscall" ;
 
