@@ -322,7 +322,7 @@
 
 (define (compile-list expr rest local-vars)
   (cond
-    ((equal? 'var-addr (car expr))
+    ((or (equal? '& (car expr)) (equal? 'var-addr (car expr)))
      (let ((var (car (cdr expr)))
            (var-index (index-of local-vars var)))
        (if (empty? var-index) (panic "ref: bad variable:" var) '())
@@ -611,10 +611,22 @@
 (write-mem-i64 alloc-bump-ptr alloc-arena)
 
 (define buffer (syscall-mmap-anon 1000))
-
 (define upl-code 
   '(
-    (proc malloc (addr-out size) ((bump-ptr 0))
+    (proc chk-syscall (retcode-out call-code arg1 arg2 arg3 arg4 arg5 arg6) ((ret 0) (hack-8-byte-buf 0) (num-length 0))
+          ((syscall (var-addr ret) call-code arg1 arg2 arg3 arg4 arg5 arg6)
+           (if (and (< ret 0) (> ret -4096))
+               (,(upl-print-static-string "syscall error: ")
+                 (call number-to-string (var-addr hack-8-byte-buf) (- 0 ret))
+                 (call number-string-length (var-addr num-length) (- 0 ret))
+                 (syscall (var-addr ret) 1 1 (var-addr hack-8-byte-buf) num-length 1 2 3)
+                ,(upl-exit 1)))
+           (set-i64 retcode-out ret)))
+    (proc write-to-stdout (buf length) ((sys-ret 0) (written 0))
+          ((while (> length written)
+                  ((call chk-syscall (& sys-ret) 1 1 (+ buf written) (- length written) 1 2 3)
+                   (set-var written (+ written sys-ret))))))
+    (proc gc-malloc (addr-out size) ((bump-ptr 0))
           (
            (set-var bump-ptr (get-i64 ,alloc-bump-ptr))
            (if (> (+ bump-ptr size) ,(+ alloc-arena alloc-arena-size))
@@ -625,6 +637,25 @@
            (set-i64 ,alloc-bump-ptr (+ bump-ptr size))
            (set-i64 addr-out bump-ptr)
            ))
+;   object header layout [gc flags (1 byte)][type id (1 byte)]
+;   i64 obj type id = 0
+
+    (proc allocate-i64 (addr-out num) ((addr 0))
+          ((call gc-malloc addr 10)
+           (set-u8  addr 0)
+           (set-u8  (+ addr 1) 0) ; type id
+           (set-i64 (+ addr 2) num)
+           (set-i64 addr-out addr)))
+;   pair obj type id = 1
+
+    (proc allocate-pair (addr-out first second) ((addr 0))
+          ((call gc-malloc addr 18)
+          (set-u8  addr 0)
+          (set-u8  (+ addr 1) 1) ; type id
+          (set-i64 (+ addr 2) first)
+          (set-i64 (+ addr 10) second)
+          (set-i64 addr-out addr)))
+
     (proc number-string-length (length-ptr num) ((l 0))
           (
            (if (= num 0)
@@ -657,17 +688,16 @@
            ))
     (proc main-proc () ((num -9223372036854775808) (syscall-ret-val 0))
           (
-           (if (= 1 1)
-               (,(upl-print-static-string "true\n")
-                 ,(upl-print-static-string "213true\n")))
-           (syscall (var-addr syscall-ret-val) 60 42 3 4 5 6 7)
            (call number-string-length ,buffer num)
            (call number-to-string ,(+ buffer 8) num)
            (set-u8 (+ (+ ,buffer 8) (get-i64 ,buffer)) 10)
-           (syscall (var-addr syscall-ret-val) 1 1 ,(+ buffer 8) (+ 1 (get-i64 ,buffer)) 1 2 3)
-           ,(upl-print-static-string "test print-string\n")
-           ,(upl-print-static-string "test print-string 2\n")
-           ;(call malloc 1000000)
+           (while (< syscall-ret-val 4)
+                  ((set-var syscall-ret-val (+ syscall-ret-val 1))
+                  ,(upl-print-static-string "test\n")))
+           ;(call chk-syscall ,(+ 100 buffer) 1 1 ,(+ buffer 8) (+ 1 (get-i64 ,buffer)) 1 2 3)
+           (call write-to-stdout ,(+ buffer 8) (+ 1 (get-i64 ,buffer)))
+           ;,(upl-print-static-string "test print-string\n")
+           ;,(upl-print-static-string "test print-string 2\n")
            ;(syscall ,buffer 39 1 2 3 4 5 6)
            ;(call write-hello ,buffer)
            ;(while (< i 5)
@@ -682,6 +712,7 @@
 (define proc-list (compile-upl-to-native fpointer upl-code))
 
 (enable-REPL-print)
+"native call:"
 (native-call (alist-lookup proc-list 'main-proc))
 "number:"
 (string-from-native-buffer (+ buffer 8) (read-mem-i64 buffer))
@@ -691,3 +722,4 @@
 "string length:"
 (read-mem-i64 buffer)
 (read-mem-i64 (+ 8 buffer))
+(read-mem-i64 (+ 100 buffer))
