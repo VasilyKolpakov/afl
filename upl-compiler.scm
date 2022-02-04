@@ -448,6 +448,17 @@
                  (list (jmp-instruction loop-label)
                        end-label)
                  ))))
+          ((and (equal? stmt-type 'if) (equal? 2 (length stmt-args)))
+           (let ((cond-expr (car stmt-args))
+                 (then-branch (second stmt-args))
+                 (compile-substatement (lambda (s) (compile-statement s local-vars procedure-list)))
+                 (else-label (new-label))
+                 (cond-instructions (compile-boolean-expression cond-expr local-vars else-label #f)))
+             (append
+               cond-instructions
+               (flatmap compile-substatement then-branch)
+               (list else-label)
+               )))
           ((equal? stmt-type 'if)
            (let ((cond-expr (car stmt-args))
                  (then-branch (second stmt-args))
@@ -590,22 +601,35 @@
           (cell-set bump-index (+ str-length (cell-get bump-index)))
           '(syscall ,ret-val-buffer 1 1 ,(+ str-buffer original-bump-index) ,str-length 1 2 3))))))
 
+(define dummy-buf (syscall-mmap-anon 1000))
+(define (upl-exit code)
+  '(syscall ,dummy-buf 60 ,code 1 2 3 4 5))
+
+(define alloc-arena-size 409600)
+(define alloc-arena (syscall-mmap-anon alloc-arena-size))
+(define alloc-bump-ptr (syscall-mmap-anon 1000))
+(write-mem-i64 alloc-bump-ptr alloc-arena)
+
 (define buffer (syscall-mmap-anon 1000))
 
 (define upl-code 
-  '((proc write-hello (ptr) ()
+  '(
+    (proc malloc (addr-out size) ((bump-ptr 0))
           (
-           (set-u8 ,buffer 104)
-           (set-u8 ,(+ 1 buffer) 101)
-           (set-u8 ,(+ 2 buffer) 108)
-           (set-u8 ,(+ 3 buffer) 108)
-           (set-u8 ,(+ 4 buffer) 111)
+           (set-var bump-ptr (get-i64 ,alloc-bump-ptr))
+           (if (> (+ bump-ptr size) ,(+ alloc-arena alloc-arena-size))
+               (
+                ,(upl-print-static-string "malloc arena overflow\n")
+                ,(upl-exit 1)
+                ) ())
+           (set-i64 ,alloc-bump-ptr (+ bump-ptr size))
+           (set-i64 addr-out bump-ptr)
            ))
     (proc number-string-length (length-ptr num) ((l 0))
           (
            (if (= num 0)
              ((set-i64 length-ptr 1)
-              (return)) ())
+              (return)))
            (if (< num 0)
              ((inc-var l 1)) ())
            (while (!= num 0)
@@ -633,12 +657,17 @@
            ))
     (proc main-proc () ((num -9223372036854775808) (syscall-ret-val 0))
           (
+           (if (= 1 1)
+               (,(upl-print-static-string "true\n")
+                 ,(upl-print-static-string "213true\n")))
+           (syscall (var-addr syscall-ret-val) 60 42 3 4 5 6 7)
            (call number-string-length ,buffer num)
            (call number-to-string ,(+ buffer 8) num)
            (set-u8 (+ (+ ,buffer 8) (get-i64 ,buffer)) 10)
            (syscall (var-addr syscall-ret-val) 1 1 ,(+ buffer 8) (+ 1 (get-i64 ,buffer)) 1 2 3)
            ,(upl-print-static-string "test print-string\n")
            ,(upl-print-static-string "test print-string 2\n")
+           ;(call malloc 1000000)
            ;(syscall ,buffer 39 1 2 3 4 5 6)
            ;(call write-hello ,buffer)
            ;(while (< i 5)
@@ -662,4 +691,3 @@
 "string length:"
 (read-mem-i64 buffer)
 (read-mem-i64 (+ 8 buffer))
-
