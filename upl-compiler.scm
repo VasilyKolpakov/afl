@@ -195,15 +195,29 @@
 (define (set-var-instruction index)
   (list 5 (lambda (ptr) (generate-set-var ptr index)) (list "set-var" index)))
 
-(define (generate-set-frame-pointer ptr)
-  (write-mem-byte ptr       #x55) ; push rbp
-  (write-mem-byte (+ 1 ptr) #x48) ; mov rbp,rsp
-  (write-mem-byte (+ 2 ptr) #x89)
-  (write-mem-byte (+ 3 ptr) #xe5)
-  )
-
 (define set-frame-pointer-instruction
-  (list 4 generate-set-frame-pointer "set-frame-pointer"))
+  (list 4 (lambda (ptr)
+            (begin
+              (write-mem-byte ptr       #x55) ; push rbp
+              (write-mem-byte (+ 1 ptr) #x48) ; mov rbp,rsp
+              (write-mem-byte (+ 2 ptr) #x89)
+              (write-mem-byte (+ 3 ptr) #xe5)))
+        "set-frame-pointer"))
+
+(define zero-frame-pointer-instruction
+  (list 3 (lambda (ptr)
+            (begin
+              (write-mem-byte ptr       #x48) ; xor rbp,rbp
+              (write-mem-byte (+ 1 ptr) #x31)
+              (write-mem-byte (+ 2 ptr) #xed)))
+        "zero-frame-pointer"))
+
+(define push-frame-pointer-instruction
+  (list 1 (lambda (ptr)
+            (begin
+              (write-mem-byte ptr       #x55) ; push rbp
+              ))
+        "push-frame-pointer"))
 
 (define (generate-jmp ptr target)
   (let ((rel-target (- target (+ ptr 5))))
@@ -294,6 +308,7 @@
     (list '%       2 mod-instruction)
     (list 'get-i64 1 get-i64-instruction)
     (list 'get-u8  1 get-u8-instruction)
+    (list 'get-fp  0 push-frame-pointer-instruction)
     ))
 
 (define symbol-to-cmp-instructions
@@ -384,22 +399,22 @@
 (define (compile-statement stmt local-vars procedure-list)
   (let ((stmt-type (car stmt))
         (stmt-args (cdr stmt)))
-    (cond ((equal? stmt-type 'set-i64)
+    (cond ((equal? stmt-type 'i64:=)
            (append
              (compile-expr (first stmt-args) local-vars)
              (compile-expr (second stmt-args) local-vars)
              (list set-i64-instruction)))
-          ((equal? stmt-type 'set-u8)
+          ((equal? stmt-type 'u8:=)
            (append
              (compile-expr (first stmt-args) local-vars)
              (compile-expr (second stmt-args) local-vars)
              (list set-u8-instruction)))
-          ((equal? stmt-type 'inc-var)
+          ((equal? stmt-type ':+=)
            (let ((var (car stmt-args))
                  (var-index (index-of local-vars var))
                  (val-expr (car (cdr stmt-args))))
-             (compile-statement '(set-var ,var (+ ,var ,val-expr)) local-vars procedure-list)))
-          ((equal? stmt-type 'set-var)
+             (compile-statement '(:= ,var (+ ,var ,val-expr)) local-vars procedure-list)))
+          ((equal? stmt-type ':=)
            (let ((var (car stmt-args))
                  (var-index (index-of local-vars var))
                  (val-expr (car (cdr stmt-args))))
@@ -426,6 +441,10 @@
              (append
                (flatmap (lambda (expr) (compile-expr expr local-vars)) stmt-args)
                (list syscall-instruction))))
+          ((equal? stmt-type 'zero-fp)
+           (begin
+             (assert-stmt "zero-fp has 0 args" (= 0 (length stmt-args)))
+             (list zero-frame-pointer-instruction)))
           ((equal? stmt-type 'return)
            (begin
              (assert-stmt "return has 0 args" (= 0 (length stmt-args)))
@@ -621,78 +640,79 @@
                  (call number-string-length (var-addr num-length) (- 0 ret))
                  (syscall (var-addr ret) 1 1 (var-addr hack-8-byte-buf) num-length 1 2 3)
                 ,(upl-exit 1)))
-           (set-i64 retcode-out ret)))
+           (i64:= retcode-out ret)))
     (proc write-to-stdout (buf length) ((sys-ret 0) (written 0))
           ((while (> length written)
                   ((call chk-syscall (& sys-ret) 1 1 (+ buf written) (- length written) 1 2 3)
-                   (set-var written (+ written sys-ret))))))
+                   (:= written (+ written sys-ret))))))
     (proc gc-malloc (addr-out size) ((bump-ptr 0))
           (
-           (set-var bump-ptr (get-i64 ,alloc-bump-ptr))
+           (:= bump-ptr (get-i64 ,alloc-bump-ptr))
            (if (> (+ bump-ptr size) ,(+ alloc-arena alloc-arena-size))
                (
                 ,(upl-print-static-string "malloc arena overflow\n")
                 ,(upl-exit 1)
                 ) ())
-           (set-i64 ,alloc-bump-ptr (+ bump-ptr size))
-           (set-i64 addr-out bump-ptr)
+           (i64:= ,alloc-bump-ptr (+ bump-ptr size))
+           (i64:= addr-out bump-ptr)
            ))
 ;   object header layout [gc flags (1 byte)][type id (1 byte)]
 ;   i64 obj type id = 0
 
     (proc allocate-i64 (addr-out num) ((addr 0))
           ((call gc-malloc addr 10)
-           (set-u8  addr 0)
-           (set-u8  (+ addr 1) 0) ; type id
-           (set-i64 (+ addr 2) num)
-           (set-i64 addr-out addr)))
+           (u8:=  addr 0)
+           (u8:=  (+ addr 1) 0) ; type id
+           (i64:= (+ addr 2) num)
+           (i64:= addr-out addr)))
 ;   pair obj type id = 1
 
     (proc allocate-pair (addr-out first second) ((addr 0))
           ((call gc-malloc addr 18)
-          (set-u8  addr 0)
-          (set-u8  (+ addr 1) 1) ; type id
-          (set-i64 (+ addr 2) first)
-          (set-i64 (+ addr 10) second)
-          (set-i64 addr-out addr)))
+          (u8:=  addr 0)
+          (u8:=  (+ addr 1) 1) ; type id
+          (i64:= (+ addr 2) first)
+          (i64:= (+ addr 10) second)
+          (i64:= addr-out addr)))
+
 
     (proc number-string-length (length-ptr num) ((l 0))
           (
            (if (= num 0)
-             ((set-i64 length-ptr 1)
+             ((i64:= length-ptr 1)
               (return)))
            (if (< num 0)
-             ((inc-var l 1)) ())
+             ((:+= l 1)) ())
            (while (!= num 0)
-                  ((inc-var l 1)
-                   (set-var num (/ num 10))))
-           (set-i64 length-ptr l)
+                  ((:+= l 1)
+                   (:= num (/ num 10))))
+           (i64:= length-ptr l)
            ))
     (proc number-to-string (buf num) ((char-ptr 0))
           (
            (call number-string-length (var-addr char-ptr) num)
-           (set-var char-ptr (+ (- char-ptr 1) buf)) ; start printing the number from the end
+           (:= char-ptr (+ (- char-ptr 1) buf)) ; start printing the number from the end
            (if (= num 0)
-             ((set-u8 char-ptr 48)
+             ((u8:= char-ptr 48)
               (return)) ())
            (if (> num 0)
              ((while (not (= num 0))
-                    ((set-u8 char-ptr (+ 48 (% num 10)))
-                     (inc-var char-ptr -1)
-                     (set-var num (/ num 10)))))
+                    ((u8:= char-ptr (+ 48 (% num 10)))
+                     (:+= char-ptr -1)
+                     (:= num (/ num 10)))))
              ((while (not (= num 0))
-                    ((set-u8 char-ptr (+ 48 (* (% num 10) -1)))
-                     (inc-var char-ptr -1)
-                     (set-var num (/ num 10))))
-              (set-u8 char-ptr 45))) ; minus sign
+                    ((u8:= char-ptr (+ 48 (* (% num 10) -1)))
+                     (:+= char-ptr -1)
+                     (:= num (/ num 10))))
+              (u8:= char-ptr 45))) ; minus sign
            ))
     (proc main-proc () ((num -9223372036854775808) (syscall-ret-val 0))
           (
            (call number-string-length ,buffer num)
            (call number-to-string ,(+ buffer 8) num)
-           (set-u8 (+ (+ ,buffer 8) (get-i64 ,buffer)) 10)
+           (u8:= (+ (+ ,buffer 8) (get-i64 ,buffer)) 10)
            (while (< syscall-ret-val 4)
-                  ((set-var syscall-ret-val (+ syscall-ret-val 1))
+                  ((:= syscall-ret-val (+ syscall-ret-val 1))
                   ,(upl-print-static-string "test\n")))
            ;(call chk-syscall ,(+ 100 buffer) 1 1 ,(+ buffer 8) (+ 1 (get-i64 ,buffer)) 1 2 3)
            (call write-to-stdout ,(+ buffer 8) (+ 1 (get-i64 ,buffer)))
@@ -701,9 +721,14 @@
            ;(syscall ,buffer 39 1 2 3 4 5 6)
            ;(call write-hello ,buffer)
            ;(while (< i 5)
-           ;       ((set-u8 (+ i ,buffer) (+ 0 (get-u8 (+ i ,buffer))))
-           ;        (set-var i (+ i 1))))
+           ;       ((u8:= (+ i ,buffer) (+ 0 (get-u8 (+ i ,buffer))))
+           ;        (:= i (+ i 1))))
            ;)
+          ))
+    (proc start () ()
+          (
+           (zero-fp)
+           (call main-proc)
           ))
     ))
 
@@ -713,7 +738,7 @@
 
 (enable-REPL-print)
 "native call:"
-(native-call (alist-lookup proc-list 'main-proc))
+(native-call (alist-lookup proc-list 'start))
 "number:"
 (string-from-native-buffer (+ buffer 8) (read-mem-i64 buffer))
 ;"getpid"
