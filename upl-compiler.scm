@@ -796,25 +796,14 @@
            (u8:= ,tmp-4k-buffer 10) ; newline
            (call write-to-stdout ,tmp-4k-buffer 1)
            ))
-    (proc print-stack-trace () ((test 128)
-                                (current-fp (get-fp))
+    (proc print-stack-trace () ((current-fp (get-fp))
                                 (str-buf 0)
                                 (str-length 0))
           (
-           (call print-newline)
-           ,(upl-print-static-string "ptr?:\n")
-           (call print-hex-number (i64@ (+ current-fp 8)))
-           (call print-newline)
-           (call print-hex-number (i64@ (+ current-fp 0)))
-           (call print-newline)
-           (call print-hex-number (i64@ (+ current-fp -8)))
-           (call print-newline)
-           (call print-newline)
-
            ,(upl-print-static-string "Stacktrace:\n")
            (while (!= current-fp 0)
                   ((call print-hex-number (i64@ (+ current-fp 8)))
-                   (u8:= ,tmp-4k-buffer 10) ; newline
+                   (u8:= ,tmp-4k-buffer 32) ; whitespace
                    (call write-to-stdout ,tmp-4k-buffer 1)
                    (call function-name-by-iptr (-> str-buf) (-> str-length) (i64@ (+ current-fp 8)))
                    (call write-to-stdout str-buf str-length)
@@ -879,7 +868,7 @@
     (proc start () ()
           (
            (zero-fp)
-           (call print-proc-dict)
+           ;(call print-proc-dict)
            (call a)
           ))
     ))
@@ -911,10 +900,9 @@
                (write-mem-i64 (cdr string-and-ptr) (string-length (car string-and-ptr)))
                (string-to-native-buffer (car string-and-ptr) (+ (cdr string-and-ptr) 8))))
            (zip names name-ptrs))
-  (println (list "dict-ptr" dict-ptr))
   (write-mem-i64 proc-dict-ptr dict-ptr))
 
-(foreach println proc-list)
+;(foreach println proc-list)
 (println "native call:")
 (native-call (alist-lookup proc-list 'start))
 (println "native call end")
