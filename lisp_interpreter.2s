@@ -2557,6 +2557,11 @@ lisp_register_builtin_function "bitwise-lshift" 2 {
     lisp_value_stack_pop lisp_value_stack_pop
 } ;
 
+lisp_register_builtin_function "symbol-to-string" 1 {
+    lisp_value_stack_push drop lisp_value_stack_pop
+    alloc_string_from_buffer bi { symbol_get_size } { symbol_get_buffer }
+    lisp_assert_type "symbol-to-string takes symbol as argument" symbol_obj_type_id dup lisp_value_stack_peek_top
+} ;
 lisp_register_builtin_function "string-length" 1 string_length_instruction ;
 lisp_register_builtin_function "string-get-byte" 2 string_get_byte_instruction ;
 lisp_register_builtin_function "string-to-native-buffer" 2 {
@@ -2661,6 +2666,7 @@ def "print_string_instruction_func" { call print_string_instruction } ;
 se_check_last_defined_function ;
 
 #se_enable ;
+se_check_function_by_name "lisp builtin: symbol-to-string" ;
 se_check_function_by_name "lisp builtin: second" ;
 se_check_function_by_name "lisp builtin: nth" ;
 se_check_function_by_name "lisp builtin: import" ;

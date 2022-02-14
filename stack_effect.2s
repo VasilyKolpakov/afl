@@ -518,6 +518,21 @@ def "se_run_function_on_fake_stacks_instruction_switch"
             keep { drop se_stacks_pop_from_value_stack }
         }
     } otherwise
+    when { se_equal_deref_values { memcopy } dup } then {
+        dip {
+            keep { drop se_stacks_pop_from_value_stack }
+            keep { drop se_stacks_pop_from_value_stack }
+            keep { drop se_stacks_pop_from_value_stack }
+        }
+    } otherwise
+    when { se_equal_deref_values { memcmp } dup } then {
+        dip {
+            keep { array_list_append swap 1 se_stacks_get_value_stack }
+            keep { drop se_stacks_pop_from_value_stack }
+            keep { drop se_stacks_pop_from_value_stack }
+            keep { drop se_stacks_pop_from_value_stack }
+        }
+    } otherwise
     when { se_equal_deref_values { syscall } dup } then {
         dip {
             keep { array_list_append swap 1 se_stacks_get_value_stack }
