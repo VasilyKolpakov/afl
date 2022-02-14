@@ -283,6 +283,17 @@
 
 (define range (lambda (n) (range-tailrec n '())))
 
+(define (foreach-with-index-recursive f l i)
+  (if (empty? l)
+      '()
+      (begin
+        (f (car l) i)
+        (foreach-with-index-recursive f (cdr l) (+ i 1)))))
+
+(define (foreach-with-index f l)
+  (assert-stmt "l is list" (list? l))
+  (foreach-with-index-recursive f l 0))
+
 (define (foreach-recursive f l)
   (if (empty? l)
       '()

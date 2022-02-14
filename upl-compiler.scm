@@ -91,9 +91,61 @@
             (write-mem-byte (+ 4 ptr) #x48) ; idiv rdi ; divide rdx:rax by rdi
             (write-mem-byte (+ 5 ptr) #xf7)
             (write-mem-byte (+ 6 ptr) #xff)
-            (write-mem-byte (+ 7 ptr) #x52) ; push rax
+            (write-mem-byte (+ 7 ptr) #x52) ; push rdx
             ))
         "mod"))
+
+(define bit-rshift-instruction
+  (list 6
+        (lambda (ptr)
+          (begin
+            (write-mem-byte ptr       #x59) ; pop rcx
+            (write-mem-byte (+ 1 ptr) #x58) ; pop rax
+            (write-mem-byte (+ 2 ptr) #x48) ; shr rax, cl
+            (write-mem-byte (+ 3 ptr) #xd3)
+            (write-mem-byte (+ 4 ptr) #xe8)
+            (write-mem-byte (+ 5 ptr) #x50) ; push rax
+            ))
+        "bit-rshift"))
+
+(define bit-lshift-instruction
+  (list 6
+        (lambda (ptr)
+          (begin
+            (write-mem-byte ptr       #x59) ; pop rcx
+            (write-mem-byte (+ 1 ptr) #x58) ; pop rax
+            (write-mem-byte (+ 2 ptr) #x48) ; shl rax, cl
+            (write-mem-byte (+ 3 ptr) #xd3)
+            (write-mem-byte (+ 4 ptr) #xe0)
+            (write-mem-byte (+ 5 ptr) #x50) ; push rax
+            ))
+        "bit-lshift"))
+
+(define bit-and-instruction
+  (list 6
+        (lambda (ptr)
+          (begin
+            (write-mem-byte ptr       #x59) ; pop rcx
+            (write-mem-byte (+ 1 ptr) #x58) ; pop rax
+            (write-mem-byte (+ 2 ptr) #x48) ; and rax, rcx
+            (write-mem-byte (+ 3 ptr) #x21)
+            (write-mem-byte (+ 4 ptr) #xc8)
+            (write-mem-byte (+ 5 ptr) #x50) ; push rax
+            ))
+        "bit-and"))
+
+(define bit-or-instruction
+  (list 6
+        (lambda (ptr)
+          (begin
+            (write-mem-byte ptr       #x59) ; pop rcx
+            (write-mem-byte (+ 1 ptr) #x58) ; pop rax
+            (write-mem-byte (+ 2 ptr) #x48) ; or rax, rcx
+            (write-mem-byte (+ 3 ptr) #x09)
+            (write-mem-byte (+ 4 ptr) #xc8)
+            (write-mem-byte (+ 5 ptr) #x50) ; push rax
+            ))
+        "bit-or"))
 
 (define set-i64-instruction
   (list 5 
@@ -293,22 +345,27 @@
   (lambda (label)
     (cond-jmp-instruction cond-code label)))
 
-(define (prefix-sum l)
+; '(1 2 3) -> '(0 1 3)
+(define (prefix-sum z l)
   (reverse (cdr (foldl
                   (lambda (i acc) (cons (+ i (car acc)) acc))
-                  (list 0)
+                  (list z)
                   l))))
 
 (define symbol-to-instruction
   (list
-    (list '+       2 add-instruction)
-    (list '-       2 sub-instruction)
-    (list '*       2 mul-instruction)
-    (list '/       2 div-instruction)
-    (list '%       2 mod-instruction)
-    (list 'get-i64 1 get-i64-instruction)
-    (list 'get-u8  1 get-u8-instruction)
-    (list 'get-fp  0 push-frame-pointer-instruction)
+    (list '+          2 add-instruction)
+    (list '-          2 sub-instruction)
+    (list '*          2 mul-instruction)
+    (list '/          2 div-instruction)
+    (list '%          2 mod-instruction)
+    (list 'bit-rshift 2 bit-rshift-instruction)
+    (list 'bit-lshift 2 bit-lshift-instruction)
+    (list 'bit-and    2 bit-and-instruction)
+    (list 'bit-or     2 bit-or-instruction)
+    (list 'i64@       1 get-i64-instruction)
+    (list 'u8@        1 get-u8-instruction)
+    (list 'get-fp     0 push-frame-pointer-instruction)
     ))
 
 (define symbol-to-cmp-instructions
@@ -337,7 +394,7 @@
 
 (define (compile-list expr rest local-vars)
   (cond
-    ((or (equal? '& (car expr)) (equal? 'var-addr (car expr)))
+    ((or (equal? '-> (car expr)) (equal? 'var-addr (car expr)))
      (let ((var (car (cdr expr)))
            (var-index (index-of local-vars var)))
        (if (empty? var-index) (panic "ref: bad variable:" var) '())
@@ -428,7 +485,7 @@
                  (proc-args (cdr (cdr stmt)))
                  (proc-label (car proc))
                  (proc-arg-count (car (cdr proc))))
-             (assert-stmt "number of args" (= proc-arg-count (length proc-args)))
+             (assert-stmt (list (first stmt-args) "number of args") (= proc-arg-count (length proc-args)))
              (append
                (list (add-rsp-instruction -16))
                (flatmap (lambda (expr) (compile-expr expr local-vars)) proc-args)
@@ -514,8 +571,7 @@
                  local-var-inits)
         (flatmap (lambda (stmt) (compile-statement stmt local-vars procedure-list))
                  statements)
-        (list
-          (add-rsp-instruction (* 8 (length local-vars)))
+        (list (add-rsp-instruction (* 8 (length local-vars)))
           return-instruction)))))
 
 (define next-label-id (cell 0))
@@ -581,14 +637,15 @@
       instructions)))
 
 
-(define (compile-upl-to-native fpointer upl-code)
+(define (compile-upl-to-native upl-code)
   (let ((proc-list-and-insts (compile-upl upl-code))
         (proc-list (first proc-list-and-insts))
         (instructions (second proc-list-and-insts))
         (_ (validate-stack-machine-code instructions))
-        (inst-locations (map
-                          (lambda (l) (+ l fpointer))
-                          (prefix-sum (map instruction-size instructions))))
+        (inst-sizes (map instruction-size instructions))
+        (total-code-size (foldl + 0 inst-sizes))
+        (exec-buffer (syscall-mmap-anon-exec total-code-size))
+        (inst-locations (prefix-sum exec-buffer inst-sizes))
         (with-locations (zip instructions inst-locations))
         (insts-and-locations (filter (lambda (x) (not (label? (car x)))) with-locations))
         (labels-and-locations (filter (lambda (x) (label? (car x))) with-locations)))
@@ -600,10 +657,12 @@
                    (generator loc labels-and-locations)
                    (generator loc))))
              insts-and-locations)
-    (map (lambda (proc) (cons
-                          (first proc)
-                          (alist-lookup labels-and-locations (second proc))))
-         proc-list)))
+    (append
+      (map (lambda (proc) (cons
+                            (first proc)
+                            (alist-lookup labels-and-locations (second proc))))
+           proc-list)
+      (list (cons '__end_of_range__not_a_function (+ exec-buffer total-code-size))))))
 
 (define upl-print-static-string
   (let ((ret-val-buffer (syscall-mmap-anon 100))
@@ -629,7 +688,9 @@
 (define alloc-bump-ptr (syscall-mmap-anon 1000))
 (write-mem-i64 alloc-bump-ptr alloc-arena)
 
-(define buffer (syscall-mmap-anon 1000))
+(define tmp-4k-buffer (syscall-mmap-anon 4096))
+(define proc-dict-ptr (syscall-mmap-anon 4096))
+
 (define upl-code 
   '(
     (proc chk-syscall (retcode-out call-code arg1 arg2 arg3 arg4 arg5 arg6) ((ret 0) (hack-8-byte-buf 0) (num-length 0))
@@ -643,11 +704,11 @@
            (i64:= retcode-out ret)))
     (proc write-to-stdout (buf length) ((sys-ret 0) (written 0))
           ((while (> length written)
-                  ((call chk-syscall (& sys-ret) 1 1 (+ buf written) (- length written) 1 2 3)
+                  ((call chk-syscall (-> sys-ret) 1 1 (+ buf written) (- length written) 1 2 3)
                    (:= written (+ written sys-ret))))))
     (proc gc-malloc (addr-out size) ((bump-ptr 0))
           (
-           (:= bump-ptr (get-i64 ,alloc-bump-ptr))
+           (:= bump-ptr (i64@ ,alloc-bump-ptr))
            (if (> (+ bump-ptr size) ,(+ alloc-arena alloc-arena-size))
                (
                 ,(upl-print-static-string "malloc arena overflow\n")
@@ -706,45 +767,155 @@
                      (:= num (/ num 10))))
               (u8:= char-ptr 45))) ; minus sign
            ))
-    (proc main-proc () ((num -9223372036854775808) (syscall-ret-val 0))
+    (proc number-to-hex-string (buf num) ((i 0)
+                                          (octet 0))
           (
-           (call number-string-length ,buffer num)
-           (call number-to-string ,(+ buffer 8) num)
-           (u8:= (+ (+ ,buffer 8) (get-i64 ,buffer)) 10)
-           (while (< syscall-ret-val 4)
-                  ((:= syscall-ret-val (+ syscall-ret-val 1))
-                  ,(upl-print-static-string "test\n")))
-           ;(call chk-syscall ,(+ 100 buffer) 1 1 ,(+ buffer 8) (+ 1 (get-i64 ,buffer)) 1 2 3)
-           (call write-to-stdout ,(+ buffer 8) (+ 1 (get-i64 ,buffer)))
-           ;,(upl-print-static-string "test print-string\n")
-           ;,(upl-print-static-string "test print-string 2\n")
-           ;(syscall ,buffer 39 1 2 3 4 5 6)
-           ;(call write-hello ,buffer)
-           ;(while (< i 5)
-           ;       ((u8:= (+ i ,buffer) (+ 0 (get-u8 (+ i ,buffer))))
-           ;        (:= i (+ i 1))))
-           ;)
+           (u8:= (+ buf 0) 48)  ; 0
+           (u8:= (+ buf 1) 120) ; x
+           (:+= buf 2)
+           (while (< i 16)
+                  ((:= octet (bit-and 15 (bit-rshift num (* 4 (- 15 i)))))
+                   (if (> octet 9)
+                       ((u8:= (+ buf i) (+ octet 87)))
+                       ((u8:= (+ buf i) (+ octet 48))))
+                   (:+= i 1)))
+           ))
+    (proc print-number (num) ((str-length 0))
+          (
+           (call number-to-string ,tmp-4k-buffer num)
+           (call number-string-length (-> str-length) num)
+           (call write-to-stdout ,tmp-4k-buffer str-length)
+           ))
+    (proc print-hex-number (num) ()
+          (
+           (call number-to-hex-string ,tmp-4k-buffer num)
+           (call write-to-stdout ,tmp-4k-buffer 18)
+           ))
+    (proc print-newline () ()
+          (
+           (u8:= ,tmp-4k-buffer 10) ; newline
+           (call write-to-stdout ,tmp-4k-buffer 1)
+           ))
+    (proc print-stack-trace () ((test 128)
+                                (current-fp (get-fp))
+                                (str-buf 0)
+                                (str-length 0))
+          (
+           (call print-newline)
+           ,(upl-print-static-string "ptr?:\n")
+           (call print-hex-number (i64@ (+ current-fp 8)))
+           (call print-newline)
+           (call print-hex-number (i64@ (+ current-fp 0)))
+           (call print-newline)
+           (call print-hex-number (i64@ (+ current-fp -8)))
+           (call print-newline)
+           (call print-newline)
+
+           ,(upl-print-static-string "Stacktrace:\n")
+           (while (!= current-fp 0)
+                  ((call print-hex-number (i64@ (+ current-fp 8)))
+                   (u8:= ,tmp-4k-buffer 10) ; newline
+                   (call write-to-stdout ,tmp-4k-buffer 1)
+                   (call function-name-by-iptr (-> str-buf) (-> str-length) (i64@ (+ current-fp 8)))
+                   (call write-to-stdout str-buf str-length)
+                   (u8:= ,tmp-4k-buffer 10) ; newline
+                   (call write-to-stdout ,tmp-4k-buffer 1)
+                   (:= current-fp (i64@ current-fp))))
+           ))
+    (proc function-name-by-iptr (buf-ptr size-ptr iptr) ((index 0)
+                                                         (proc-dict (i64@ ,proc-dict-ptr))
+                                                         (dict-array 0)
+                                                         (string 0))
+          (
+           (:= dict-array (+ proc-dict 8))
+           ; skip records
+           (while (and (< index (i64@ proc-dict)) (> iptr (i64@ (+ (* index 16) dict-array))))
+                  ((:+= index 1)))
+           (if (and (> index 0) (< index (i64@ proc-dict))) ; last function in dict is end-of-range pointer
+               ((:+= index -1)
+                (:= string (i64@ (+ (+ (* index 16) dict-array) 8)))
+                (i64:= buf-ptr (+ string 8))
+                (i64:= size-ptr (i64@ string)))
+               ((call print-hex-number iptr)
+                ,(upl-print-static-string "\nfunction-name-by-iptr: error, no such function")
+                ,(upl-exit 1)))
+           ))
+    (proc print-proc-dict () ((index 0)
+                              (proc-dict (i64@ ,proc-dict-ptr))
+                              (dict-array 0)
+                              (string 0))
+          (
+           (:= dict-array (+ proc-dict 8))
+           ; skip records
+           (while (< index (i64@ proc-dict))
+                  (
+                   (:= string (i64@ (+ (+ (* index 16) dict-array) 8)))
+                   ;(call print-hex-number (+ (* index 16) dict-array))
+                   (call print-hex-number (i64@ (+ (* index 16) dict-array)))
+                   (u8:= ,tmp-4k-buffer 32) ; whitespace
+                   (call write-to-stdout ,tmp-4k-buffer 1)
+                   (call print-number (i64@ (+ (* index 16) dict-array)))
+                   (u8:= ,tmp-4k-buffer 32) ; whitespace
+                   (call write-to-stdout ,tmp-4k-buffer 1)
+                   (call write-to-stdout (+ string 8) (i64@ string))
+                   (u8:= ,tmp-4k-buffer 10) ; newline
+                   (call write-to-stdout ,tmp-4k-buffer 1)
+                   (:+= index 1)
+                   ))
+           ))
+    (proc main-proc () ((string 0) (index 0))
+          (
+           (while (< index (i64@ (i64@ ,proc-dict-ptr)))
+                  ((:= string (i64@ (+ (* index 16)
+                                       (+ 16 (i64@ ,proc-dict-ptr)))))
+                   (call write-to-stdout (+ string 8) (i64@ string))
+                   (u8:= ,tmp-4k-buffer 10) ; newline
+                   (call write-to-stdout ,tmp-4k-buffer 1)
+                   (:+= index 1)))
           ))
+    (proc c () () ((call print-stack-trace)))
+    (proc b () ((d 0)) ((call c) (:= d 0)))
+    (proc a () ((d 0)) ((call b) (:= d 0)))
     (proc start () ()
           (
            (zero-fp)
-           (call main-proc)
+           (call print-proc-dict)
+           (call a)
           ))
     ))
 
-(define fpointer (syscall-mmap-anon-exec 1000))
+(define proc-list (compile-upl-to-native upl-code))
+(foldl (lambda (next prev)
+         (begin
+           (assert-stmt "pointers are not sorted in proc-list" (< prev (cdr next)))
+           (cdr next)))
+       0
+       proc-list)
 
-(define proc-list (compile-upl-to-native fpointer upl-code))
+(let ((proc-count (length proc-list))
+      (names (map (lambda (n-and-p) (symbol-to-string (car n-and-p))) proc-list))
+      (name-lengths (map string-length names))
+      (name-length-sum (foldl + 0 name-lengths))
+      (dict-ptr (syscall-mmap-anon (+ (+ 8 (* 16 proc-count)) (+ (* 8 proc-count) name-length-sum))))
+      (dict-array-ptr (+ dict-ptr 8))
+      (names-array-ptr (+ dict-array-ptr (* 16 proc-count)))
+      (name-ptrs (prefix-sum names-array-ptr (map (lambda (l) (+ l 8)) name-lengths))))
+  (write-mem-i64 dict-ptr proc-count)
+  (foreach-with-index (lambda (proc-ptr-and-name-ptr index)
+                        (begin
+                          (write-mem-i64 (+ dict-array-ptr (* index 16)) (car proc-ptr-and-name-ptr))
+                          (write-mem-i64 (+ dict-array-ptr (+ (* index 16) 8)) (cdr proc-ptr-and-name-ptr))))
+                      (zip (map cdr proc-list) name-ptrs))
+  (foreach (lambda (string-and-ptr)
+             (begin
+               (write-mem-i64 (cdr string-and-ptr) (string-length (car string-and-ptr)))
+               (string-to-native-buffer (car string-and-ptr) (+ (cdr string-and-ptr) 8))))
+           (zip names name-ptrs))
+  (println (list "dict-ptr" dict-ptr))
+  (write-mem-i64 proc-dict-ptr dict-ptr))
 
-(enable-REPL-print)
-"native call:"
+(foreach println proc-list)
+(println "native call:")
 (native-call (alist-lookup proc-list 'start))
-"number:"
-(string-from-native-buffer (+ buffer 8) (read-mem-i64 buffer))
-;"getpid"
-;(syscall 39 1 2 3 4 5 6)
-"==========================="
-"string length:"
-(read-mem-i64 buffer)
-(read-mem-i64 (+ 8 buffer))
-(read-mem-i64 (+ 100 buffer))
+(println "native call end")
+(enable-REPL-print)
