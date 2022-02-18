@@ -1462,7 +1462,7 @@ register_lisp_instruction "obj_i64_gt_instruction" {
     } {
         obj_bool_false
     }
-    bi@ { assert "'gt' args are i64" = i64_obj_type_id obj_get_type_id } 2dup
+    bi@ { lisp_assert_type "'>' args are i64" i64_obj_type_id } 2dup
     lisp_value_stack_pop lisp_value_stack_pop
 } ;
 
@@ -1473,7 +1473,7 @@ register_lisp_instruction "obj_i64_lt_instruction" {
     } {
         obj_bool_false
     }
-    bi@ { assert "'lt' args are i64" = i64_obj_type_id obj_get_type_id } 2dup
+    bi@ { lisp_assert_type "'<' args are i64" i64_obj_type_id } 2dup
     lisp_value_stack_pop lisp_value_stack_pop
 } ;
 
@@ -1484,7 +1484,7 @@ register_lisp_instruction "obj_i64_gte_instruction" {
     } {
         obj_bool_false
     }
-    bi@ { assert "'>=' args are i64" = i64_obj_type_id obj_get_type_id } 2dup
+    bi@ { lisp_assert_type "'>=' args are i64" i64_obj_type_id } 2dup
     lisp_value_stack_pop lisp_value_stack_pop
 } ;
 
@@ -1495,7 +1495,7 @@ register_lisp_instruction "obj_i64_lte_instruction" {
     } {
         obj_bool_false
     }
-    bi@ { assert "'<=' args are i64" = i64_obj_type_id obj_get_type_id } 2dup
+    bi@ { lisp_assert_type "'<=' args are i64" i64_obj_type_id } 2dup
     lisp_value_stack_pop lisp_value_stack_pop
 } ;
 
@@ -1652,7 +1652,7 @@ register_lisp_instruction "syscall_instruction" {
 register_lisp_instruction "native_call_instruction" {
     lisp_value_stack_push
     alloc_i64 native_call obj_i64_get_value
-    assert "native-call arg is i64" = i64_obj_type_id obj_get_type_id dup
+    lisp_assert_type "native-call arg is i64" i64_obj_type_id dup
     lisp_value_stack_pop
 } ;
 
@@ -2420,6 +2420,7 @@ lisp_register_builtin_function "second" 1 {
     assert "second: arg is list" obj_is_list dup
     if { not obj_is_list dup } {
         exit 1
+        stacktrace_print_return_stack_except_n_slots 1
         print_newline
         print_obj dup
         print_string "second: list expected, but was: "

@@ -81,9 +81,6 @@ arena_mem_size:         equ    1024000
 
 ; noop handler, all logic is in the restorer
 sigsegv_handler:
-        push   rbp
-        mov    rbp,rsp
-        leave
         ret
 sigsegv_restorer:
         ; ucontext_t.uc_mcontext.__ctx = 40 bytes offset

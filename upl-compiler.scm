@@ -453,7 +453,7 @@
                 (list (cond-inst-gen label))
                 cond-args))))))
 
-(define (compile-statement stmt local-vars procedure-list)
+(define (compile-statement stmt local-vars label-list)
   (let ((stmt-type (car stmt))
         (stmt-args (cdr stmt)))
     (cond ((equal? stmt-type 'i64:=)
@@ -470,7 +470,7 @@
            (let ((var (car stmt-args))
                  (var-index (index-of local-vars var))
                  (val-expr (car (cdr stmt-args))))
-             (compile-statement '(:= ,var (+ ,var ,val-expr)) local-vars procedure-list)))
+             (compile-statement '(:= ,var (+ ,var ,val-expr)) local-vars label-list)))
           ((equal? stmt-type ':=)
            (let ((var (car stmt-args))
                  (var-index (index-of local-vars var))
@@ -481,10 +481,11 @@
                (list (set-var-instruction var-index))
                local-vars)))
           ((equal? stmt-type 'call)
-           (let ((proc (assert (alist-lookup procedure-list (car (cdr stmt))) not-empty? (list "undefined function:" (first stmt-args))))
+           (let ((proc (assert (alist-lookup label-list (car (cdr stmt))) not-empty? (list "undefined function:" (first stmt-args))))
                  (proc-args (cdr (cdr stmt)))
-                 (proc-label (car proc))
-                 (proc-arg-count (car (cdr proc))))
+                 (proc-label (second proc))
+                 (proc-arg-count (nth 2 proc)))
+             (assert-stmt (list proc "is a proc") (equal? 'proc (first proc)))
              (assert-stmt (list (first stmt-args) "number of args") (= proc-arg-count (length proc-args)))
              (append
                (list (add-rsp-instruction -16))
@@ -513,7 +514,7 @@
              (assert-stmt "while has 2 args" (= 2 (length stmt-args)))
              (let ((cond-expr (car stmt-args))
                    (body-statements (second stmt-args))
-                   (compile-substatement (lambda (s) (compile-statement s local-vars procedure-list)))
+                   (compile-substatement (lambda (s) (compile-statement s local-vars label-list)))
                    (loop-label (new-label))
                    (end-label (new-label))
                    (cond-instructions (compile-boolean-expression cond-expr local-vars end-label #f)))
@@ -527,7 +528,7 @@
           ((and (equal? stmt-type 'if) (equal? 2 (length stmt-args)))
            (let ((cond-expr (car stmt-args))
                  (then-branch (second stmt-args))
-                 (compile-substatement (lambda (s) (compile-statement s local-vars procedure-list)))
+                 (compile-substatement (lambda (s) (compile-statement s local-vars label-list)))
                  (else-label (new-label))
                  (cond-instructions (compile-boolean-expression cond-expr local-vars else-label #f)))
              (append
@@ -539,7 +540,7 @@
            (let ((cond-expr (car stmt-args))
                  (then-branch (second stmt-args))
                  (else-branch (nth 2 stmt-args))
-                 (compile-substatement (lambda (s) (compile-statement s local-vars procedure-list)))
+                 (compile-substatement (lambda (s) (compile-statement s local-vars label-list)))
                  (else-label (new-label))
                  (end-label (new-label))
                  (cond-instructions (compile-boolean-expression cond-expr local-vars else-label #f)))
@@ -557,7 +558,7 @@
 (define (compile-procedure args
                            local-vars-with-inits
                            statements
-                           procedure-list)
+                           label-list)
   (begin
     (assert-stmt (list "local vars must have init values, for example: (proc foo (a b) ((i 42)) ..., but was " local-vars-with-inits)
                  (andmap pair? local-vars-with-inits))
@@ -569,7 +570,7 @@
           (add-rsp-instruction (- 0 (* 8 (length args)))))
         (flatmap (lambda (var-init) (compile-expr var-init '()))
                  local-var-inits)
-        (flatmap (lambda (stmt) (compile-statement stmt local-vars procedure-list))
+        (flatmap (lambda (stmt) (compile-statement stmt local-vars label-list))
                  statements)
         (list (add-rsp-instruction (* 8 (length local-vars)))
           return-instruction)))))
@@ -583,27 +584,66 @@
 
 (define (label? v) (number? v))
 
-(define (compile-upl procedures)
-  (let ((procs-with-labels
-          (map (lambda (p) (list p (new-label))) procedures))
+(define (compile-upl code-chunks)
+  (let ((chunks-with-labels
+          (map (lambda (p) (cons p (new-label))) code-chunks))
+        (procs-with-labels (filter (lambda (c-with-l) (equal? 'proc (first (car c-with-l)))) chunks-with-labels))
+        (label-list
+          (map (lambda (c-with-l)
+                 (let ((chunk (car c-with-l))
+                       (label (cdr c-with-l))
+                       (chunk-type (first chunk))
+                       (name (second chunk)))
+                   (cond
+                     ((equal? 'proc chunk-type)
+                      (let ((arg-count (length (nth 2 chunk))))
+                        (list name 'proc label arg-count)))
+                     ((equal? 'bytes chunk-type)
+                      (list name 'bytes label))
+                     (else (assert-stmt (list "chunk type" chunk-type) #f)))))
+               chunks-with-labels))
         (procedure-list
           (map (lambda (p-with-l)
-                 (let ((name (second (first p-with-l)))
-                       (label (second p-with-l))
-                       (arg-count (length (nth 2 (first p-with-l)))))
+                 (let ((chunk (car p-with-l))
+                       (label (cdr p-with-l))
+                       (name (second chunk))
+                       (arg-count (length (nth 2 chunk))))
                    (list name label arg-count)))
-               procs-with-labels)))
+               procs-with-labels))
+        (chunk-label-list
+          (map (lambda (c-with-l)
+                 (let ((chunk (car c-with-l))
+                       (label (cdr c-with-l))
+                       (name (second chunk)))
+                   (cons name label)))
+               chunks-with-labels)))
     (list
-      procedure-list
+      label-list
       (flatmap
-        (lambda (p-with-l)
-          (let ((proc (first p-with-l))
-                (args (nth 2 proc))
-                (local-vars-with-inits (nth 3 proc))
-                (statements (nth 4 proc))
-                (label (second p-with-l)))
-            (cons label (compile-procedure args local-vars-with-inits statements procedure-list))))
-        procs-with-labels))))
+        (lambda (c-with-l)
+          (let ((chunk (first c-with-l))
+                (chunk-type (first chunk))
+                (label (cdr c-with-l)))
+            (cond
+              ((equal? 'proc chunk-type)
+               (let ((args (nth 2 chunk))
+                     (local-vars-with-inits (nth 3 chunk))
+                     (statements (nth 4 chunk)))
+                 (cons label (compile-procedure args local-vars-with-inits statements label-list))))
+              ((equal? 'bytes chunk-type)
+               (let ((bytes-list (nth 2 chunk)))
+                 (cons label (list
+                               (list
+                                 (length bytes-list)
+                                 (lambda (ptr)
+                                   (foreach-with-index
+                                     (lambda (b index) (write-mem-byte (+ ptr index) b))
+                                     bytes-list))
+                                 (second chunk))))))
+              (else (begin
+                      (println (list "bad code chunk" chunk))
+                      (exit 1))))))
+            chunks-with-labels))))
 
 
 (define (instruction? i)
@@ -638,9 +678,9 @@
 
 
 (define (compile-upl-to-native upl-code)
-  (let ((proc-list-and-insts (compile-upl upl-code))
-        (proc-list (first proc-list-and-insts))
-        (instructions (second proc-list-and-insts))
+  (let ((chunk-label-list-and-insts (compile-upl upl-code))
+        (chunk-label-list (first chunk-label-list-and-insts))
+        (instructions (second chunk-label-list-and-insts))
         (_ (validate-stack-machine-code instructions))
         (inst-sizes (map instruction-size instructions))
         (total-code-size (foldl + 0 inst-sizes))
@@ -652,16 +692,17 @@
     (foreach (lambda (i-and-loc)
                (let ((inst (car i-and-loc))
                      (loc (cdr i-and-loc))
-                     (generator (car (cdr inst))))
+                     (generator (second inst)))
                  (if (= (arity generator) 2)
                    (generator loc labels-and-locations)
                    (generator loc))))
              insts-and-locations)
     (append
-      (map (lambda (proc) (cons
-                            (first proc)
-                            (alist-lookup labels-and-locations (second proc))))
-           proc-list)
+      (map (lambda (chunk-name-and-label)
+             (cons
+               (car chunk-name-and-label)
+               (assert (alist-lookup labels-and-locations (nth 2 chunk-name-and-label)) not-empty? (list "label location lookup" chunk-name-and-label))))
+           chunk-label-list)
       (list (cons '__end_of_range__not_a_function (+ exec-buffer total-code-size))))))
 
 (define upl-print-static-string
@@ -852,8 +893,16 @@
                    (:+= index 1)
                    ))
            ))
+    (proc c () () ((call print-stack-trace)))
+    (proc b () ((d 0)) ((call c) (:= d 0)))
+    (proc a () ((d 0)) ((call b) (:= d 0)))
+    (bytes _start
+           ; set frame pointer to zero
+           (#x48 #x31 #xed) ; xor rbp,rbp
+           )
     (proc main-proc () ((string 0) (index 0))
           (
+           (call a)
            (while (< index (i64@ (i64@ ,proc-dict-ptr)))
                   ((:= string (i64@ (+ (* index 16)
                                        (+ 16 (i64@ ,proc-dict-ptr)))))
@@ -862,27 +911,18 @@
                    (call write-to-stdout ,tmp-4k-buffer 1)
                    (:+= index 1)))
           ))
-    (proc c () () ((call print-stack-trace)))
-    (proc b () ((d 0)) ((call c) (:= d 0)))
-    (proc a () ((d 0)) ((call b) (:= d 0)))
-    (proc start () ()
-          (
-           (zero-fp)
-           ;(call print-proc-dict)
-           (call a)
-          ))
     ))
 
-(define proc-list (compile-upl-to-native upl-code))
+(define name-to-iptr-list (compile-upl-to-native upl-code))
 (foldl (lambda (next prev)
          (begin
-           (assert-stmt "pointers are not sorted in proc-list" (< prev (cdr next)))
+           (assert-stmt "pointers are not sorted in name-to-iptr-list" (< prev (cdr next)))
            (cdr next)))
        0
-       proc-list)
+       name-to-iptr-list)
 
-(let ((proc-count (length proc-list))
-      (names (map (lambda (n-and-p) (symbol-to-string (car n-and-p))) proc-list))
+(let ((proc-count (length name-to-iptr-list))
+      (names (map (lambda (n-and-p) (symbol-to-string (car n-and-p))) name-to-iptr-list))
       (name-lengths (map string-length names))
       (name-length-sum (foldl + 0 name-lengths))
       (dict-ptr (syscall-mmap-anon (+ (+ 8 (* 16 proc-count)) (+ (* 8 proc-count) name-length-sum))))
@@ -894,7 +934,7 @@
                         (begin
                           (write-mem-i64 (+ dict-array-ptr (* index 16)) (car proc-ptr-and-name-ptr))
                           (write-mem-i64 (+ dict-array-ptr (+ (* index 16) 8)) (cdr proc-ptr-and-name-ptr))))
-                      (zip (map cdr proc-list) name-ptrs))
+                      (zip (map cdr name-to-iptr-list) name-ptrs))
   (foreach (lambda (string-and-ptr)
              (begin
                (write-mem-i64 (cdr string-and-ptr) (string-length (car string-and-ptr)))
@@ -902,8 +942,7 @@
            (zip names name-ptrs))
   (write-mem-i64 proc-dict-ptr dict-ptr))
 
-;(foreach println proc-list)
 (println "native call:")
-(native-call (alist-lookup proc-list 'start))
+(native-call (alist-lookup name-to-iptr-list '_start))
 (println "native call end")
 (enable-REPL-print)
