@@ -345,6 +345,14 @@
   (lambda (label)
     (cond-jmp-instruction cond-code label)))
 
+(define (push-label-pointer-instruction label)
+  (list 11
+        (lambda (ptr label-locs)
+             (let ((label-ptr
+                     (assert (alist-lookup label-locs label) not-empty? "label pointer")))
+               (generate-push-imm ptr label-ptr)))
+        (list "push-label-pointer" label)))
+
 ; '(1 2 3) -> '(0 1 3)
 (define (prefix-sum z l)
   (reverse (cdr (foldl
@@ -392,9 +400,14 @@
           (cond-jmp-instruction-gen #x8d))
     ))
 
-(define (compile-list expr rest local-vars)
+(define (compile-list expr rest local-vars label-list)
   (cond
-    ((or (equal? '-> (car expr)) (equal? 'var-addr (car expr)))
+    ((equal? 'function-pointer (car expr))
+     (let ((label (second expr))
+           (proc (assert (alist-lookup label-list label) not-empty? (list "undefined function:" expr)))
+           (proc-label (second proc)))
+       (list (push-label-pointer-instruction proc-label))))
+    ((equal? '-> (car expr))
      (let ((var (car (cdr expr)))
            (var-index (index-of local-vars var)))
        (if (empty? var-index) (panic "ref: bad variable:" var) '())
@@ -403,26 +416,26 @@
       (let ((arg-count-and-inst (assert (alist-lookup symbol-to-instruction (car expr)) not-empty? (list "undefined operator:" (car expr)))))
         (assert-stmt "arg count matches" (= (length (cdr expr)) (car arg-count-and-inst)))
         (foldr
-          (lambda (expr rest) (compile-expr-rec expr rest local-vars))
+          (lambda (expr rest) (compile-expression-rec expr rest local-vars label-list))
           (cons (car (cdr arg-count-and-inst)) rest)
           (cdr expr))))))
 
-(define (compile-expr-rec expr rest local-vars)
+(define (compile-expression-rec expr rest local-vars label-list)
   (let ((var-index (index-of local-vars expr)))
     (cond
       ((not-empty? var-index) (cons (push-var-instruction var-index) rest))
       ((number? expr) (cons (push-imm-instruction expr) rest))
-      ((list? expr) (compile-list expr rest local-vars))
+      ((list? expr) (compile-list expr rest local-vars label-list))
       (else (panic "bad expression: " (list "expression:" expr "local-vars:" local-vars))))))
 
-(define (compile-expr expr local-vars)
-  (compile-expr-rec expr '() local-vars))
+(define (compile-expression expr local-vars label-list)
+  (compile-expression-rec expr '() local-vars label-list))
 
-(define (compile-boolean-expression cond-expr local-vars label true-label?)
+(define (compile-boolean-expression cond-expr local-vars label-list label true-label?)
   (let ((cond-type (car cond-expr))
         (cond-args (cdr cond-expr)))
     (cond ((equal? cond-type 'not)
-           (compile-boolean-expression (second cond-expr) local-vars label (not true-label?)))
+           (compile-boolean-expression (second cond-expr) local-vars label-list label (not true-label?)))
           ((equal? cond-type 'and)
            (let ((first-child (first cond-args))
                  (second-child (second cond-args)))
@@ -430,12 +443,12 @@
              (if true-label?
                (let ((false-label (new-label)))
                  (append
-                   (compile-boolean-expression first-child local-vars false-label #f)
-                   (compile-boolean-expression second-child local-vars label #t)
+                   (compile-boolean-expression first-child local-vars label-list false-label #f)
+                   (compile-boolean-expression second-child local-vars label-list label #t)
                    (list false-label)))
                (append
-                   (compile-boolean-expression first-child local-vars label #f)
-                   (compile-boolean-expression second-child local-vars label #f)))))
+                   (compile-boolean-expression first-child local-vars label-list label #f)
+                   (compile-boolean-expression second-child local-vars label-list label #f)))))
 
           (else 
             (let ((true-and-false-instrs
@@ -449,13 +462,14 @@
                       (second true-and-false-instrs))))
               (assert-stmt "cond expr: cmp functions should have 2 args" (= (length cond-args) 2))
               (foldr
-                (lambda (expr rest) (compile-expr-rec expr rest local-vars))
+                (lambda (expr rest) (compile-expression-rec expr rest local-vars label-list))
                 (list (cond-inst-gen label))
                 cond-args))))))
 
 (define (compile-statement stmt local-vars label-list)
   (let ((stmt-type (car stmt))
-        (stmt-args (cdr stmt)))
+        (stmt-args (cdr stmt))
+        (compile-expr (lambda (expr local-vars) (compile-expression expr local-vars label-list))))
     (cond ((equal? stmt-type 'i64:=)
            (append
              (compile-expr (first stmt-args) local-vars)
@@ -476,10 +490,11 @@
                  (var-index (index-of local-vars var))
                  (val-expr (car (cdr stmt-args))))
              (if (empty? var-index) (panic "set-var: bad variable:" var) '())
-             (compile-expr-rec
+             (compile-expression-rec
                val-expr
                (list (set-var-instruction var-index))
-               local-vars)))
+               local-vars
+               label-list)))
           ((equal? stmt-type 'call)
            (let ((proc (assert (alist-lookup label-list (car (cdr stmt))) not-empty? (list "undefined function:" (first stmt-args))))
                  (proc-args (cdr (cdr stmt)))
@@ -517,7 +532,7 @@
                    (compile-substatement (lambda (s) (compile-statement s local-vars label-list)))
                    (loop-label (new-label))
                    (end-label (new-label))
-                   (cond-instructions (compile-boolean-expression cond-expr local-vars end-label #f)))
+                   (cond-instructions (compile-boolean-expression cond-expr local-vars label-list end-label #f)))
                (append
                  (list loop-label)
                  cond-instructions
@@ -530,7 +545,7 @@
                  (then-branch (second stmt-args))
                  (compile-substatement (lambda (s) (compile-statement s local-vars label-list)))
                  (else-label (new-label))
-                 (cond-instructions (compile-boolean-expression cond-expr local-vars else-label #f)))
+                 (cond-instructions (compile-boolean-expression cond-expr local-vars label-list else-label #f)))
              (append
                cond-instructions
                (flatmap compile-substatement then-branch)
@@ -543,7 +558,7 @@
                  (compile-substatement (lambda (s) (compile-statement s local-vars label-list)))
                  (else-label (new-label))
                  (end-label (new-label))
-                 (cond-instructions (compile-boolean-expression cond-expr local-vars else-label #f)))
+                 (cond-instructions (compile-boolean-expression cond-expr local-vars label-list else-label #f)))
              (append
                cond-instructions
                (flatmap compile-substatement then-branch)
@@ -568,7 +583,7 @@
         (list
           set-frame-pointer-instruction
           (add-rsp-instruction (- 0 (* 8 (length args)))))
-        (flatmap (lambda (var-init) (compile-expr var-init '()))
+        (flatmap (lambda (var-init) (compile-expression var-init args label-list))
                  local-var-inits)
         (flatmap (lambda (stmt) (compile-statement stmt local-vars label-list))
                  statements)
@@ -735,12 +750,12 @@
 (define upl-code 
   '(
     (proc chk-syscall (retcode-out call-code arg1 arg2 arg3 arg4 arg5 arg6) ((ret 0) (hack-8-byte-buf 0) (num-length 0))
-          ((syscall (var-addr ret) call-code arg1 arg2 arg3 arg4 arg5 arg6)
+          ((syscall (-> ret) call-code arg1 arg2 arg3 arg4 arg5 arg6)
            (if (and (< ret 0) (> ret -4096))
                (,(upl-print-static-string "syscall error: ")
-                 (call number-to-string (var-addr hack-8-byte-buf) (- 0 ret))
-                 (call number-string-length (var-addr num-length) (- 0 ret))
-                 (syscall (var-addr ret) 1 1 (var-addr hack-8-byte-buf) num-length 1 2 3)
+                 (call number-to-string (-> hack-8-byte-buf) (- 0 ret))
+                 (call number-string-length (-> num-length) (- 0 ret))
+                 (syscall (-> ret) 1 1 (-> hack-8-byte-buf) num-length 1 2 3)
                 ,(upl-exit 1)))
            (i64:= retcode-out ret)))
     (proc write-to-stdout (buf length) ((sys-ret 0) (written 0))
@@ -792,7 +807,7 @@
            ))
     (proc number-to-string (buf num) ((char-ptr 0))
           (
-           (call number-string-length (var-addr char-ptr) num)
+           (call number-string-length (-> char-ptr) num)
            (:= char-ptr (+ (- char-ptr 1) buf)) ; start printing the number from the end
            (if (= num 0)
              ((u8:= char-ptr 48)
@@ -837,17 +852,26 @@
            (u8:= ,tmp-4k-buffer 10) ; newline
            (call write-to-stdout ,tmp-4k-buffer 1)
            ))
-    (proc print-stack-trace () ((current-fp (get-fp))
-                                (str-buf 0)
-                                (str-length 0))
+    (proc print-stack-trace () ()
+          (
+           (call print-stack-trace-from-fp-and-ip (get-fp) 0)
+           ))
+    (proc print-stack-trace-from-fp-and-ip (fp ip) ((current-fp fp)
+                                                    (str-buf 0)
+                                                    (str-length 0))
           (
            ,(upl-print-static-string "Stacktrace:\n")
+           (if (!= ip 0)
+               (
+                (call function-name-by-iptr (-> str-buf) (-> str-length) ip)
+                (call write-to-stdout str-buf str-length)
+                (call print-newline)))
+
            (call function-name-by-iptr (-> str-buf) (-> str-length) (i64@ (+ current-fp 8)))
            (while (!= str-buf 0)
                   (
                    (call write-to-stdout str-buf str-length)
-                   (u8:= ,tmp-4k-buffer 10) ; newline
-                   (call write-to-stdout ,tmp-4k-buffer 1)
+                   (call print-newline)
                    (:= current-fp (i64@ current-fp))
                    (call function-name-by-iptr (-> str-buf) (-> str-length) (i64@ (+ current-fp 8)))
                    ))
@@ -894,15 +918,47 @@
                    (:+= index 1)
                    ))
            ))
-    (proc c () () ((call print-stack-trace)))
+    (proc c () () ((i64:= 0 0)))
     (proc b () ((d 0)) ((call c) (:= d 0)))
     (proc a () ((d 0)) ((call b) (:= d 0)))
-    (bytes _start
-           ; set frame pointer to zero
-           (#x48 #x31 #xed) ; xor rbp,rbp
-           )
-    (proc main-proc () ((string 0) (index 0))
+
+    (bytes sigaction-restorer
+           (
+            #xb8 #x0f #x00 #x00 #x00 ; mov    eax,0xf ; sigreturn
+            #x0f #x05                ; syscall
+            ))
+    
+    (bytes sigsegv-handler
+           (
+            ; return address is on top of the stack
+            ; need to push a dummy value (saved fp placeholder)
+            ; then push the argument and then restore stack pointer
+            ; to match upl calling convention
+            #x50 #x52 ; push rax ; push rdx
+            #x48 #x83 #xc4 #x10 ; add rsp, 16 
+            ))
+    (proc __sigsegv-handler (ucontext) ((fp-reg 0) (ip-reg 0))
           (
+           ,(upl-print-static-string "=========== Segmentation fault\n")
+           ; ucontext_t.uc_mcontext.__ctx = 40 bytes offset
+           (:= fp-reg (i64@ (+ 40 (+ (* 10 8) ucontext))))
+           (:= ip-reg (i64@ (+ 40 (+ (* 16 8) ucontext))))
+           (call print-stack-trace-from-fp-and-ip fp-reg ip-reg)
+           ,(upl-exit 1)
+           ))
+    (proc main () ((syscall-ret 0) (sigaction-struct ,tmp-4k-buffer))
+          (
+           (i64:= (+ sigaction-struct 0 ) (function-pointer sigsegv-handler))
+           (i64:= (+ sigaction-struct 8 ) #x4000004) ; flags SA_SIGINFO | SA_RESTORER
+           (i64:= (+ sigaction-struct 16) (function-pointer sigaction-restorer))
+           (i64:= (+ sigaction-struct 24) 0) ; sig mask
+           (syscall (-> syscall-ret)
+                    13 ; sigaction
+                    11 ; sigsegv signal
+                    sigaction-struct
+                    0 ; old sigaction struct
+                    8 ; sig mask size
+                    1 2)
            (call a)
           ))
     ))
@@ -937,6 +993,6 @@
   (write-mem-i64 proc-dict-ptr dict-ptr))
 
 (println "native call:")
-(native-call (alist-lookup name-to-iptr-list 'main-proc))
+(native-call (alist-lookup name-to-iptr-list 'main))
 (println "native call end")
 (enable-REPL-print)
