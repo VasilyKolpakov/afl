@@ -842,16 +842,17 @@
                                 (str-length 0))
           (
            ,(upl-print-static-string "Stacktrace:\n")
-           (while (!= current-fp 0)
-                  ((call print-hex-number (i64@ (+ current-fp 8)))
-                   (u8:= ,tmp-4k-buffer 32) ; whitespace
-                   (call write-to-stdout ,tmp-4k-buffer 1)
-                   (call function-name-by-iptr (-> str-buf) (-> str-length) (i64@ (+ current-fp 8)))
+           (call function-name-by-iptr (-> str-buf) (-> str-length) (i64@ (+ current-fp 8)))
+           (while (!= str-buf 0)
+                  (
                    (call write-to-stdout str-buf str-length)
                    (u8:= ,tmp-4k-buffer 10) ; newline
                    (call write-to-stdout ,tmp-4k-buffer 1)
-                   (:= current-fp (i64@ current-fp))))
+                   (:= current-fp (i64@ current-fp))
+                   (call function-name-by-iptr (-> str-buf) (-> str-length) (i64@ (+ current-fp 8)))
+                   ))
            ))
+    ; sets buf-ptr to 0 if fucntion is not found
     (proc function-name-by-iptr (buf-ptr size-ptr iptr) ((index 0)
                                                          (proc-dict (i64@ ,proc-dict-ptr))
                                                          (dict-array 0)
@@ -862,13 +863,13 @@
            (while (and (< index (i64@ proc-dict)) (> iptr (i64@ (+ (* index 16) dict-array))))
                   ((:+= index 1)))
            (if (and (> index 0) (< index (i64@ proc-dict))) ; last function in dict is end-of-range pointer
-               ((:+= index -1)
+               (
+                (:+= index -1)
                 (:= string (i64@ (+ (+ (* index 16) dict-array) 8)))
                 (i64:= buf-ptr (+ string 8))
                 (i64:= size-ptr (i64@ string)))
-               ((call print-hex-number iptr)
-                ,(upl-print-static-string "\nfunction-name-by-iptr: error, no such function")
-                ,(upl-exit 1)))
+               (
+                (i64:= buf-ptr 0)))
            ))
     (proc print-proc-dict () ((index 0)
                               (proc-dict (i64@ ,proc-dict-ptr))
@@ -903,13 +904,6 @@
     (proc main-proc () ((string 0) (index 0))
           (
            (call a)
-           (while (< index (i64@ (i64@ ,proc-dict-ptr)))
-                  ((:= string (i64@ (+ (* index 16)
-                                       (+ 16 (i64@ ,proc-dict-ptr)))))
-                   (call write-to-stdout (+ string 8) (i64@ string))
-                   (u8:= ,tmp-4k-buffer 10) ; newline
-                   (call write-to-stdout ,tmp-4k-buffer 1)
-                   (:+= index 1)))
           ))
     ))
 
@@ -943,6 +937,6 @@
   (write-mem-i64 proc-dict-ptr dict-ptr))
 
 (println "native call:")
-(native-call (alist-lookup name-to-iptr-list '_start))
+(native-call (alist-lookup name-to-iptr-list 'main-proc))
 (println "native call end")
 (enable-REPL-print)
