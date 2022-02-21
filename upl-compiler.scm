@@ -256,14 +256,6 @@
               (write-mem-byte (+ 3 ptr) #xe5)))
         "set-frame-pointer"))
 
-(define zero-frame-pointer-instruction
-  (list 3 (lambda (ptr)
-            (begin
-              (write-mem-byte ptr       #x48) ; xor rbp,rbp
-              (write-mem-byte (+ 1 ptr) #x31)
-              (write-mem-byte (+ 2 ptr) #xed)))
-        "zero-frame-pointer"))
-
 (define push-frame-pointer-instruction
   (list 1 (lambda (ptr)
             (begin
@@ -514,10 +506,6 @@
              (append
                (flatmap (lambda (expr) (compile-expr expr local-vars)) stmt-args)
                (list syscall-instruction))))
-          ((equal? stmt-type 'zero-fp)
-           (begin
-             (assert-stmt "zero-fp has 0 args" (= 0 (length stmt-args)))
-             (list zero-frame-pointer-instruction)))
           ((equal? stmt-type 'return)
            (begin
              (assert-stmt "return has 0 args" (= 0 (length stmt-args)))
