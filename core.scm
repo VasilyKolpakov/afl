@@ -335,3 +335,6 @@
       (andmap f (cdr l))
       #f)))
 
+(define (last l)
+  (assert-stmt "non-empty list" (not (empty? l)))
+  (nth (- (length l) 1) l))

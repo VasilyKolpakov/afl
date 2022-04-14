@@ -459,6 +459,7 @@
                 cond-args))))))
 
 (define (compile-statement stmt local-vars label-list)
+  (assert-stmt (list "statement must be a list, not:" stmt) (list? stmt))
   (let ((stmt-type (car stmt))
         (stmt-args (cdr stmt))
         (compile-expr (lambda (expr local-vars) (compile-expression expr local-vars label-list))))
@@ -555,6 +556,27 @@
                (flatmap compile-substatement else-branch)
                (list end-label)
                )))
+          ((equal? stmt-type 'cond)
+           (begin
+             (assert-stmt "non-empty cond statement" (not (empty? stmt-args)))
+             (assert-stmt "last cond statement is else" (equal? (car (last stmt-args)) 'else))
+             (let ((c-branches (reverse (cdr (reverse stmt-args))))
+                   (else-branch (last stmt-args))
+                   (end-label (new-label))
+                   (compile-substatement (lambda (s) (compile-statement s local-vars label-list))))
+               (append
+                 (flatmap (lambda (branch)
+                            (let ((condition (first branch))
+                                  (statements (second branch))
+                                  (false-label (new-label)))
+                              (append
+                                (compile-boolean-expression condition local-vars label-list false-label #f)
+                                (flatmap compile-substatement statements)
+                                (list (jmp-instruction end-label)
+                                      false-label))))
+                          c-branches)
+                 (flatmap compile-substatement (second else-branch))
+                 (list end-label)))))
           (else (panic "bad statement" stmt)))))
 
 
@@ -910,6 +932,20 @@
     (proc b () ((d 0)) ((call c) (:= d 0)))
     (proc a () ((d 0)) ((call b) (:= d 0)))
 
+    (proc cond-test () ((i 0))
+          (
+           (while (< i 4)
+                  (
+                   (cond
+                     ((= i 0) (,(upl-print-static-string "zero")))
+                     ((= i 1) (,(upl-print-static-string "one")))
+                     ((= i 2) (,(upl-print-static-string "two")))
+                     (else (,(upl-print-static-string "else"))))
+                   ,(upl-print-static-string "\n")
+                   (:+= i 1)
+                   ))
+          ))
+
     (bytes sigaction-restorer
            (
             #xb8 #x0f #x00 #x00 #x00 ; mov    eax,0xf ; sigreturn
@@ -936,6 +972,7 @@
            ))
     (proc main () ((syscall-ret 0) (sigaction-struct ,tmp-4k-buffer))
           (
+           (call cond-test)
            (i64:= (+ sigaction-struct 0 ) (function-pointer sigsegv-handler))
            (i64:= (+ sigaction-struct 8 ) #x4000004) ; flags SA_SIGINFO | SA_RESTORER
            (i64:= (+ sigaction-struct 16) (function-pointer sigaction-restorer))
