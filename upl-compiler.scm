@@ -236,6 +236,18 @@
 (define (push-var-instruction index)
   (list 5 (lambda (ptr) (generate-push-var ptr index)) (list "push-var" index)))
 
+(define push-rax-instruction
+  (list 1 (lambda (ptr)
+            (write-mem-byte ptr #x50) ; push rax
+            )
+        (list "push rax")))
+
+(define set-rax-instruction
+  (list 1 (lambda (ptr)
+            (write-mem-byte ptr #x58) ; pop rax
+            )
+        (list "pop rax")))
+
 (define (generate-set-var ptr index)
   (write-mem-byte ptr       #x58) ; pop rax
   (write-mem-byte (+ 1 ptr) #x48) ; QWORD PTR [rbp+___],rax
@@ -399,6 +411,20 @@
            (proc (assert (alist-lookup label-list label) not-empty? (list "undefined function:" expr)))
            (proc-label (second proc)))
        (list (push-label-pointer-instruction proc-label))))
+    ((equal? 'fcall (car expr))
+     (let ((proc (assert (alist-lookup label-list (car (cdr expr))) not-empty? (list "undefined function:" (second expr))))
+           (proc-args (cdr (cdr expr)))
+           (proc-label (second proc))
+           (proc-arg-count (nth 2 proc)))
+       (assert-stmt (list proc "is a func") (equal? 'func (first proc)))
+       (assert-stmt (list (second expr) "number of args") (= proc-arg-count (length proc-args)))
+       (append
+         (list (add-rsp-instruction -16))
+         (flatmap (lambda (expr) (compile-expression expr local-vars label-list)) proc-args)
+         (list
+           (add-rsp-instruction (* 8 (+ 2 proc-arg-count)))
+           (call-instruction proc-label)
+           push-rax-instruction))))
     ((equal? '-> (car expr))
      (let ((var (car (cdr expr)))
            (var-index (index-of local-vars var)))
@@ -513,6 +539,15 @@
              (list
                (add-rsp-instruction (* 8 (length local-vars)))
                return-instruction)))
+          ((equal? stmt-type 'return-val)
+           (begin
+             (assert-stmt "return-val has 1 args" (= 1 (length stmt-args)))
+             (append
+               (compile-expr (first stmt-args) local-vars)
+               (list
+                 set-rax-instruction
+                 (add-rsp-instruction (* 8 (length local-vars)))
+                 return-instruction))))
           ((equal? stmt-type 'while)
            (begin
              (assert-stmt "while has 2 args" (= 2 (length stmt-args)))
@@ -623,6 +658,9 @@
                      ((equal? 'proc chunk-type)
                       (let ((arg-count (length (nth 2 chunk))))
                         (list name 'proc label arg-count)))
+                     ((equal? 'func chunk-type)
+                      (let ((arg-count (length (nth 2 chunk))))
+                        (list name 'func label arg-count)))
                      ((equal? 'bytes chunk-type)
                       (list name 'bytes label))
                      (else (assert-stmt (list "chunk type" chunk-type) #f)))))
@@ -650,7 +688,7 @@
                 (chunk-type (first chunk))
                 (label (cdr c-with-l)))
             (cond
-              ((equal? 'proc chunk-type)
+              ((or (equal? 'proc chunk-type) (equal? 'func chunk-type))
                (let ((args (nth 2 chunk))
                      (local-vars-with-inits (nth 3 chunk))
                      (statements (nth 4 chunk)))
@@ -757,6 +795,23 @@
 (define tmp-4k-buffer (syscall-mmap-anon 4096))
 (define proc-dict-ptr (syscall-mmap-anon 4096))
 
+;   object header layout [gc flags (1 byte)][type id (1 byte)]
+(define (upl-obj-type-id expr)
+  '(u8@ (+ 1 ,expr)))
+(define obj-header-size 2)
+(define i64-obj-type-id 0)
+;   [value: i64]
+(define (upl-obj-i64-value expr)
+  '(i64@ (+ ,obj-header-size ,expr)))
+
+(define pair-obj-type-id 1)
+;   [car: ref][cdr: ref]
+(define (upl-obj-pair-car expr)
+  '(i64@ (+ ,obj-header-size ,expr)))
+
+(define (upl-obj-pair-cdr expr)
+  '(i64@ (+ ,(+ 8 obj-header-size) ,expr)))
+
 (define upl-code 
   '(
     (proc chk-syscall (retcode-out call-code arg1 arg2 arg3 arg4 arg5 arg6) ((ret 0) (hack-8-byte-buf 0) (num-length 0))
@@ -783,11 +838,8 @@
            (i64:= ,alloc-bump-ptr (+ bump-ptr size))
            (i64:= addr-out bump-ptr)
            ))
-;   object header layout [gc flags (1 byte)][type id (1 byte)]
-;   i64 obj type id = 0
-
     (proc allocate-i64 (addr-out num) ((addr 0))
-          ((call gc-malloc addr 10)
+          ((call gc-malloc (-> addr) 10)
            (u8:=  addr 0)
            (u8:=  (+ addr 1) 0) ; type id
            (i64:= (+ addr 2) num)
@@ -795,7 +847,7 @@
 ;   pair obj type id = 1
 
     (proc allocate-pair (addr-out first second) ((addr 0))
-          ((call gc-malloc addr 18)
+          ((call gc-malloc (-> addr) 18)
           (u8:=  addr 0)
           (u8:=  (+ addr 1) 1) ; type id
           (i64:= (+ addr 2) first)
@@ -905,28 +957,32 @@
                (
                 (i64:= buf-ptr 0)))
            ))
-    (proc print-proc-dict () ((index 0)
-                              (proc-dict (i64@ ,proc-dict-ptr))
-                              (dict-array 0)
-                              (string 0))
+    (proc last-link-in-list (list) ((pair-ptr list))
           (
-           (:= dict-array (+ proc-dict 8))
-           ; skip records
-           (while (< index (i64@ proc-dict))
+           (while (and (!= pair-ptr 0) (= ,pair-obj-type-id ,(upl-obj-type-id 'pair-ptr)))
                   (
-                   (:= string (i64@ (+ (+ (* index 16) dict-array) 8)))
-                   ;(call print-hex-number (+ (* index 16) dict-array))
-                   (call print-hex-number (i64@ (+ (* index 16) dict-array)))
-                   (u8:= ,tmp-4k-buffer 32) ; whitespace
-                   (call write-to-stdout ,tmp-4k-buffer 1)
-                   (call print-number (i64@ (+ (* index 16) dict-array)))
-                   (u8:= ,tmp-4k-buffer 32) ; whitespace
-                   (call write-to-stdout ,tmp-4k-buffer 1)
-                   (call write-to-stdout (+ string 8) (i64@ string))
-                   (u8:= ,tmp-4k-buffer 10) ; newline
-                   (call write-to-stdout ,tmp-4k-buffer 1)
-                   (:+= index 1)
-                   ))
+                   (:= pair-ptr ,(upl-obj-pair-cdr 'pair-ptr))))
+
+           ))
+    (proc print-object (obj) ((obj-type-id 0))
+          (
+           (:= obj-type-id ,(upl-obj-type-id 'obj))
+           (cond
+             ((= obj-type-id ,i64-obj-type-id)
+              (
+               (call print-number ,(upl-obj-i64-value 'obj))
+               ))
+             ((= obj-type-id ,pair-obj-type-id)
+              (
+               ,(upl-print-static-string "(")
+               (call print-object ,(upl-obj-pair-car 'obj))
+               ,(upl-print-static-string " . ")
+               (call print-object ,(upl-obj-pair-cdr 'obj))
+               ,(upl-print-static-string ")")
+               ))
+             (else (
+                    ,(upl-print-static-string "bad obj-type\n")
+                    )))
            ))
     (proc c () () ((i64:= 0 0)))
     (proc b () ((d 0)) ((call c) (:= d 0)))
@@ -970,9 +1026,20 @@
            (call print-stack-trace-from-fp-and-ip fp-reg ip-reg)
            ,(upl-exit 1)
            ))
+    (proc test-print-object () ((obj 0) (obj2 0) (obj3 0))
+          (
+           (call allocate-i64 (-> obj) 42)
+           (call allocate-i64 (-> obj2) 420)
+           (call allocate-pair (-> obj3) obj obj2)
+           (call print-object obj3)
+           ,(upl-print-static-string "\n")
+           ))
+    (func test-func (num) ()
+          (
+           (return-val num)
+           ))
     (proc main () ((syscall-ret 0) (sigaction-struct ,tmp-4k-buffer))
           (
-           (call cond-test)
            (i64:= (+ sigaction-struct 0 ) (function-pointer sigsegv-handler))
            (i64:= (+ sigaction-struct 8 ) #x4000004) ; flags SA_SIGINFO | SA_RESTORER
            (i64:= (+ sigaction-struct 16) (function-pointer sigaction-restorer))
@@ -984,7 +1051,11 @@
                     0 ; old sigaction struct
                     8 ; sig mask size
                     1 2)
-           (call a)
+           ;(call a)
+           (call print-number (fcall test-func 1111))
+           (call print-newline)
+           (call test-print-object)
+
           ))
     ))
 
