@@ -410,7 +410,9 @@
      (let ((label (second expr))
            (proc (assert (alist-lookup label-list label) not-empty? (list "undefined function:" expr)))
            (proc-label (second proc)))
-       (list (push-label-pointer-instruction proc-label))))
+       (append
+         (list (push-label-pointer-instruction proc-label))
+         rest)))
     ((equal? 'fcall (car expr))
      (let ((proc (assert (alist-lookup label-list (car (cdr expr))) not-empty? (list "undefined function:" (second expr))))
            (proc-args (cdr (cdr expr)))
@@ -424,12 +426,14 @@
          (list
            (add-rsp-instruction (* 8 (+ 2 proc-arg-count)))
            (call-instruction proc-label)
-           push-rax-instruction))))
+           push-rax-instruction)
+         rest)))
     ((equal? '-> (car expr))
      (let ((var (car (cdr expr)))
            (var-index (index-of local-vars var)))
        (if (empty? var-index) (panic "ref: bad variable:" var) '())
-       (list (push-var-addr-instruction var-index))))
+       (append (list (push-var-addr-instruction var-index))
+               rest)))
     (else
       (let ((arg-count-and-inst (assert (alist-lookup symbol-to-instruction (car expr)) not-empty? (list "undefined operator:" (car expr)))))
         (assert-stmt "arg count matches" (= (length (cdr expr)) (car arg-count-and-inst)))
@@ -957,14 +961,14 @@
                (
                 (i64:= buf-ptr 0)))
            ))
-    (proc last-link-in-list (list) ((pair-ptr list))
+    (func zero-if-list (list) ((pair-ptr list))
           (
            (while (and (!= pair-ptr 0) (= ,pair-obj-type-id ,(upl-obj-type-id 'pair-ptr)))
                   (
                    (:= pair-ptr ,(upl-obj-pair-cdr 'pair-ptr))))
-
+           (return-val pair-ptr)
            ))
-    (proc print-object (obj) ((obj-type-id 0))
+    (proc print-object (obj) ((obj-type-id 0) (tmp 0))
           (
            (:= obj-type-id ,(upl-obj-type-id 'obj))
            (cond
@@ -974,11 +978,30 @@
                ))
              ((= obj-type-id ,pair-obj-type-id)
               (
-               ,(upl-print-static-string "(")
-               (call print-object ,(upl-obj-pair-car 'obj))
-               ,(upl-print-static-string " . ")
-               (call print-object ,(upl-obj-pair-cdr 'obj))
-               ,(upl-print-static-string ")")
+               (if (= (fcall zero-if-list obj) 0)
+                 (
+                  ,(upl-print-static-string "zero-if-list: ")
+                  (call print-number (fcall zero-if-list obj))
+                  ,(upl-print-static-string "\n")
+                  (:= tmp obj)
+                  ,(upl-print-static-string "(")
+                  (while (!= tmp 0)
+                         (
+                          (call print-object ,(upl-obj-pair-car 'tmp))
+                          (:= tmp ,(upl-obj-pair-cdr 'tmp))
+                          (if (!= tmp 0)
+                            (,(upl-print-static-string " "))
+                            ())
+                          ))
+                  ,(upl-print-static-string ")")
+                  )
+                 (
+                  ,(upl-print-static-string "(")
+                  (call print-object ,(upl-obj-pair-car 'obj))
+                  ,(upl-print-static-string " . ")
+                  (call print-object ,(upl-obj-pair-cdr 'obj))
+                  ,(upl-print-static-string ")")
+                  ))
                ))
              (else (
                     ,(upl-print-static-string "bad obj-type\n")
@@ -1054,8 +1077,12 @@
            ;(call a)
            (call print-number (fcall test-func 1111))
            (call print-newline)
-           (call test-print-object)
+           (if (= 41 (fcall test-func 42))
+             (,(upl-print-static-string "true\n"))
+             (,(upl-print-static-string "false\n")))
+           ;(call test-print-object)
 
+           ,(upl-print-static-string "end\n")
           ))
     ))
 
