@@ -297,27 +297,24 @@
   (write-mem-i32 (+ ptr 1) rel-target)
   ))
 
-(define (generate-syscall ptr)
-  (write-mem-byte ptr        #x41) ; pop r9
-  (write-mem-byte (+ 1 ptr)  #x59)
-  (write-mem-byte (+ 2 ptr)  #x41) ; pop r8
-  (write-mem-byte (+ 3 ptr)  #x58)
-  (write-mem-byte (+ 4 ptr)  #x41) ; pop r10
-  (write-mem-byte (+ 5 ptr)  #x5a)
-  (write-mem-byte (+ 6 ptr)  #x5a) ; pop rdx
-  (write-mem-byte (+ 7 ptr)  #x5e) ; pop rsi
-  (write-mem-byte (+ 8 ptr)  #x5f) ; pop rdi
-  (write-mem-byte (+ 9 ptr)  #x58) ; pop rax
-  (write-mem-byte (+ 10 ptr) #x41) ; pop r15
-  (write-mem-byte (+ 11 ptr) #x5f)
-  (write-mem-byte (+ 12 ptr) #x0f) ; syscall
-  (write-mem-byte (+ 13 ptr) #x05)
-  (write-mem-byte (+ 14 ptr) #x49) ; mov [r15], rax
-  (write-mem-byte (+ 15 ptr) #x89)
-  (write-mem-byte (+ 16 ptr) #x07)
-  )
-
-(define syscall-instruction (list 17 generate-syscall "syscall"))
+(define syscall-instruction 
+  (list 13 (lambda (ptr)
+             (begin
+               (write-mem-byte ptr        #x41) ; pop r9
+               (write-mem-byte (+ 1 ptr)  #x59)
+               (write-mem-byte (+ 2 ptr)  #x41) ; pop r8
+               (write-mem-byte (+ 3 ptr)  #x58)
+               (write-mem-byte (+ 4 ptr)  #x41) ; pop r10
+               (write-mem-byte (+ 5 ptr)  #x5a)
+               (write-mem-byte (+ 6 ptr)  #x5a) ; pop rdx
+               (write-mem-byte (+ 7 ptr)  #x5e) ; pop rsi
+               (write-mem-byte (+ 8 ptr)  #x5f) ; pop rdi
+               (write-mem-byte (+ 9 ptr)  #x58) ; pop rax
+               (write-mem-byte (+ 10 ptr) #x0f) ; syscall
+               (write-mem-byte (+ 11 ptr) #x05)
+               (write-mem-byte (+ 12 ptr) #x50) ; mov [r15], rax
+               ))
+        "syscall"))
 
 (define (call-instruction target-label)
   (list 5
@@ -378,6 +375,7 @@
     (list 'i64@       1 get-i64-instruction)
     (list 'u8@        1 get-u8-instruction)
     (list 'get-fp     0 push-frame-pointer-instruction)
+    (list 'syscall    7 syscall-instruction)
     ))
 
 (define symbol-to-cmp-instructions
@@ -531,12 +529,6 @@
                (list
                  (add-rsp-instruction (* 8 (+ 2 proc-arg-count)))
                  (call-instruction proc-label)))))
-          ((equal? stmt-type 'syscall)
-           (begin
-             (assert-stmt "syscall has 8 args" (= 8 (length stmt-args)))
-             (append
-               (flatmap (lambda (expr) (compile-expr expr local-vars)) stmt-args)
-               (list syscall-instruction))))
           ((equal? stmt-type 'return)
            (begin
              (assert-stmt "return has 0 args" (= 0 (length stmt-args)))
@@ -785,11 +777,11 @@
                        (<= (+ (cell-get bump-index) str-length) str-buffer-size))
           (string-to-native-buffer str (+ str-buffer (cell-get bump-index)))
           (cell-set bump-index (+ str-length (cell-get bump-index)))
-          '(syscall ,ret-val-buffer 1 1 ,(+ str-buffer original-bump-index) ,str-length 1 2 3))))))
+          '(i64:= ,ret-val-buffer (syscall 1 1 ,(+ str-buffer original-bump-index) ,str-length 1 2 3)))))))
 
 (define dummy-buf (syscall-mmap-anon 1000))
 (define (upl-exit code)
-  '(syscall ,dummy-buf 60 ,code 1 2 3 4 5))
+  '(i64:= ,dummy-buf (syscall 60 ,code 1 2 3 4 5)))
 
 (define alloc-arena-size 409600)
 (define alloc-arena (syscall-mmap-anon alloc-arena-size))
@@ -818,19 +810,21 @@
 
 (define upl-code 
   '(
-    (proc chk-syscall (retcode-out call-code arg1 arg2 arg3 arg4 arg5 arg6) ((ret 0) (hack-8-byte-buf 0) (num-length 0))
-          ((syscall (-> ret) call-code arg1 arg2 arg3 arg4 arg5 arg6)
+    (func chk-syscall (call-code arg1 arg2 arg3 arg4 arg5 arg6) ((ret 0) (hack-8-byte-buf 0) (num-length 0))
+          ((:= ret (syscall call-code arg1 arg2 arg3 arg4 arg5 arg6))
            (if (and (< ret 0) (> ret -4096))
-               (,(upl-print-static-string "syscall error: ")
-                 (call number-to-string (-> hack-8-byte-buf) (- 0 ret))
-                 (call number-string-length (-> num-length) (- 0 ret))
-                 (syscall (-> ret) 1 1 (-> hack-8-byte-buf) num-length 1 2 3)
-                ,(upl-exit 1)))
-           (i64:= retcode-out ret)))
+             (,(upl-print-static-string "syscall error: ")
+               (call number-to-string (-> hack-8-byte-buf) (- 0 ret))
+               (call number-string-length (-> num-length) (- 0 ret))
+               (:= ret (syscall 1 1 (-> hack-8-byte-buf) num-length 1 2 3))
+               ,(upl-exit 1)))
+           (return-val ret)
+           ))
     (proc write-to-stdout (buf length) ((sys-ret 0) (written 0))
           ((while (> length written)
-                  ((call chk-syscall (-> sys-ret) 1 1 (+ buf written) (- length written) 1 2 3)
-                   (:= written (+ written sys-ret))))))
+                  (
+                   (:= sys-ret (fcall chk-syscall 1 1 (+ buf written) (- length written) 1 2 3))
+                   (:+= written sys-ret)))))
     (proc gc-malloc (addr-out size) ((bump-ptr 0))
           (
            (:= bump-ptr (i64@ ,alloc-bump-ptr))
@@ -1052,7 +1046,8 @@
     (proc test-print-object () ((obj 0) (obj2 0) (obj3 0))
           (
            (call allocate-i64 (-> obj) 42)
-           (call allocate-i64 (-> obj2) 420)
+           (call allocate-pair (-> obj2) obj 0)
+           (call allocate-i64 (-> obj) 420)
            (call allocate-pair (-> obj3) obj obj2)
            (call print-object obj3)
            ,(upl-print-static-string "\n")
@@ -1067,22 +1062,19 @@
            (i64:= (+ sigaction-struct 8 ) #x4000004) ; flags SA_SIGINFO | SA_RESTORER
            (i64:= (+ sigaction-struct 16) (function-pointer sigaction-restorer))
            (i64:= (+ sigaction-struct 24) 0) ; sig mask
-           (syscall (-> syscall-ret)
+           (:= syscall-ret (syscall
                     13 ; sigaction
                     11 ; sigsegv signal
                     sigaction-struct
                     0 ; old sigaction struct
                     8 ; sig mask size
-                    1 2)
-           ;(call a)
+                    1 2))
            (call print-number (fcall test-func 1111))
            (call print-newline)
-           (if (= 41 (fcall test-func 42))
-             (,(upl-print-static-string "true\n"))
-             (,(upl-print-static-string "false\n")))
-           ;(call test-print-object)
+           (call test-print-object)
 
            ,(upl-print-static-string "end\n")
+           (call a)
           ))
     ))
 
