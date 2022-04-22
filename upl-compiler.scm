@@ -402,6 +402,7 @@
           (cond-jmp-instruction-gen #x8d))
     ))
 
+(define (create-context local-vars label-list) (list local-vars label-list))
 (define (context-local-vars context) (first context))
 (define (context-label-list context) (second context))
 
@@ -635,9 +636,9 @@
         (list
           set-frame-pointer-instruction
           (add-rsp-instruction (- 0 (* 8 (length args)))))
-        (flatmap (lambda (var-init) (compile-expression var-init (list args label-list)))
+        (flatmap (lambda (var-init) (compile-expression var-init (create-context args label-list)))
                  local-var-inits)
-        (flatmap (lambda (stmt) (compile-statement stmt (list local-vars label-list)))
+        (flatmap (lambda (stmt) (compile-statement stmt (create-context local-vars label-list)))
                  statements)
         (list (add-rsp-instruction (* 8 (length local-vars)))
           return-instruction)))))
