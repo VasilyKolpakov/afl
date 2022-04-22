@@ -147,6 +147,20 @@
             ))
         "bit-or"))
 
+(define (set-i64-instruction-imm-ptr dest-ptr)
+  (list 14 
+        (lambda (ptr)
+          (begin
+            (write-mem-byte       ptr #x48) ; mov rax, dest-ptr
+            (write-mem-byte (+ 1  ptr) #xb8)
+            (write-mem-i64  (+ 2  ptr) dest-ptr)
+            (write-mem-byte (+ 10 ptr) #x5f) ; pop rdi
+            (write-mem-byte (+ 11 ptr) #x48) ; mov [rax], rdi
+            (write-mem-byte (+ 12 ptr) #x89)
+            (write-mem-byte (+ 13 ptr) #x38)
+            ))
+        "set-i64-imm-ptr"))
+
 (define set-i64-instruction
   (list 5 
         (lambda (ptr)
@@ -402,9 +416,10 @@
           (cond-jmp-instruction-gen #x8d))
     ))
 
-(define (create-context local-vars label-list) (list local-vars label-list))
+(define (create-context local-vars label-list globals-mapping) (list local-vars label-list globals-mapping))
 (define (context-local-vars context) (first context))
 (define (context-label-list context) (second context))
+(define (context-globals-mapping context) (nth 2 context))
 
 (define (compile-list expr rest context)
   (let ((local-vars (context-local-vars context))
@@ -448,9 +463,16 @@
 
 (define (compile-expression-rec expr rest context)
   (let ((local-vars (context-local-vars context))
-        (var-index (index-of local-vars expr)))
+        (var-index (index-of local-vars expr))
+        (globals-mapping (context-globals-mapping context))
+        (global-var-ptr (alist-lookup globals-mapping expr)))
     (cond
       ((not-empty? var-index) (cons (push-var-instruction var-index) rest))
+      ((not-empty? global-var-ptr) (append
+                                     (list
+                                       (push-imm-instruction global-var-ptr)
+                                       get-i64-instruction)
+                                     rest))
       ((number? expr) (cons (push-imm-instruction expr) rest))
       ((list? expr) (compile-list expr rest context))
       (else (panic "bad expression: " (list "expression:" expr "context:" context))))))
@@ -522,12 +544,20 @@
           ((equal? stmt-type ':=)
            (let ((var (car stmt-args))
                  (var-index (index-of local-vars var))
+                 (globals-mapping (context-globals-mapping context))
+                 (global-var-ptr (alist-lookup globals-mapping var))
                  (val-expr (car (cdr stmt-args))))
-             (if (empty? var-index) (panic "set-var: bad variable:" var) '())
-             (compile-expression-rec
-               val-expr
-               (list (set-var-instruction var-index))
-               context)))
+             (cond
+               ((not-empty? var-index) (compile-expression-rec
+                                         val-expr
+                                         (list (set-var-instruction var-index))
+                                         context))
+               ((not-empty? global-var-ptr) (compile-expression-rec
+                                              val-expr
+                                              (list (set-i64-instruction-imm-ptr global-var-ptr))
+                                              context))
+               (else (panic "set-var: bad variable:" var) '()))
+             ))
           ((equal? stmt-type 'call)
            (let ((proc (assert (alist-lookup label-list (car (cdr stmt))) not-empty? (list "undefined function:" (first stmt-args))))
                  (proc-args (cdr (cdr stmt)))
@@ -626,7 +656,8 @@
 (define (compile-procedure args
                            local-vars-with-inits
                            statements
-                           label-list)
+                           label-list
+                           globals-mapping)
   (begin
     (assert-stmt (list "local vars must have init values, for example: (proc foo (a b) ((i 42)) ..., but was " local-vars-with-inits)
                  (andmap pair? local-vars-with-inits))
@@ -636,9 +667,9 @@
         (list
           set-frame-pointer-instruction
           (add-rsp-instruction (- 0 (* 8 (length args)))))
-        (flatmap (lambda (var-init) (compile-expression var-init (create-context args label-list)))
+        (flatmap (lambda (var-init) (compile-expression var-init (create-context args label-list globals-mapping)))
                  local-var-inits)
-        (flatmap (lambda (stmt) (compile-statement stmt (create-context local-vars label-list)))
+        (flatmap (lambda (stmt) (compile-statement stmt (create-context local-vars label-list globals-mapping)))
                  statements)
         (list (add-rsp-instruction (* 8 (length local-vars)))
           return-instruction)))))
@@ -652,7 +683,7 @@
 
 (define (label? v) (number? v))
 
-(define (compile-upl code-chunks)
+(define (compile-upl code-chunks globals-mapping)
   (let ((chunks-with-labels
           (map (lambda (p) (cons p (new-label))) code-chunks))
         (procs-with-labels (filter (lambda (c-with-l) (equal? 'proc (first (car c-with-l)))) chunks-with-labels))
@@ -700,7 +731,7 @@
                (let ((args (nth 2 chunk))
                      (local-vars-with-inits (nth 3 chunk))
                      (statements (nth 4 chunk)))
-                 (cons label (compile-procedure args local-vars-with-inits statements label-list))))
+                 (cons label (compile-procedure args local-vars-with-inits statements label-list globals-mapping))))
               ((equal? 'bytes chunk-type)
                (let ((bytes-list (nth 2 chunk)))
                  (cons label (list
@@ -748,8 +779,12 @@
       instructions)))
 
 
-(define (compile-upl-to-native upl-code)
-  (let ((chunk-label-list-and-insts (compile-upl upl-code))
+(define (compile-upl-to-native upl-code globals)
+  (let ((globals-buffer (syscall-mmap-anon (* 8 (length globals))))
+        (globals-mapping (zip 
+                           globals
+                           (map (lambda (i) (+ globals-buffer (* 8 i))) (range (length globals)))))
+        (chunk-label-list-and-insts (compile-upl upl-code globals-mapping))
         (chunk-label-list (first chunk-label-list-and-insts))
         (instructions (second chunk-label-list-and-insts))
         (_ (validate-stack-machine-code instructions))
@@ -819,6 +854,9 @@
 
 (define (upl-obj-pair-cdr expr)
   '(i64@ (+ ,(+ 8 obj-header-size) ,expr)))
+
+(define upl-globals
+  '(test-global-var))
 
 (define upl-code 
   '(
@@ -1119,11 +1157,16 @@
            ,(upl-print-static-string "end\n")
            (call tests)
 
+           (:= test-global-var 42)
+           (call print-number test-global-var)
+           (call print-newline)
+           
            (call a)
           ))
     ))
 
-(define name-to-iptr-list (compile-upl-to-native upl-code))
+
+(define name-to-iptr-list (compile-upl-to-native upl-code upl-globals))
 (foldl (lambda (next prev)
          (begin
            (assert-stmt "pointers are not sorted in name-to-iptr-list" (< prev (cdr next)))
