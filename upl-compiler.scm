@@ -402,60 +402,68 @@
           (cond-jmp-instruction-gen #x8d))
     ))
 
-(define (compile-list expr rest local-vars label-list)
-  (cond
-    ((equal? 'function-pointer (car expr))
-     (let ((label (second expr))
-           (proc (assert (alist-lookup label-list label) not-empty? (list "undefined function:" expr)))
-           (proc-label (second proc)))
-       (append
-         (list (push-label-pointer-instruction proc-label))
-         rest)))
-    ((equal? 'fcall (car expr))
-     (let ((proc (assert (alist-lookup label-list (car (cdr expr))) not-empty? (list "undefined function:" (second expr))))
-           (proc-args (cdr (cdr expr)))
-           (proc-label (second proc))
-           (proc-arg-count (nth 2 proc)))
-       (assert-stmt (list proc "is a func") (equal? 'func (first proc)))
-       (assert-stmt (list (second expr) "number of args") (= proc-arg-count (length proc-args)))
-       (append
-         (list (add-rsp-instruction -16))
-         (flatmap (lambda (expr) (compile-expression expr local-vars label-list)) proc-args)
-         (list
-           (add-rsp-instruction (* 8 (+ 2 proc-arg-count)))
-           (call-instruction proc-label)
-           push-rax-instruction)
-         rest)))
-    ((equal? '-> (car expr))
-     (let ((var (car (cdr expr)))
-           (var-index (index-of local-vars var)))
-       (if (empty? var-index) (panic "ref: bad variable:" var) '())
-       (append (list (push-var-addr-instruction var-index))
-               rest)))
-    (else
-      (let ((arg-count-and-inst (assert (alist-lookup symbol-to-instruction (car expr)) not-empty? (list "undefined operator:" (car expr)))))
-        (assert-stmt "arg count matches" (= (length (cdr expr)) (car arg-count-and-inst)))
-        (foldr
-          (lambda (expr rest) (compile-expression-rec expr rest local-vars label-list))
-          (cons (car (cdr arg-count-and-inst)) rest)
-          (cdr expr))))))
+(define (context-local-vars context) (first context))
+(define (context-label-list context) (second context))
 
-(define (compile-expression-rec expr rest local-vars label-list)
-  (let ((var-index (index-of local-vars expr)))
+(define (compile-list expr rest context)
+  (let ((local-vars (context-local-vars context))
+        (label-list (context-label-list context)))
+    (cond
+      ((equal? 'function-pointer (car expr))
+       (let ((label (second expr))
+             (proc (assert (alist-lookup label-list label) not-empty? (list "undefined function:" expr)))
+             (proc-label (second proc)))
+         (append
+           (list (push-label-pointer-instruction proc-label))
+           rest)))
+      ((equal? 'fcall (car expr))
+       (let ((proc (assert (alist-lookup label-list (car (cdr expr))) not-empty? (list "undefined function:" (second expr))))
+             (proc-args (cdr (cdr expr)))
+             (proc-label (second proc))
+             (proc-arg-count (nth 2 proc)))
+         (assert-stmt (list proc "is a func") (equal? 'func (first proc)))
+         (assert-stmt (list (second expr) "number of args") (= proc-arg-count (length proc-args)))
+         (append
+           (list (add-rsp-instruction -16))
+           (flatmap (lambda (expr) (compile-expression expr context)) proc-args)
+           (list
+             (add-rsp-instruction (* 8 (+ 2 proc-arg-count)))
+             (call-instruction proc-label)
+             push-rax-instruction)
+           rest)))
+      ((equal? '-> (car expr))
+       (let ((var (car (cdr expr)))
+             (var-index (index-of local-vars var)))
+         (if (empty? var-index) (panic "ref: bad variable:" var) '())
+         (append (list (push-var-addr-instruction var-index))
+                 rest)))
+      (else
+        (let ((arg-count-and-inst (assert (alist-lookup symbol-to-instruction (car expr)) not-empty? (list "undefined operator:" (car expr)))))
+          (assert-stmt "arg count matches" (= (length (cdr expr)) (car arg-count-and-inst)))
+          (foldr
+            (lambda (expr rest) (compile-expression-rec expr rest context))
+            (cons (car (cdr arg-count-and-inst)) rest)
+            (cdr expr)))))))
+
+(define (compile-expression-rec expr rest context)
+  (let ((local-vars (context-local-vars context))
+        (var-index (index-of local-vars expr)))
     (cond
       ((not-empty? var-index) (cons (push-var-instruction var-index) rest))
       ((number? expr) (cons (push-imm-instruction expr) rest))
-      ((list? expr) (compile-list expr rest local-vars label-list))
-      (else (panic "bad expression: " (list "expression:" expr "local-vars:" local-vars))))))
+      ((list? expr) (compile-list expr rest context))
+      (else (panic "bad expression: " (list "expression:" expr "context:" context))))))
 
-(define (compile-expression expr local-vars label-list)
-  (compile-expression-rec expr '() local-vars label-list))
+(define (compile-expression expr context)
+  (compile-expression-rec expr '() context))
 
-(define (compile-boolean-expression cond-expr local-vars label-list label true-label?)
+(define (compile-boolean-expression cond-expr context label true-label?)
   (let ((cond-type (car cond-expr))
-        (cond-args (cdr cond-expr)))
+        (cond-args (cdr cond-expr))
+        (local-vars (context-local-vars context))
+        (label-list (context-label-list context)))
     (cond ((equal? cond-type 'not)
-           (compile-boolean-expression (second cond-expr) local-vars label-list label (not true-label?)))
+           (compile-boolean-expression (second cond-expr) context label (not true-label?)))
           ((equal? cond-type 'and)
            (let ((first-child (first cond-args))
                  (second-child (second cond-args)))
@@ -463,12 +471,12 @@
              (if true-label?
                (let ((false-label (new-label)))
                  (append
-                   (compile-boolean-expression first-child local-vars label-list false-label #f)
-                   (compile-boolean-expression second-child local-vars label-list label #t)
+                   (compile-boolean-expression first-child context false-label #f)
+                   (compile-boolean-expression second-child context label #t)
                    (list false-label)))
                (append
-                   (compile-boolean-expression first-child local-vars label-list label #f)
-                   (compile-boolean-expression second-child local-vars label-list label #f)))))
+                   (compile-boolean-expression first-child context label #f)
+                   (compile-boolean-expression second-child context label #f)))))
 
           (else 
             (let ((true-and-false-instrs
@@ -482,30 +490,34 @@
                       (second true-and-false-instrs))))
               (assert-stmt "cond expr: cmp functions should have 2 args" (= (length cond-args) 2))
               (foldr
-                (lambda (expr rest) (compile-expression-rec expr rest local-vars label-list))
+                (lambda (expr rest) (compile-expression-rec expr rest context))
                 (list (cond-inst-gen label))
                 cond-args))))))
 
-(define (compile-statement stmt local-vars label-list)
+(define (compile-statement stmt context)
   (assert-stmt (list "statement must be a list, not:" stmt) (list? stmt))
   (let ((stmt-type (car stmt))
         (stmt-args (cdr stmt))
-        (compile-expr (lambda (expr local-vars) (compile-expression expr local-vars label-list))))
+        (local-vars (context-local-vars context))
+        (label-list (context-label-list context))
+        (compile-expr (lambda (expr local-vars) (compile-expression expr context))))
     (cond ((equal? stmt-type 'i64:=)
            (append
              (compile-expr (first stmt-args) local-vars)
              (compile-expr (second stmt-args) local-vars)
              (list set-i64-instruction)))
           ((equal? stmt-type 'u8:=)
-           (append
-             (compile-expr (first stmt-args) local-vars)
-             (compile-expr (second stmt-args) local-vars)
-             (list set-u8-instruction)))
+           (begin
+             (assert-stmt (list "u8:= statement has 2 parts" stmt) (equal? 2 (length stmt-args)))
+             (append
+               (compile-expr (first stmt-args) local-vars)
+               (compile-expr (second stmt-args) local-vars)
+               (list set-u8-instruction))))
           ((equal? stmt-type ':+=)
            (let ((var (car stmt-args))
                  (var-index (index-of local-vars var))
                  (val-expr (car (cdr stmt-args))))
-             (compile-statement '(:= ,var (+ ,var ,val-expr)) local-vars label-list)))
+             (compile-statement '(:= ,var (+ ,var ,val-expr)) context)))
           ((equal? stmt-type ':=)
            (let ((var (car stmt-args))
                  (var-index (index-of local-vars var))
@@ -514,8 +526,7 @@
              (compile-expression-rec
                val-expr
                (list (set-var-instruction var-index))
-               local-vars
-               label-list)))
+               context)))
           ((equal? stmt-type 'call)
            (let ((proc (assert (alist-lookup label-list (car (cdr stmt))) not-empty? (list "undefined function:" (first stmt-args))))
                  (proc-args (cdr (cdr stmt)))
@@ -549,10 +560,10 @@
              (assert-stmt "while has 2 args" (= 2 (length stmt-args)))
              (let ((cond-expr (car stmt-args))
                    (body-statements (second stmt-args))
-                   (compile-substatement (lambda (s) (compile-statement s local-vars label-list)))
+                   (compile-substatement (lambda (s) (compile-statement s context)))
                    (loop-label (new-label))
                    (end-label (new-label))
-                   (cond-instructions (compile-boolean-expression cond-expr local-vars label-list end-label #f)))
+                   (cond-instructions (compile-boolean-expression cond-expr context end-label #f)))
                (append
                  (list loop-label)
                  cond-instructions
@@ -563,9 +574,9 @@
           ((and (equal? stmt-type 'if) (equal? 2 (length stmt-args)))
            (let ((cond-expr (car stmt-args))
                  (then-branch (second stmt-args))
-                 (compile-substatement (lambda (s) (compile-statement s local-vars label-list)))
+                 (compile-substatement (lambda (s) (compile-statement s context)))
                  (else-label (new-label))
-                 (cond-instructions (compile-boolean-expression cond-expr local-vars label-list else-label #f)))
+                 (cond-instructions (compile-boolean-expression cond-expr context else-label #f)))
              (append
                cond-instructions
                (flatmap compile-substatement then-branch)
@@ -575,10 +586,10 @@
            (let ((cond-expr (car stmt-args))
                  (then-branch (second stmt-args))
                  (else-branch (nth 2 stmt-args))
-                 (compile-substatement (lambda (s) (compile-statement s local-vars label-list)))
+                 (compile-substatement (lambda (s) (compile-statement s context)))
                  (else-label (new-label))
                  (end-label (new-label))
-                 (cond-instructions (compile-boolean-expression cond-expr local-vars label-list else-label #f)))
+                 (cond-instructions (compile-boolean-expression cond-expr context else-label #f)))
              (append
                cond-instructions
                (flatmap compile-substatement then-branch)
@@ -594,14 +605,14 @@
              (let ((c-branches (reverse (cdr (reverse stmt-args))))
                    (else-branch (last stmt-args))
                    (end-label (new-label))
-                   (compile-substatement (lambda (s) (compile-statement s local-vars label-list))))
+                   (compile-substatement (lambda (s) (compile-statement s context))))
                (append
                  (flatmap (lambda (branch)
                             (let ((condition (first branch))
                                   (statements (second branch))
                                   (false-label (new-label)))
                               (append
-                                (compile-boolean-expression condition local-vars label-list false-label #f)
+                                (compile-boolean-expression condition context false-label #f)
                                 (flatmap compile-substatement statements)
                                 (list (jmp-instruction end-label)
                                       false-label))))
@@ -624,9 +635,9 @@
         (list
           set-frame-pointer-instruction
           (add-rsp-instruction (- 0 (* 8 (length args)))))
-        (flatmap (lambda (var-init) (compile-expression var-init args label-list))
+        (flatmap (lambda (var-init) (compile-expression var-init (list args label-list)))
                  local-var-inits)
-        (flatmap (lambda (stmt) (compile-statement stmt local-vars label-list))
+        (flatmap (lambda (stmt) (compile-statement stmt (list local-vars label-list)))
                  statements)
         (list (add-rsp-instruction (* 8 (length local-vars)))
           return-instruction)))))
@@ -835,6 +846,27 @@
                 ) ())
            (i64:= ,alloc-bump-ptr (+ bump-ptr size))
            (i64:= addr-out bump-ptr)
+           ))
+    (func syscall-mmap-anon (size) ()
+          (
+           (return-val (fcall chk-syscall ,syscall-mmap 
+                    0 ; address hint
+                    size
+                    ,(bitwise-ior syscall-mmap-PROT-READ syscall-mmap-PROT-WRITE)
+                    ,(bitwise-ior syscall-mmap-MAP-ANONYMOUS syscall-mmap-MAP-PRIVATE)
+                    ,syscall-mmap-ABSENT-FD
+                    0 ; offset
+                    ))
+           ))
+    (func syscall-mremap-maymove (addr oldsize newsize) ()
+          (
+           (return-val (fcall chk-syscall ,syscall-mremap 
+                    addr
+                    oldsize
+                    newsize
+                    ,syscall-mremap-MREMAP-MAYMOVE
+                    0 0 ; dummy args
+                    ))
            ))
     (proc allocate-i64 (addr-out num) ((addr 0))
           ((call gc-malloc (-> addr) 10)
@@ -1056,6 +1088,16 @@
           (
            (return-val num)
            ))
+    (proc tests () ((tmp 0))
+          (
+           ,(upl-print-static-string "test mmap\n")
+           (:= tmp (fcall syscall-mmap-anon 4096))
+           (u8:= (+ 4095 tmp) 100)
+           ,(upl-print-static-string "test mremap\n")
+           (:= tmp (fcall syscall-mremap-maymove tmp 4096 (* 2 4096)))
+           (call print-number (u8@ (+ 4095 tmp)))
+           (call print-newline)
+           ))
     (proc main () ((syscall-ret 0) (sigaction-struct ,tmp-4k-buffer))
           (
            (i64:= (+ sigaction-struct 0 ) (function-pointer sigsegv-handler))
@@ -1074,6 +1116,8 @@
            (call test-print-object)
 
            ,(upl-print-static-string "end\n")
+           (call tests)
+
            (call a)
           ))
     ))

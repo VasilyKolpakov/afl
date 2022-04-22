@@ -225,6 +225,9 @@
 
 (define syscall-mmap-ABSENT-FD -1)
 
+(define syscall-mremap 25)
+(define syscall-mremap-MREMAP-MAYMOVE 1)
+
 (define syscall-mmap-anon
   (lambda (size)
     (syscall syscall-mmap 
