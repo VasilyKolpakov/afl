@@ -541,6 +541,11 @@
                  (var-index (index-of local-vars var))
                  (val-expr (car (cdr stmt-args))))
              (compile-statement '(:= ,var (+ ,var ,val-expr)) context)))
+          ((equal? stmt-type ':-=)
+           (let ((var (car stmt-args))
+                 (var-index (index-of local-vars var))
+                 (val-expr (car (cdr stmt-args))))
+             (compile-statement '(:= ,var (- ,var ,val-expr)) context)))
           ((equal? stmt-type ':=)
            (let ((var (car stmt-args))
                  (var-index (index-of local-vars var))
@@ -556,7 +561,7 @@
                                               val-expr
                                               (list (set-i64-instruction-imm-ptr global-var-ptr))
                                               context))
-               (else (panic "set-var: bad variable:" var) '()))
+               (else (panic "set-var: bad variable:" var)))
              ))
           ((equal? stmt-type 'call)
            (let ((proc (assert (alist-lookup label-list (car (cdr stmt))) not-empty? (list "undefined function:" (first stmt-args))))
@@ -650,6 +655,9 @@
                           c-branches)
                  (flatmap compile-substatement (second else-branch))
                  (list end-label)))))
+          ((equal? stmt-type 'block)
+           (let ((statements (first stmt-args)))
+               (flatmap (lambda (s) (compile-statement s context)) statements)))
           (else (panic "bad statement" stmt)))))
 
 
@@ -855,8 +863,22 @@
 (define (upl-obj-pair-cdr expr)
   '(i64@ (+ ,(+ 8 obj-header-size) ,expr)))
 
+(define (compile-lisp-literal obj)
+  (cond
+    ((empty? obj) '((call push-to-lisp-stack 0)))
+    ((number? obj) '((call push-number-to-lisp-stack ,obj)))
+    ((pair? obj) (append
+                   (compile-lisp-literal (car obj))
+                   (compile-lisp-literal (cdr obj))
+                   '((call lisp-cons))))
+    (else (panic (list "bad obj: " obj)))))
+
 (define upl-globals
-  '(test-global-var))
+  '(
+    lisp-stack-bottom
+    lisp-stack-ptr
+    lisp-stack-size
+     ))
 
 (define upl-code 
   '(
@@ -867,6 +889,8 @@
                (call number-to-string (-> hack-8-byte-buf) (- 0 ret))
                (call number-string-length (-> num-length) (- 0 ret))
                (:= ret (syscall 1 1 (-> hack-8-byte-buf) num-length 1 2 3))
+               (call print-newline)
+               (call print-stack-trace)
                ,(upl-exit 1)))
            (return-val ret)
            ))
@@ -907,23 +931,77 @@
                     0 0 ; dummy args
                     ))
            ))
-    (proc allocate-i64 (addr-out num) ((addr 0))
+    (proc init-lisp-stack () ()
+          (
+           (:= lisp-stack-size (* 10 4096))
+           (:= lisp-stack-bottom (fcall syscall-mmap-anon lisp-stack-size))
+           (:= lisp-stack-ptr (- lisp-stack-bottom 8))
+           ))
+    (proc push-to-lisp-stack (obj) ()
+          (
+           (if (>= (+ 8 lisp-stack-ptr) (+ lisp-stack-bottom lisp-stack-size))
+             (
+              ,(upl-print-static-string "lisp stack overflow\n")
+              (call print-stack-trace)
+              ,(upl-exit 1)
+              ))
+           (:+= lisp-stack-ptr 8)
+           (i64:= lisp-stack-ptr obj)
+           ))
+    (func peek-lisp-stack (index) ()
+          (
+           (if (< (- lisp-stack-ptr (* 8 index)) lisp-stack-bottom)
+             (
+              ,(upl-print-static-string "lisp stack underflow\n")
+              (call print-stack-trace)
+              ,(upl-exit 1)
+              ))
+           (return-val (i64@ (- lisp-stack-ptr (* 8 index))))
+           ))
+    (proc drop-lisp-stack (n) ()
+          (
+           (if (< n 0)
+             (
+              ,(upl-print-static-string "n should be >=0 \n")
+              (call print-stack-trace)
+              ,(upl-exit 1)
+              ))
+           (if (< (- lisp-stack-ptr (* 8 n)) (- lisp-stack-bottom 8))
+             (
+              ,(upl-print-static-string "lisp stack underflow\n")
+              (call print-stack-trace)
+              ,(upl-exit 1)
+              ))
+           (:-= lisp-stack-ptr (* 8 n))
+           ))
+    (func allocate-i64 (num) ((addr 0))
           ((call gc-malloc (-> addr) 10)
            (u8:=  addr 0)
-           (u8:=  (+ addr 1) 0) ; type id
+           (u8:=  (+ addr 1) ,i64-obj-type-id)
            (i64:= (+ addr 2) num)
-           (i64:= addr-out addr)))
-;   pair obj type id = 1
+           (return-val addr)))
 
-    (proc allocate-pair (addr-out first second) ((addr 0))
+;   pair obj type id = 1
+    (func allocate-pair (first second) ((addr 0))
           ((call gc-malloc (-> addr) 18)
           (u8:=  addr 0)
-          (u8:=  (+ addr 1) 1) ; type id
+          (u8:=  (+ addr 1) ,pair-obj-type-id)
           (i64:= (+ addr 2) first)
           (i64:= (+ addr 10) second)
-          (i64:= addr-out addr)))
+          (return-val addr)))
 
-
+    (proc push-number-to-lisp-stack (num) ()
+          (
+           (call push-to-lisp-stack (fcall allocate-i64 num))
+           ))
+    (proc lisp-cons () ((pair 0))
+          (
+           (:= pair (fcall allocate-pair
+                           (fcall peek-lisp-stack 1)
+                           (fcall peek-lisp-stack 0)))
+           (call drop-lisp-stack 2)
+           (call push-to-lisp-stack pair)
+           ))
     (proc number-string-length (length-ptr num) ((l 0))
           (
            (if (= num 0)
@@ -963,10 +1041,7 @@
            (while (< i 16)
                   ((:= octet (bit-and 15 (bit-rshift num (* 4 (- 15 i)))))
                    (if (> octet 9)
-                       ((u8:= (+ buf i) (+ octet 87)))
-                       ((u8:= (+ buf i) (+ octet 48))))
-                   (:+= i 1)))
-           ))
+                       ((u8:= (+ buf i) (+ octet 87))) ((u8:= (+ buf i) (+ octet 48)))) (:+= i 1)))))
     (proc print-number (num) ((str-length 0))
           (
            (call number-to-string ,tmp-4k-buffer num)
@@ -1033,40 +1108,51 @@
                    (:= pair-ptr ,(upl-obj-pair-cdr 'pair-ptr))))
            (return-val pair-ptr)
            ))
-    (proc print-object (obj) ((obj-type-id 0) (tmp 0))
+    (proc print-object (obj) ()
           (
+           (if (= 0 (fcall zero-if-list obj))
+             (
+              ,(upl-print-static-string "'")
+              ))
+           (call print-quoted-object obj)
+           ))
+    (proc print-quoted-object (obj) ((obj-type-id 0) (tmp 0))
+          (
+           (if (= obj 0)
+             (
+              ,(upl-print-static-string "()")
+              (return)
+              ))
            (:= obj-type-id ,(upl-obj-type-id 'obj))
            (cond
+             ((= (fcall zero-if-list obj) 0)
+              (
+               ,(upl-print-static-string "zero-if-list: ")
+               (call print-number (fcall zero-if-list obj))
+               ,(upl-print-static-string "\n")
+               (:= tmp obj)
+               ,(upl-print-static-string "(")
+               (while (!= tmp 0)
+                      (
+                       (call print-quoted-object ,(upl-obj-pair-car 'tmp))
+                       (:= tmp ,(upl-obj-pair-cdr 'tmp))
+                       (if (!= tmp 0)
+                         (,(upl-print-static-string " "))
+                         ())
+                       ))
+               ,(upl-print-static-string ")")
+               ))
              ((= obj-type-id ,i64-obj-type-id)
               (
                (call print-number ,(upl-obj-i64-value 'obj))
                ))
              ((= obj-type-id ,pair-obj-type-id)
               (
-               (if (= (fcall zero-if-list obj) 0)
-                 (
-                  ,(upl-print-static-string "zero-if-list: ")
-                  (call print-number (fcall zero-if-list obj))
-                  ,(upl-print-static-string "\n")
-                  (:= tmp obj)
-                  ,(upl-print-static-string "(")
-                  (while (!= tmp 0)
-                         (
-                          (call print-object ,(upl-obj-pair-car 'tmp))
-                          (:= tmp ,(upl-obj-pair-cdr 'tmp))
-                          (if (!= tmp 0)
-                            (,(upl-print-static-string " "))
-                            ())
-                          ))
-                  ,(upl-print-static-string ")")
-                  )
-                 (
-                  ,(upl-print-static-string "(")
-                  (call print-object ,(upl-obj-pair-car 'obj))
-                  ,(upl-print-static-string " . ")
-                  (call print-object ,(upl-obj-pair-cdr 'obj))
-                  ,(upl-print-static-string ")")
-                  ))
+               ,(upl-print-static-string "(")
+               (call print-object ,(upl-obj-pair-car 'obj))
+               ,(upl-print-static-string " . ")
+               (call print-object ,(upl-obj-pair-cdr 'obj))
+               ,(upl-print-static-string ")")
                ))
              (else (
                     ,(upl-print-static-string "bad obj-type\n")
@@ -1075,20 +1161,6 @@
     (proc c () () ((i64:= 0 0)))
     (proc b () ((d 0)) ((call c) (:= d 0)))
     (proc a () ((d 0)) ((call b) (:= d 0)))
-
-    (proc cond-test () ((i 0))
-          (
-           (while (< i 4)
-                  (
-                   (cond
-                     ((= i 0) (,(upl-print-static-string "zero")))
-                     ((= i 1) (,(upl-print-static-string "one")))
-                     ((= i 2) (,(upl-print-static-string "two")))
-                     (else (,(upl-print-static-string "else"))))
-                   ,(upl-print-static-string "\n")
-                   (:+= i 1)
-                   ))
-          ))
 
     (bytes sigaction-restorer
            (
@@ -1114,14 +1186,11 @@
            (call print-stack-trace-from-fp-and-ip fp-reg ip-reg)
            ,(upl-exit 1)
            ))
-    (proc test-print-object () ((obj 0) (obj2 0) (obj3 0))
+    (proc test-print-object () ()
           (
-           (call allocate-i64 (-> obj) 42)
-           (call allocate-pair (-> obj2) obj 0)
-           (call allocate-i64 (-> obj) 420)
-           (call allocate-pair (-> obj3) obj obj2)
-           (call print-object obj3)
-           ,(upl-print-static-string "\n")
+           (block ,(compile-lisp-literal '(42 420 () 69)))
+           (call print-object (fcall peek-lisp-stack 0))
+           (call print-newline)
            ))
     (func test-func (num) ()
           (
@@ -1136,9 +1205,14 @@
            (:= tmp (fcall syscall-mremap-maymove tmp 4096 (* 2 4096)))
            (call print-number (u8@ (+ 4095 tmp)))
            (call print-newline)
+           (call push-to-lisp-stack 999)
+           (call drop-lisp-stack 0)
+           (call print-number (fcall peek-lisp-stack 0))
+           (call print-newline)
            ))
     (proc main () ((syscall-ret 0) (sigaction-struct ,tmp-4k-buffer))
           (
+           (call init-lisp-stack)
            (i64:= (+ sigaction-struct 0 ) (function-pointer sigsegv-handler))
            (i64:= (+ sigaction-struct 8 ) #x4000004) ; flags SA_SIGINFO | SA_RESTORER
            (i64:= (+ sigaction-struct 16) (function-pointer sigaction-restorer))
@@ -1157,10 +1231,6 @@
            ,(upl-print-static-string "end\n")
            (call tests)
 
-           (:= test-global-var 42)
-           (call print-number test-global-var)
-           (call print-newline)
-           
            (call a)
           ))
     ))
