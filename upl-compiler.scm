@@ -859,9 +859,18 @@
 ;   [car: ref][cdr: ref]
 (define (upl-obj-pair-car expr)
   '(i64@ (+ ,obj-header-size ,expr)))
-
 (define (upl-obj-pair-cdr expr)
   '(i64@ (+ ,(+ 8 obj-header-size) ,expr)))
+
+(define function-obj-type-id 2)
+(define (upl-obj-function-fptr expr)
+  '(i64@ (+ ,obj-header-size ,expr)))
+(define (upl-obj-function-nargs expr)
+  '(i64@ (+ ,(+ 8 obj-header-size) ,expr)))
+(define (upl-obj-function-nfields expr)
+  '(i64@ (+ ,(+ 16 obj-header-size) ,expr)))
+(define (upl-obj-function-field n expr)
+  '(i64@ (+ (* ,n 8) (+ ,(+ 24 obj-header-size) ,expr))))
 
 (define (compile-lisp-literal obj)
   (cond
@@ -980,8 +989,6 @@
            (u8:=  (+ addr 1) ,i64-obj-type-id)
            (i64:= (+ addr 2) num)
            (return-val addr)))
-
-;   pair obj type id = 1
     (func allocate-pair (first second) ((addr 0))
           ((call gc-malloc (-> addr) 18)
           (u8:=  addr 0)
@@ -989,6 +996,27 @@
           (i64:= (+ addr 2) first)
           (i64:= (+ addr 10) second)
           (return-val addr)))
+    (func allocate-function (fptr nargs nfields) ((addr 0))
+          (
+           (if (< nargs 0)
+             (
+              ,(upl-print-static-string "nargs should be >= 0")
+              (call print-stack-trace)
+              ,(upl-exit 1)
+              ))
+           (if (< nfields 0)
+             (
+              ,(upl-print-static-string "nfields should be >= 0")
+              (call print-stack-trace)
+              ,(upl-exit 1)
+              ))
+           (call gc-malloc (-> addr) (+ (* 8 nfields) ,(+ 24 2)))
+           (u8:=  addr 0)
+           (u8:=  (+ addr 1) ,function-obj-type-id)
+           (i64:= (+ addr 2) fptr)
+           (i64:= (+ addr 10) nargs)
+           (i64:= (+ addr 18) nfields)
+           (return-val addr)))
 
     (proc push-number-to-lisp-stack (num) ()
           (
@@ -1170,7 +1198,7 @@
     
     (bytes sigsegv-handler
            (
-            ; return address is on top of the stack
+            ; return address is on the top of the stack
             ; need to push a dummy value (saved fp placeholder)
             ; then push the argument and then restore stack pointer
             ; to match upl calling convention
@@ -1191,10 +1219,6 @@
            (block ,(compile-lisp-literal '(42 420 () 69)))
            (call print-object (fcall peek-lisp-stack 0))
            (call print-newline)
-           ))
-    (func test-func (num) ()
-          (
-           (return-val num)
            ))
     (proc tests () ((tmp 0))
           (
@@ -1224,7 +1248,6 @@
                     0 ; old sigaction struct
                     8 ; sig mask size
                     1 2))
-           (call print-number (fcall test-func 1111))
            (call print-newline)
            (call test-print-object)
 
