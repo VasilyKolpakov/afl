@@ -341,3 +341,35 @@
 (define (last l)
   (assert-stmt "non-empty list" (not (empty? l)))
   (nth (- (length l) 1) l))
+
+(define (struct-macro macro-args)
+  (let ((struct-name-sym (first macro-args))
+        (struct-name (symbol-to-string struct-name-sym))
+        (struct-fields-with-types (second macro-args))
+        (struct-fields (map first struct-fields-with-types))
+        (arg-symbol (string-to-symbol "generated#lambda#arg")))
+    (append
+      (list
+        'begin
+        '(define ,(cons (string-to-symbol (string-concat "create-" struct-name)) struct-fields)
+           ,(append
+              (list 'begin)
+              (map (lambda (field-and-type)
+                     '(assert-stmt
+                        (list "struct"
+                              ,struct-name "field" ,(symbol-to-string (first field-and-type)) "should be" ,(list 'quote (second field-and-type)) "not" ,(first field-and-type)
+                              )
+                        (,(second field-and-type) ,(first field-and-type))))
+                   struct-fields-with-types)
+              (list (append (list 'list (list 'quote struct-name-sym)) struct-fields)))))
+      (map (lambda (field)
+             '(define
+                (,(string-to-symbol (string-concat struct-name (string-concat "-" (symbol-to-string field))))
+                  ,arg-symbol)
+                (assert-stmt
+                  (list "expected struct" ,struct-name ", not" ,arg-symbol)
+                  (and (non-empty-list? ,arg-symbol) (equal? (first ,arg-symbol) ,(list 'quote struct-name-sym))))
+                (nth ,(+ 1 (index-of struct-fields field)) ,arg-symbol)))
+           struct-fields))))
+
+(add-macro 'struct struct-macro)

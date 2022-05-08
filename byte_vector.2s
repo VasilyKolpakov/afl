@@ -129,3 +129,12 @@ def "string_concat" {
     byte_vector_clone
 } ;
 
+# <byte vector> <buffer size> <buffer> ->
+def "byte_vector_append_buffer" {
+    bi { byte_vector_set_size } { + byte_vector_get_size }
+    2keep {
+        memcopy -rot + bi { byte_vector_get_array } { byte_vector_get_size }
+    }
+    byte_vector_ensure_capacity keep { + byte_vector_get_size } 2dup
+} ;
+

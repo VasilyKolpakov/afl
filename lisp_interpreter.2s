@@ -2563,6 +2563,28 @@ lisp_register_builtin_function "symbol-to-string" 1 {
     alloc_string_from_buffer bi { symbol_get_size } { symbol_get_buffer }
     lisp_assert_type "symbol-to-string takes symbol as argument" symbol_obj_type_id dup lisp_value_stack_peek_top
 } ;
+
+lisp_register_builtin_function "string-to-symbol" 1 {
+    lisp_value_stack_push
+    byte_vector_destroy
+    keep { get_or_create_symbol }
+    keep { byte_vector_append_buffer }
+    byte_vector_new bi { obj_string_get_size } { obj_string_get_buffer } lisp_value_stack_pop 
+    lisp_assert_type "string-to-symbol takes string as argument" string_obj_type_id lisp_value_stack_peek_top
+} ;
+
+lisp_register_builtin_function "string-concat" 2 {
+    lisp_value_stack_push
+    bi { byte_vector_destroy } { alloc_string }
+    drop lisp_value_stack_pop
+    drop lisp_value_stack_pop
+    keep { byte_vector_append_buffer dip { bi { obj_string_get_size } { obj_string_get_buffer } lisp_value_stack_peek 0 } }
+    keep { byte_vector_append_buffer dip { bi { obj_string_get_size } { obj_string_get_buffer } lisp_value_stack_peek 1 } }
+    byte_vector_new
+    lisp_assert_type "string-concat takes string as second argument" string_obj_type_id lisp_value_stack_peek_top
+    lisp_assert_type "string-concat takes string as frist argument" string_obj_type_id lisp_value_stack_peek 1
+} ;
+
 lisp_register_builtin_function "string-length" 1 string_length_instruction ;
 lisp_register_builtin_function "string-get-byte" 2 string_get_byte_instruction ;
 lisp_register_builtin_function "string-to-native-buffer" 2 {
@@ -2667,7 +2689,9 @@ def "print_string_instruction_func" { call print_string_instruction } ;
 se_check_last_defined_function ;
 
 #se_enable ;
+se_check_function_by_name "lisp builtin: string-concat" ;
 se_check_function_by_name "lisp builtin: symbol-to-string" ;
+se_check_function_by_name "lisp builtin: string-to-symbol" ;
 se_check_function_by_name "lisp builtin: second" ;
 se_check_function_by_name "lisp builtin: nth" ;
 se_check_function_by_name "lisp builtin: import" ;
