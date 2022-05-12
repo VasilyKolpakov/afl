@@ -345,7 +345,7 @@
 (define (struct-macro macro-args)
   (let ((struct-name-sym (first macro-args))
         (struct-name (symbol-to-string struct-name-sym))
-        (struct-fields-with-types (second macro-args))
+        (struct-fields-with-types (cdr macro-args))
         (struct-fields (map first struct-fields-with-types))
         (arg-symbol (string-to-symbol "generated#lambda#arg")))
     (append
@@ -372,4 +372,17 @@
                 (nth ,(+ 1 (index-of struct-fields field)) ,arg-symbol)))
            struct-fields))))
 
-(add-macro 'struct struct-macro)
+(add-macro 'define-struct struct-macro)
+
+(define (binary-op-nesting macro-args)
+  (let ((binary-op (first macro-args))
+        (op-args (reverse (cdr macro-args))))
+    (assert-stmt (list "--- macro: binary op must have at least 2 args" macro-args) (>= (length op-args) 2))
+    (foldl
+      (lambda (op-arg expr)
+        (list binary-op op-arg expr))
+      (car op-args)
+      (cdr op-args))))
+
+(add-macro '--- binary-op-nesting)
+
