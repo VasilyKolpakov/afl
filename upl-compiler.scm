@@ -498,8 +498,23 @@
                    (compile-boolean-expression second-child context label #t)
                    (list false-label)))
                (append
-                   (compile-boolean-expression first-child context label #f)
-                   (compile-boolean-expression second-child context label #f)))))
+                 (compile-boolean-expression first-child context label #f)
+                 (compile-boolean-expression second-child context label #f)))))
+          ((equal? cond-type 'or)
+           (let ((first-child (first cond-args))
+                 (second-child (second cond-args)))
+             (assert-stmt "or expression has 2 children" (= (length cond-args) 2))
+             (if true-label?
+                 (append
+                   (compile-boolean-expression first-child context label #t)
+                   (compile-boolean-expression second-child context label #t)
+                   )
+                 (let ((true-label (new-label)))
+                   (append
+                     (compile-boolean-expression first-child context true-label #t)
+                     (compile-boolean-expression second-child context label #f)
+                     (list true-label)
+                     )))))
 
           (else 
             (let ((true-and-false-instrs
@@ -694,7 +709,6 @@
 (define (compile-upl code-chunks globals-mapping)
   (let ((chunks-with-labels
           (map (lambda (p) (cons p (new-label))) code-chunks))
-        (procs-with-labels (filter (lambda (c-with-l) (equal? 'proc (first (car c-with-l)))) chunks-with-labels))
         (label-list
           (map (lambda (c-with-l)
                  (let ((chunk (car c-with-l))
@@ -709,23 +723,8 @@
                       (let ((arg-count (length (nth 2 chunk))))
                         (list name 'func label arg-count)))
                      ((equal? 'bytes chunk-type)
-                      (list name 'bytes label))
+                      (list name 'bytes label -1))
                      (else (assert-stmt (list "chunk type" chunk-type) #f)))))
-               chunks-with-labels))
-        (procedure-list
-          (map (lambda (p-with-l)
-                 (let ((chunk (car p-with-l))
-                       (label (cdr p-with-l))
-                       (name (second chunk))
-                       (arg-count (length (nth 2 chunk))))
-                   (list name label arg-count)))
-               procs-with-labels))
-        (chunk-label-list
-          (map (lambda (c-with-l)
-                 (let ((chunk (car c-with-l))
-                       (label (cdr c-with-l))
-                       (name (second chunk)))
-                   (cons name label)))
                chunks-with-labels)))
     (list
       label-list
@@ -787,14 +786,17 @@
       instructions)))
 
 
-(define (compile-upl-to-native upl-code globals)
-  (let ((globals-buffer (syscall-mmap-anon (* 8 (length globals))))
-        (globals-mapping (zip 
-                           globals
-                           (map (lambda (i) (+ globals-buffer (* 8 i))) (range (length globals)))))
-        (chunk-label-list-and-insts (compile-upl upl-code globals-mapping))
-        (chunk-label-list (first chunk-label-list-and-insts))
-        (instructions (second chunk-label-list-and-insts))
+(define-struct upl-func
+               (name symbol?)
+               (ptr number?)
+               (size (lambda (size) (and (number? size) (>= size 0))))
+               (arity number?))
+
+
+(define (compile-upl-to-native upl-code globals-mapping)
+  (let ((label-list-and-insts (compile-upl upl-code globals-mapping))
+        (label-list (first label-list-and-insts))
+        (instructions (second label-list-and-insts))
         (_ (validate-stack-machine-code instructions))
         (inst-sizes (map instruction-size instructions))
         (total-code-size (foldl + 0 inst-sizes))
@@ -811,13 +813,27 @@
                    (generator loc labels-and-locations)
                    (generator loc))))
              insts-and-locations)
-    (append
-      (map (lambda (chunk-name-and-label)
-             (cons
-               (car chunk-name-and-label)
-               (assert (alist-lookup labels-and-locations (nth 2 chunk-name-and-label)) not-empty? (list "label location lookup" chunk-name-and-label))))
-           chunk-label-list)
-      (list (cons '__end_of_range__not_a_function (+ exec-buffer total-code-size))))))
+
+    (let ((resolved-labels
+            (map (lambda (label-list-item)
+                   (let ((name (first label-list-item))
+                         (ptr (assert (alist-lookup labels-and-locations (nth 2 label-list-item)) not-empty? (list "label location lookup" label-list-item)))
+                         (arity (nth 3 label-list-item)))
+                     (list name ptr arity)))
+                 label-list))
+          (last-ptr (+ exec-buffer total-code-size)))
+      (map (lambda (prev-next-pair)
+             (let ((prev (car prev-next-pair))
+                   (next (cdr prev-next-pair))
+                   (name (first prev))
+                   (ptr (second prev))
+                   (arity (nth 2 prev))
+                   (next-ptr (second next)))
+               (create-upl-func name ptr (- next-ptr ptr) arity)))
+           (zip
+             resolved-labels
+             (append (cdr resolved-labels) (list (list '() last-ptr))))))))
+
 
 (define upl-print-static-string
   (let ((ret-val-buffer (syscall-mmap-anon 100))
@@ -1113,17 +1129,27 @@
     ; sets buf-ptr to 0 if fucntion is not found
     (proc function-name-by-iptr (buf-ptr size-ptr iptr) ((index 0)
                                                          (proc-dict (i64@ ,proc-dict-ptr))
+                                                         (proc-dict-size 0)
                                                          (dict-array 0)
-                                                         (string 0))
+                                                         (string 0)
+                                                         (offset 0))
           (
            (:= dict-array (+ proc-dict 8))
+           (:= proc-dict-size (i64@ proc-dict))
            ; skip records
-           (while (and (< index (i64@ proc-dict)) (> iptr (i64@ (+ (* index 16) dict-array))))
-                  ((:+= index 1)))
-           (if (and (> index 0) (< index (i64@ proc-dict))) ; last function in dict is end-of-range pointer
+           (:= offset dict-array)
+           (while (and 
+                    (< index proc-dict-size)
+                    (or
+                      (< iptr (i64@ offset))
+                      (> iptr (+ (i64@ offset) (i64@ (+ offset 8))))))
+                  (
+                   (:+= index 1)
+                   (:= offset (+ (* index 24) dict-array))
+                   ))
+           (if (< index proc-dict-size)
                (
-                (:+= index -1)
-                (:= string (i64@ (+ (+ (* index 16) dict-array) 8)))
+                (:= string (i64@ (+ offset 16)))
                 (i64:= buf-ptr (+ string 8))
                 (i64:= size-ptr (i64@ string)))
                (
@@ -1259,36 +1285,54 @@
     ))
 
 
-(define name-to-iptr-list (compile-upl-to-native upl-code upl-globals))
-(foldl (lambda (next prev)
-         (begin
-           (assert-stmt "pointers are not sorted in name-to-iptr-list" (< prev (cdr next)))
-           (cdr next)))
-       0
-       name-to-iptr-list)
+(define globals-buffer (syscall-mmap-anon (* 8 (length upl-globals))))
+(define globals-mapping (zip
+                          upl-globals
+                          (map (lambda (i) (+ globals-buffer (* 8 i))) (range (length upl-globals)))))
 
-(let ((proc-count (length name-to-iptr-list))
-      (names (map (lambda (n-and-p) (symbol-to-string (car n-and-p))) name-to-iptr-list))
-      (name-lengths (map string-length names))
-      (name-length-sum (foldl + 0 name-lengths))
-      (dict-ptr (syscall-mmap-anon (+ (+ 8 (* 16 proc-count)) (+ (* 8 proc-count) name-length-sum))))
-      (dict-array-ptr (+ dict-ptr 8))
-      (names-array-ptr (+ dict-array-ptr (* 16 proc-count)))
-      (name-ptrs (prefix-sum names-array-ptr (map (lambda (l) (+ l 8)) name-lengths))))
-  (write-mem-i64 dict-ptr proc-count)
-  (foreach-with-index (lambda (proc-ptr-and-name-ptr index)
-                        (begin
-                          (write-mem-i64 (+ dict-array-ptr (* index 16)) (car proc-ptr-and-name-ptr))
-                          (write-mem-i64 (+ dict-array-ptr (+ (* index 16) 8)) (cdr proc-ptr-and-name-ptr))))
-                      (zip (map cdr name-to-iptr-list) name-ptrs))
-  (foreach (lambda (string-and-ptr)
-             (begin
-               (write-mem-i64 (cdr string-and-ptr) (string-length (car string-and-ptr)))
-               (string-to-native-buffer (car string-and-ptr) (+ (cdr string-and-ptr) 8))))
-           (zip names name-ptrs))
-  (write-mem-i64 proc-dict-ptr dict-ptr))
+(define upl-func-list (compile-upl-to-native upl-code globals-mapping))
 
+; dictionary layout:
+; [dictionary size][dictionary array]
+; dictionary array item layout:
+; [function pointer][function size][function name string ptr]
+; string layout:
+; [size in bytes][bytes ...]
+
+(define (create-proc-dict proc-dict-ptr func-list)
+  (let ((dict-size (length func-list))
+        (dict-item-size 24)
+        (names (map (lambda (f) (symbol-to-string (upl-func-name f))) func-list))
+        (name-lengths (map string-length names))
+        (name-length-sum (foldl + 0 name-lengths))
+        (dict-ptr (syscall-mmap-anon (--- + 8
+                                          (* dict-item-size dict-size)
+                                          (* 8 dict-size)
+                                          name-length-sum)))
+        (dict-array-ptr (+ dict-ptr 8))
+        (names-array-ptr (+ dict-array-ptr (* dict-item-size dict-size)))
+        (name-ptrs (prefix-sum names-array-ptr (map (lambda (l) (+ l 8)) name-lengths))))
+    (write-mem-i64 dict-ptr dict-size)
+    (foreach-with-index (lambda (p index)
+                          (let ((offset (+ dict-array-ptr (* index dict-item-size)))
+                                (upl-func (car p))
+                                (name-ptr (cdr p)))
+                            (write-mem-i64 offset (upl-func-ptr upl-func))
+                            (write-mem-i64 (+ offset 8) (upl-func-size upl-func))
+                            (write-mem-i64 (+ offset 16) name-ptr)))
+                        (zip func-list name-ptrs))
+    (foreach (lambda (string-and-ptr)
+               (begin
+                 (write-mem-i64 (cdr string-and-ptr) (string-length (car string-and-ptr)))
+                 (string-to-native-buffer (car string-and-ptr) (+ (cdr string-and-ptr) 8))))
+             (zip names name-ptrs))
+    (write-mem-i64 proc-dict-ptr dict-ptr)))
+
+(create-proc-dict proc-dict-ptr upl-func-list)
+
+(foreach println upl-func-list)
+(println (list "func list size" (length upl-func-list)))
 (println "native call:")
-(native-call (alist-lookup name-to-iptr-list 'main))
+(native-call (upl-func-ptr (findf (lambda (f) (equal? 'main (upl-func-name f))) upl-func-list)))
 (println "native call end")
-(enable-REPL-print)
+
