@@ -386,3 +386,11 @@
 
 (add-macro '--- binary-op-nesting)
 
+(define (false? v) (if (equal? v #f) #t #f))
+
+(define (findf f l)
+  (cond
+    ((empty? l) #f)
+    ((f (car l)) (car l))
+    (else (findf f (cdr l)))))
+
