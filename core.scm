@@ -198,6 +198,7 @@
 (add-macro 'or or-to-if)
 
 (define (add-begin-in-let exprs)
+  (assert-stmt (list "let must have at least 2 args" exprs) (>= (length exprs) 2))
   (if (= (length exprs) 2)
       (cons 'let exprs)
       (list 'let (car exprs) (cons 'begin (cdr exprs)))))
@@ -345,7 +346,7 @@
 (define (struct-macro macro-args)
   (let ((struct-name-sym (first macro-args))
         (struct-name (symbol-to-string struct-name-sym))
-        (struct-fields-with-types (cdr macro-args))
+        (struct-fields-with-types (second macro-args))
         (struct-fields (map first struct-fields-with-types))
         (arg-symbol (string-to-symbol "generated#lambda#arg")))
     (append
@@ -393,4 +394,7 @@
     ((empty? l) #f)
     ((f (car l)) (car l))
     (else (findf f (cdr l)))))
+
+(define (compose f g)
+  (lambda (x) (f (g x))))
 

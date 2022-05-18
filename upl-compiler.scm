@@ -421,23 +421,29 @@
 (define (context-label-list context) (second context))
 (define (context-globals-mapping context) (nth 2 context))
 
+(define (find-upl-func func-list name)
+  (assert
+    (findf (lambda (l) (equal? (upl-func-name l) name)) func-list)
+    (compose not false?)
+    (list "no such label:" name)))
+
 (define (compile-list expr rest context)
   (let ((local-vars (context-local-vars context))
         (label-list (context-label-list context)))
     (cond
       ((equal? 'function-pointer (car expr))
-       (let ((label (second expr))
-             (proc (assert (alist-lookup label-list label) not-empty? (list "undefined function:" expr)))
-             (proc-label (second proc)))
+       (let ((name (second expr))
+             (proc-label (upl-func-label (find-upl-func label-list name))))
          (append
            (list (push-label-pointer-instruction proc-label))
            rest)))
       ((equal? 'fcall (car expr))
-       (let ((proc (assert (alist-lookup label-list (car (cdr expr))) not-empty? (list "undefined function:" (second expr))))
+       (let ((name (second expr))
+             (proc (find-upl-func label-list name))
              (proc-args (cdr (cdr expr)))
-             (proc-label (second proc))
-             (proc-arg-count (nth 2 proc)))
-         (assert-stmt (list proc "is a func") (equal? 'func (first proc)))
+             (proc-label (upl-func-label proc))
+             (proc-arg-count (upl-func-arity proc)))
+         (assert-stmt (list proc "is a func") (equal? 'func (upl-func-type proc)))
          (assert-stmt (list (second expr) "number of args") (= proc-arg-count (length proc-args)))
          (append
            (list (add-rsp-instruction -16))
@@ -579,11 +585,12 @@
                (else (panic "set-var: bad variable:" var)))
              ))
           ((equal? stmt-type 'call)
-           (let ((proc (assert (alist-lookup label-list (car (cdr stmt))) not-empty? (list "undefined function:" (first stmt-args))))
-                 (proc-args (cdr (cdr stmt)))
-                 (proc-label (second proc))
-                 (proc-arg-count (nth 2 proc)))
-             (assert-stmt (list proc "is a proc") (equal? 'proc (first proc)))
+           (let ((name (second stmt))
+                 (proc (find-upl-func label-list name))
+                 (proc-args (drop stmt 2))
+                 (proc-label (upl-func-label proc))
+                 (proc-arg-count (upl-func-arity proc)))
+             (assert-stmt (list proc "is a proc") (equal? 'proc (upl-func-type proc)))
              (assert-stmt (list (first stmt-args) "number of args") (= proc-arg-count (length proc-args)))
              (append
                (list (add-rsp-instruction -16))
@@ -679,7 +686,7 @@
 (define (compile-procedure args
                            local-vars-with-inits
                            statements
-                           label-list
+                           upl-func-list
                            globals-mapping)
   (begin
     (assert-stmt (list "local vars must have init values, for example: (proc foo (a b) ((i 42)) ..., but was " local-vars-with-inits)
@@ -690,9 +697,9 @@
         (list
           set-frame-pointer-instruction
           (add-rsp-instruction (- 0 (* 8 (length args)))))
-        (flatmap (lambda (var-init) (compile-expression var-init (create-context args label-list globals-mapping)))
+        (flatmap (lambda (var-init) (compile-expression var-init (create-context args upl-func-list globals-mapping)))
                  local-var-inits)
-        (flatmap (lambda (stmt) (compile-statement stmt (create-context local-vars label-list globals-mapping)))
+        (flatmap (lambda (stmt) (compile-statement stmt (create-context local-vars upl-func-list globals-mapping)))
                  statements)
         (list (add-rsp-instruction (* 8 (length local-vars)))
           return-instruction)))))
@@ -706,10 +713,15 @@
 
 (define (label? v) (number? v))
 
+(define-struct upl-func ((name symbol?)
+                         (type symbol?)
+                         (label label?)
+                         (arity number?)))
+
 (define (compile-upl code-chunks globals-mapping)
   (let ((chunks-with-labels
           (map (lambda (p) (cons p (new-label))) code-chunks))
-        (label-list
+        (upl-func-list
           (map (lambda (c-with-l)
                  (let ((chunk (car c-with-l))
                        (label (cdr c-with-l))
@@ -718,16 +730,16 @@
                    (cond
                      ((equal? 'proc chunk-type)
                       (let ((arg-count (length (nth 2 chunk))))
-                        (list name 'proc label arg-count)))
+                        (create-upl-func name 'proc label arg-count)))
                      ((equal? 'func chunk-type)
                       (let ((arg-count (length (nth 2 chunk))))
-                        (list name 'func label arg-count)))
+                        (create-upl-func name 'func label arg-count)))
                      ((equal? 'bytes chunk-type)
-                      (list name 'bytes label -1))
+                      (create-upl-func name 'bytes label -1))
                      (else (assert-stmt (list "chunk type" chunk-type) #f)))))
                chunks-with-labels)))
     (list
-      label-list
+      upl-func-list
       (flatmap
         (lambda (c-with-l)
           (let ((chunk (first c-with-l))
@@ -738,7 +750,7 @@
                (let ((args (nth 2 chunk))
                      (local-vars-with-inits (nth 3 chunk))
                      (statements (nth 4 chunk)))
-                 (cons label (compile-procedure args local-vars-with-inits statements label-list globals-mapping))))
+                 (cons label (compile-procedure args local-vars-with-inits statements upl-func-list globals-mapping))))
               ((equal? 'bytes chunk-type)
                (let ((bytes-list (nth 2 chunk)))
                  (cons label (list
@@ -786,17 +798,17 @@
       instructions)))
 
 
-(define-struct upl-func
-               (name symbol?)
-               (ptr number?)
-               (size (lambda (size) (and (number? size) (>= size 0))))
-               (arity number?))
+(define-struct compiled-upl-func ((name symbol?)
+                                  (type symbol?)
+                                  (ptr number?)
+                                  (size (lambda (size) (and (number? size) (>= size 0))))
+                                  (arity number?)))
 
 
 (define (compile-upl-to-native upl-code globals-mapping)
-  (let ((label-list-and-insts (compile-upl upl-code globals-mapping))
-        (label-list (first label-list-and-insts))
-        (instructions (second label-list-and-insts))
+  (let ((upl-func-list-and-insts (compile-upl upl-code globals-mapping))
+        (upl-func-list (first upl-func-list-and-insts))
+        (instructions (second upl-func-list-and-insts))
         (_ (validate-stack-machine-code instructions))
         (inst-sizes (map instruction-size instructions))
         (total-code-size (foldl + 0 inst-sizes))
@@ -815,12 +827,13 @@
              insts-and-locations)
 
     (let ((resolved-labels
-            (map (lambda (label-list-item)
-                   (let ((name (first label-list-item))
-                         (ptr (assert (alist-lookup labels-and-locations (nth 2 label-list-item)) not-empty? (list "label location lookup" label-list-item)))
-                         (arity (nth 3 label-list-item)))
-                     (list name ptr arity)))
-                 label-list))
+            (map (lambda (upl-func)
+                   (let ((name (upl-func-name upl-func))
+                         (ptr (assert (alist-lookup labels-and-locations (upl-func-label upl-func)) not-empty? (list "label location lookup" upl-func)))
+                         (arity (upl-func-arity  upl-func))
+                         (type (upl-func-type upl-func)))
+                     (list name ptr arity type)))
+                 upl-func-list))
           (last-ptr (+ exec-buffer total-code-size)))
       (map (lambda (prev-next-pair)
              (let ((prev (car prev-next-pair))
@@ -828,8 +841,9 @@
                    (name (first prev))
                    (ptr (second prev))
                    (arity (nth 2 prev))
+                   (type (nth 3 prev))
                    (next-ptr (second next)))
-               (create-upl-func name ptr (- next-ptr ptr) arity)))
+               (create-compiled-upl-func name type ptr (- next-ptr ptr) arity)))
            (zip
              resolved-labels
              (append (cdr resolved-labels) (list (list '() last-ptr))))))))
@@ -1181,9 +1195,6 @@
            (cond
              ((= (fcall zero-if-list obj) 0)
               (
-               ,(upl-print-static-string "zero-if-list: ")
-               (call print-number (fcall zero-if-list obj))
-               ,(upl-print-static-string "\n")
                (:= tmp obj)
                ,(upl-print-static-string "(")
                (while (!= tmp 0)
@@ -1274,7 +1285,7 @@
                     0 ; old sigaction struct
                     8 ; sig mask size
                     1 2))
-           (call print-newline)
+           ;(call print-newline)
            (call test-print-object)
 
            ,(upl-print-static-string "end\n")
@@ -1302,7 +1313,7 @@
 (define (create-proc-dict proc-dict-ptr func-list)
   (let ((dict-size (length func-list))
         (dict-item-size 24)
-        (names (map (lambda (f) (symbol-to-string (upl-func-name f))) func-list))
+        (names (map (lambda (f) (symbol-to-string (compiled-upl-func-name f))) func-list))
         (name-lengths (map string-length names))
         (name-length-sum (foldl + 0 name-lengths))
         (dict-ptr (syscall-mmap-anon (--- + 8
@@ -1317,8 +1328,8 @@
                           (let ((offset (+ dict-array-ptr (* index dict-item-size)))
                                 (upl-func (car p))
                                 (name-ptr (cdr p)))
-                            (write-mem-i64 offset (upl-func-ptr upl-func))
-                            (write-mem-i64 (+ offset 8) (upl-func-size upl-func))
+                            (write-mem-i64 offset (compiled-upl-func-ptr upl-func))
+                            (write-mem-i64 (+ offset 8) (compiled-upl-func-size upl-func))
                             (write-mem-i64 (+ offset 16) name-ptr)))
                         (zip func-list name-ptrs))
     (foreach (lambda (string-and-ptr)
@@ -1330,9 +1341,9 @@
 
 (create-proc-dict proc-dict-ptr upl-func-list)
 
-(foreach println upl-func-list)
+;(foreach println upl-func-list)
 (println (list "func list size" (length upl-func-list)))
 (println "native call:")
-(native-call (upl-func-ptr (findf (lambda (f) (equal? 'main (upl-func-name f))) upl-func-list)))
+(native-call (compiled-upl-func-ptr (findf (lambda (f) (equal? 'main (compiled-upl-func-name f))) upl-func-list)))
 (println "native call end")
 
