@@ -718,7 +718,7 @@
                          (label label?)
                          (arity number?)))
 
-(define (compile-upl code-chunks globals-mapping)
+(define (compile-upl code-chunks globals-mapping existing-upl-funcs)
   (let ((chunks-with-labels
           (map (lambda (p) (cons p (new-label))) code-chunks))
         (upl-func-list
@@ -737,7 +737,8 @@
                      ((equal? 'bytes chunk-type)
                       (create-upl-func name 'bytes label -1))
                      (else (assert-stmt (list "chunk type" chunk-type) #f)))))
-               chunks-with-labels)))
+               chunks-with-labels))
+        (all-upl-funcs (append upl-func-list existing-upl-funcs)))
     (list
       upl-func-list
       (flatmap
@@ -750,7 +751,7 @@
                (let ((args (nth 2 chunk))
                      (local-vars-with-inits (nth 3 chunk))
                      (statements (nth 4 chunk)))
-                 (cons label (compile-procedure args local-vars-with-inits statements upl-func-list globals-mapping))))
+                 (cons label (compile-procedure args local-vars-with-inits statements all-upl-funcs globals-mapping))))
               ((equal? 'bytes chunk-type)
                (let ((bytes-list (nth 2 chunk)))
                  (cons label (list
@@ -805,8 +806,26 @@
                                   (arity number?)))
 
 
-(define (compile-upl-to-native upl-code globals-mapping)
-  (let ((upl-func-list-and-insts (compile-upl upl-code globals-mapping))
+(define (compile-upl-to-native upl-code globals-mapping compiled-func-list)
+  (let ((existing-upl-func-and-ptrs
+          (map (lambda (compiled-func)
+                 (list
+                   (create-upl-func
+                     (compiled-upl-func-name compiled-func)
+                     (compiled-upl-func-type compiled-func)
+                     (new-label)
+                     (compiled-upl-func-arity compiled-func))
+                   (compiled-upl-func-ptr compiled-func)))
+               compiled-func-list))
+        (existing-upl-funcs (map first existing-upl-func-and-ptrs))
+        (existing-labels
+          (map
+            (lambda (f-and-p)
+              (let ((upl-func (first f-and-p))
+                    (ptr (second f-and-p)))
+                (cons (upl-func-label upl-func) ptr)))
+            existing-upl-func-and-ptrs))
+        (upl-func-list-and-insts (compile-upl upl-code globals-mapping existing-upl-funcs))
         (upl-func-list (first upl-func-list-and-insts))
         (instructions (second upl-func-list-and-insts))
         (_ (validate-stack-machine-code instructions))
@@ -816,7 +835,7 @@
         (inst-locations (prefix-sum exec-buffer inst-sizes))
         (with-locations (zip instructions inst-locations))
         (insts-and-locations (filter (lambda (x) (not (label? (car x)))) with-locations))
-        (labels-and-locations (filter (lambda (x) (label? (car x))) with-locations)))
+        (labels-and-locations (append (filter (lambda (x) (label? (car x))) with-locations) existing-labels)))
     (foreach (lambda (i-and-loc)
                (let ((inst (car i-and-loc))
                      (loc (cdr i-and-loc))
@@ -1271,6 +1290,18 @@
            (call print-number (fcall peek-lisp-stack 0))
            (call print-newline)
            ))
+    ))
+
+
+(define globals-buffer (syscall-mmap-anon (* 8 (length upl-globals))))
+(define globals-mapping (zip
+                          upl-globals
+                          (map (lambda (i) (+ globals-buffer (* 8 i))) (range (length upl-globals)))))
+
+(define compiled-func-list_ (compile-upl-to-native upl-code globals-mapping '()))
+
+(define upl-code-2
+  '(
     (proc main () ((syscall-ret 0) (sigaction-struct ,tmp-4k-buffer))
           (
            (call init-lisp-stack)
@@ -1295,13 +1326,7 @@
           ))
     ))
 
-
-(define globals-buffer (syscall-mmap-anon (* 8 (length upl-globals))))
-(define globals-mapping (zip
-                          upl-globals
-                          (map (lambda (i) (+ globals-buffer (* 8 i))) (range (length upl-globals)))))
-
-(define upl-func-list (compile-upl-to-native upl-code globals-mapping))
+(define compiled-func-list (compile-upl-to-native upl-code-2 globals-mapping compiled-func-list_))
 
 ; dictionary layout:
 ; [dictionary size][dictionary array]
@@ -1339,11 +1364,11 @@
              (zip names name-ptrs))
     (write-mem-i64 proc-dict-ptr dict-ptr)))
 
-(create-proc-dict proc-dict-ptr upl-func-list)
+(create-proc-dict proc-dict-ptr (append compiled-func-list compiled-func-list_))
 
 ;(foreach println upl-func-list)
-(println (list "func list size" (length upl-func-list)))
+(println (list "func list size" (length compiled-func-list)))
 (println "native call:")
-(native-call (compiled-upl-func-ptr (findf (lambda (f) (equal? 'main (compiled-upl-func-name f))) upl-func-list)))
+(native-call (compiled-upl-func-ptr (findf (lambda (f) (equal? 'main (compiled-upl-func-name f))) compiled-func-list)))
 (println "native call end")
 
