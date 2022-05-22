@@ -2479,7 +2479,7 @@ lisp_register_builtin_function "string?" 1 {
     }
     lisp_value_stack_pop
 } ;
-lisp_register_builtin_function "callable?" 1 {
+lisp_register_builtin_function "procedure?" 1 {
     if {
         drop swap lazy_and {
             lazy_or { = lambda_obj_type_id obj_get_type_id dup }

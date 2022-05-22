@@ -226,6 +226,7 @@
 
 (define syscall-mmap-ABSENT-FD -1)
 
+(define syscall-munmap 11)
 (define syscall-mremap 25)
 (define syscall-mremap-MREMAP-MAYMOVE 1)
 
@@ -257,13 +258,6 @@
   (assert-stmt "l1 is list" (list? l1))
   (assert-stmt "l2 is list" (list? l2))
   (foldl cons l2 (reverse l1)))
-
-(define (vararg-append-to-append exprs)
-  (if (> (length exprs) 2)
-      (list 'append (car exprs) (vararg-append-to-append (cdr exprs)))
-      (cons 'append exprs)))
-
-(add-macro 'append vararg-append-to-append)
 
 (define (drop l n)
   (if (> n 0)
@@ -343,6 +337,18 @@
   (assert-stmt "non-empty list" (not (empty? l)))
   (nth (- (length l) 1) l))
 
+(define (binary-op-nesting macro-args)
+  (let ((binary-op (first macro-args))
+        (op-args (reverse (cdr macro-args))))
+    (assert-stmt (list "--- macro: binary op must have at least 2 args" macro-args) (>= (length op-args) 2))
+    (foldl
+      (lambda (op-arg expr)
+        (list binary-op op-arg expr))
+      (car op-args)
+      (cdr op-args))))
+
+(add-macro '--- binary-op-nesting)
+
 (define (struct-macro macro-args)
   (let ((struct-name-sym (first macro-args))
         (struct-name (symbol-to-string struct-name-sym))
@@ -353,7 +359,7 @@
       (list
         'begin
         '(define ,(cons (string-to-symbol (string-concat "create-" struct-name)) struct-fields)
-           ,(append
+           ,(--- append
               (list 'begin)
               (map (lambda (field-and-type)
                      '(assert-stmt
@@ -374,18 +380,6 @@
            struct-fields))))
 
 (add-macro 'define-struct struct-macro)
-
-(define (binary-op-nesting macro-args)
-  (let ((binary-op (first macro-args))
-        (op-args (reverse (cdr macro-args))))
-    (assert-stmt (list "--- macro: binary op must have at least 2 args" macro-args) (>= (length op-args) 2))
-    (foldl
-      (lambda (op-arg expr)
-        (list binary-op op-arg expr))
-      (car op-args)
-      (cdr op-args))))
-
-(add-macro '--- binary-op-nesting)
 
 (define (false? v) (if (equal? v #f) #t #f))
 

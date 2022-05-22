@@ -445,7 +445,7 @@
              (proc-arg-count (upl-func-arity proc)))
          (assert-stmt (list proc "is a func") (equal? 'func (upl-func-type proc)))
          (assert-stmt (list (second expr) "number of args") (= proc-arg-count (length proc-args)))
-         (append
+         (--- append
            (list (add-rsp-instruction -16))
            (flatmap (lambda (expr) (compile-expression expr context)) proc-args)
            (list
@@ -499,7 +499,7 @@
              (assert-stmt "and expression has 2 children" (= (length cond-args) 2))
              (if true-label?
                (let ((false-label (new-label)))
-                 (append
+                 (--- append
                    (compile-boolean-expression first-child context false-label #f)
                    (compile-boolean-expression second-child context label #t)
                    (list false-label)))
@@ -516,7 +516,7 @@
                    (compile-boolean-expression second-child context label #t)
                    )
                  (let ((true-label (new-label)))
-                   (append
+                   (--- append
                      (compile-boolean-expression first-child context true-label #t)
                      (compile-boolean-expression second-child context label #f)
                      (list true-label)
@@ -546,14 +546,14 @@
         (label-list (context-label-list context))
         (compile-expr (lambda (expr local-vars) (compile-expression expr context))))
     (cond ((equal? stmt-type 'i64:=)
-           (append
+           (--- append
              (compile-expr (first stmt-args) local-vars)
              (compile-expr (second stmt-args) local-vars)
              (list set-i64-instruction)))
           ((equal? stmt-type 'u8:=)
            (begin
              (assert-stmt (list "u8:= statement has 2 parts" stmt) (equal? 2 (length stmt-args)))
-             (append
+             (--- append
                (compile-expr (first stmt-args) local-vars)
                (compile-expr (second stmt-args) local-vars)
                (list set-u8-instruction))))
@@ -592,7 +592,7 @@
                  (proc-arg-count (upl-func-arity proc)))
              (assert-stmt (list proc "is a proc") (equal? 'proc (upl-func-type proc)))
              (assert-stmt (list (first stmt-args) "number of args") (= proc-arg-count (length proc-args)))
-             (append
+             (--- append
                (list (add-rsp-instruction -16))
                (flatmap (lambda (expr) (compile-expr expr local-vars)) proc-args)
                (list
@@ -622,7 +622,7 @@
                    (loop-label (new-label))
                    (end-label (new-label))
                    (cond-instructions (compile-boolean-expression cond-expr context end-label #f)))
-               (append
+               (--- append
                  (list loop-label)
                  cond-instructions
                  (flatmap compile-substatement body-statements)
@@ -635,7 +635,7 @@
                  (compile-substatement (lambda (s) (compile-statement s context)))
                  (else-label (new-label))
                  (cond-instructions (compile-boolean-expression cond-expr context else-label #f)))
-             (append
+             (--- append
                cond-instructions
                (flatmap compile-substatement then-branch)
                (list else-label)
@@ -648,7 +648,7 @@
                  (else-label (new-label))
                  (end-label (new-label))
                  (cond-instructions (compile-boolean-expression cond-expr context else-label #f)))
-             (append
+             (--- append
                cond-instructions
                (flatmap compile-substatement then-branch)
                (list (jmp-instruction end-label)
@@ -664,12 +664,12 @@
                    (else-branch (last stmt-args))
                    (end-label (new-label))
                    (compile-substatement (lambda (s) (compile-statement s context))))
-               (append
+               (--- append
                  (flatmap (lambda (branch)
                             (let ((condition (first branch))
                                   (statements (second branch))
                                   (false-label (new-label)))
-                              (append
+                              (--- append
                                 (compile-boolean-expression condition context false-label #f)
                                 (flatmap compile-substatement statements)
                                 (list (jmp-instruction end-label)
@@ -693,7 +693,7 @@
                  (andmap pair? local-vars-with-inits))
     (let ((local-var-inits (map (lambda (v) (car (cdr v))) local-vars-with-inits))
           (local-vars (append args (map car local-vars-with-inits))))
-      (append
+      (--- append
         (list
           set-frame-pointer-instruction
           (add-rsp-instruction (- 0 (* 8 (length args)))))
@@ -773,7 +773,7 @@
     (list? i)
     (>= (length i) 2)
     (number? (car i))
-    (callable? (car (cdr i)))))
+    (procedure? (car (cdr i)))))
 
 (define (validate-stack-machine-code code)
   (foreach (lambda (i)
@@ -892,9 +892,6 @@
 (define alloc-bump-ptr (syscall-mmap-anon 1000))
 (write-mem-i64 alloc-bump-ptr alloc-arena)
 
-(define tmp-4k-buffer (syscall-mmap-anon 4096))
-(define proc-dict-ptr (syscall-mmap-anon 4096))
-
 ;   object header layout [gc flags (1 byte)][type id (1 byte)]
 (define (upl-obj-type-id expr)
   '(u8@ (+ 1 ,expr)))
@@ -925,20 +922,13 @@
   (cond
     ((empty? obj) '((call push-to-lisp-stack 0)))
     ((number? obj) '((call push-number-to-lisp-stack ,obj)))
-    ((pair? obj) (append
+    ((pair? obj) (--- append
                    (compile-lisp-literal (car obj))
                    (compile-lisp-literal (cdr obj))
                    '((call lisp-cons))))
     (else (panic (list "bad obj: " obj)))))
 
-(define upl-globals
-  '(
-    lisp-stack-bottom
-    lisp-stack-ptr
-    lisp-stack-size
-     ))
-
-(define upl-code 
+(define (core-upl-code proc-dict-ptr tmp-4k-buffer)
   '(
     (func chk-syscall (call-code arg1 arg2 arg3 arg4 arg5 arg6) ((ret 0) (hack-8-byte-buf 0) (num-length 0))
           ((:= ret (syscall call-code arg1 arg2 arg3 arg4 arg5 arg6))
@@ -957,6 +947,126 @@
                   (
                    (:= sys-ret (fcall chk-syscall 1 1 (+ buf written) (- length written) 1 2 3))
                    (:+= written sys-ret)))))
+    (proc print-newline () ()
+          (
+           (u8:= ,tmp-4k-buffer 10) ; newline
+           (call write-to-stdout ,tmp-4k-buffer 1)
+           ))
+    (proc number-string-length (length-ptr num) ((l 0))
+          (
+           (if (= num 0)
+             ((i64:= length-ptr 1)
+              (return)))
+           (if (< num 0)
+             ((:+= l 1)) ())
+           (while (!= num 0)
+                  ((:+= l 1)
+                   (:= num (/ num 10))))
+           (i64:= length-ptr l)
+           ))
+    (proc number-to-string (buf num) ((char-ptr 0))
+          (
+           (call number-string-length (-> char-ptr) num)
+           (:= char-ptr (+ (- char-ptr 1) buf)) ; start printing the number from the end
+           (if (= num 0)
+             ((u8:= char-ptr 48)
+              (return)) ())
+           (if (> num 0)
+             ((while (not (= num 0))
+                    ((u8:= char-ptr (+ 48 (% num 10)))
+                     (:+= char-ptr -1)
+                     (:= num (/ num 10)))))
+             ((while (not (= num 0))
+                    ((u8:= char-ptr (+ 48 (* (% num 10) -1)))
+                     (:+= char-ptr -1)
+                     (:= num (/ num 10))))
+              (u8:= char-ptr 45))) ; minus sign
+           ))
+    (proc number-to-hex-string (buf num) ((i 0)
+                                          (octet 0))
+          (
+           (u8:= (+ buf 0) 48)  ; 0
+           (u8:= (+ buf 1) 120) ; x
+           (:+= buf 2)
+           (while (< i 16)
+                  ((:= octet (bit-and 15 (bit-rshift num (* 4 (- 15 i)))))
+                   (if (> octet 9)
+                       ((u8:= (+ buf i) (+ octet 87))) ((u8:= (+ buf i) (+ octet 48)))) (:+= i 1)))))
+    (proc print-number (num) ((str-length 0))
+          (
+           (call number-to-string ,tmp-4k-buffer num)
+           (call number-string-length (-> str-length) num)
+           (call write-to-stdout ,tmp-4k-buffer str-length)
+           ))
+    (proc print-hex-number (num) ()
+          (
+           (call number-to-hex-string ,tmp-4k-buffer num)
+           (call write-to-stdout ,tmp-4k-buffer 18)
+           ))
+    (proc print-stack-trace () ()
+          (
+           (call print-stack-trace-from-fp-and-ip (get-fp) 0)
+           ))
+    (proc print-stack-trace-from-fp-and-ip (fp ip) ((current-fp fp)
+                                                    (str-buf 0)
+                                                    (str-length 0))
+          (
+           ,(upl-print-static-string "Stacktrace:\n")
+           (if (!= ip 0)
+               (
+                (call function-name-by-iptr (-> str-buf) (-> str-length) ip)
+                (call write-to-stdout str-buf str-length)
+                (call print-newline)))
+
+           (call function-name-by-iptr (-> str-buf) (-> str-length) (i64@ (+ current-fp 8)))
+           (while (!= str-buf 0)
+                  (
+                   (call write-to-stdout str-buf str-length)
+                   (call print-newline)
+                   (:= current-fp (i64@ current-fp))
+                   (call function-name-by-iptr (-> str-buf) (-> str-length) (i64@ (+ current-fp 8)))
+                   ))
+           ))
+    ; sets buf-ptr to 0 if fucntion is not found
+    (proc function-name-by-iptr (buf-ptr size-ptr iptr) ((index 0)
+                                                         (proc-dict (i64@ ,proc-dict-ptr))
+                                                         (proc-dict-size 0)
+                                                         (dict-array 0)
+                                                         (string 0)
+                                                         (offset 0))
+          (
+           (:= dict-array (+ proc-dict 8))
+           (:= proc-dict-size (i64@ proc-dict))
+           ; skip records
+           (:= offset dict-array)
+           (while (and 
+                    (< index proc-dict-size)
+                    (or
+                      (< iptr (i64@ offset))
+                      (> iptr (+ (i64@ offset) (i64@ (+ offset 8))))))
+                  (
+                   (:+= index 1)
+                   (:= offset (+ (* index 24) dict-array))
+                   ))
+           (if (< index proc-dict-size)
+               (
+                (:= string (i64@ (+ offset 16)))
+                (i64:= buf-ptr (+ string 8))
+                (i64:= size-ptr (i64@ string)))
+               (
+                (i64:= buf-ptr 0)))
+           ))
+    ))
+
+(define upl-globals
+  '(
+    lisp-stack-bottom
+    lisp-stack-ptr
+    lisp-stack-size
+     ))
+
+(define upl-code 
+  '(
     (proc gc-malloc (addr-out size) ((bump-ptr 0))
           (
            (:= bump-ptr (i64@ ,alloc-bump-ptr))
@@ -977,6 +1087,14 @@
                     ,(bitwise-ior syscall-mmap-MAP-ANONYMOUS syscall-mmap-MAP-PRIVATE)
                     ,syscall-mmap-ABSENT-FD
                     0 ; offset
+                    ))
+           ))
+    (proc syscall-munmap (ptr size) ((syscall-ret 0))
+          (
+           (:= syscall-ret (fcall chk-syscall ,syscall-munmap 
+                    ptr
+                    size
+                    0 0 0 0
                     ))
            ))
     (func syscall-mremap-maymove (addr oldsize newsize) ()
@@ -1078,115 +1196,6 @@
                            (fcall peek-lisp-stack 0)))
            (call drop-lisp-stack 2)
            (call push-to-lisp-stack pair)
-           ))
-    (proc number-string-length (length-ptr num) ((l 0))
-          (
-           (if (= num 0)
-             ((i64:= length-ptr 1)
-              (return)))
-           (if (< num 0)
-             ((:+= l 1)) ())
-           (while (!= num 0)
-                  ((:+= l 1)
-                   (:= num (/ num 10))))
-           (i64:= length-ptr l)
-           ))
-    (proc number-to-string (buf num) ((char-ptr 0))
-          (
-           (call number-string-length (-> char-ptr) num)
-           (:= char-ptr (+ (- char-ptr 1) buf)) ; start printing the number from the end
-           (if (= num 0)
-             ((u8:= char-ptr 48)
-              (return)) ())
-           (if (> num 0)
-             ((while (not (= num 0))
-                    ((u8:= char-ptr (+ 48 (% num 10)))
-                     (:+= char-ptr -1)
-                     (:= num (/ num 10)))))
-             ((while (not (= num 0))
-                    ((u8:= char-ptr (+ 48 (* (% num 10) -1)))
-                     (:+= char-ptr -1)
-                     (:= num (/ num 10))))
-              (u8:= char-ptr 45))) ; minus sign
-           ))
-    (proc number-to-hex-string (buf num) ((i 0)
-                                          (octet 0))
-          (
-           (u8:= (+ buf 0) 48)  ; 0
-           (u8:= (+ buf 1) 120) ; x
-           (:+= buf 2)
-           (while (< i 16)
-                  ((:= octet (bit-and 15 (bit-rshift num (* 4 (- 15 i)))))
-                   (if (> octet 9)
-                       ((u8:= (+ buf i) (+ octet 87))) ((u8:= (+ buf i) (+ octet 48)))) (:+= i 1)))))
-    (proc print-number (num) ((str-length 0))
-          (
-           (call number-to-string ,tmp-4k-buffer num)
-           (call number-string-length (-> str-length) num)
-           (call write-to-stdout ,tmp-4k-buffer str-length)
-           ))
-    (proc print-hex-number (num) ()
-          (
-           (call number-to-hex-string ,tmp-4k-buffer num)
-           (call write-to-stdout ,tmp-4k-buffer 18)
-           ))
-    (proc print-newline () ()
-          (
-           (u8:= ,tmp-4k-buffer 10) ; newline
-           (call write-to-stdout ,tmp-4k-buffer 1)
-           ))
-    (proc print-stack-trace () ()
-          (
-           (call print-stack-trace-from-fp-and-ip (get-fp) 0)
-           ))
-    (proc print-stack-trace-from-fp-and-ip (fp ip) ((current-fp fp)
-                                                    (str-buf 0)
-                                                    (str-length 0))
-          (
-           ,(upl-print-static-string "Stacktrace:\n")
-           (if (!= ip 0)
-               (
-                (call function-name-by-iptr (-> str-buf) (-> str-length) ip)
-                (call write-to-stdout str-buf str-length)
-                (call print-newline)))
-
-           (call function-name-by-iptr (-> str-buf) (-> str-length) (i64@ (+ current-fp 8)))
-           (while (!= str-buf 0)
-                  (
-                   (call write-to-stdout str-buf str-length)
-                   (call print-newline)
-                   (:= current-fp (i64@ current-fp))
-                   (call function-name-by-iptr (-> str-buf) (-> str-length) (i64@ (+ current-fp 8)))
-                   ))
-           ))
-    ; sets buf-ptr to 0 if fucntion is not found
-    (proc function-name-by-iptr (buf-ptr size-ptr iptr) ((index 0)
-                                                         (proc-dict (i64@ ,proc-dict-ptr))
-                                                         (proc-dict-size 0)
-                                                         (dict-array 0)
-                                                         (string 0)
-                                                         (offset 0))
-          (
-           (:= dict-array (+ proc-dict 8))
-           (:= proc-dict-size (i64@ proc-dict))
-           ; skip records
-           (:= offset dict-array)
-           (while (and 
-                    (< index proc-dict-size)
-                    (or
-                      (< iptr (i64@ offset))
-                      (> iptr (+ (i64@ offset) (i64@ (+ offset 8))))))
-                  (
-                   (:+= index 1)
-                   (:= offset (+ (* index 24) dict-array))
-                   ))
-           (if (< index proc-dict-size)
-               (
-                (:= string (i64@ (+ offset 16)))
-                (i64:= buf-ptr (+ string 8))
-                (i64:= size-ptr (i64@ string)))
-               (
-                (i64:= buf-ptr 0)))
            ))
     (func zero-if-list (list) ((pair-ptr list))
           (
@@ -1293,41 +1302,6 @@
     ))
 
 
-(define globals-buffer (syscall-mmap-anon (* 8 (length upl-globals))))
-(define globals-mapping (zip
-                          upl-globals
-                          (map (lambda (i) (+ globals-buffer (* 8 i))) (range (length upl-globals)))))
-
-(define compiled-func-list_ (compile-upl-to-native upl-code globals-mapping '()))
-
-(define upl-code-2
-  '(
-    (proc main () ((syscall-ret 0) (sigaction-struct ,tmp-4k-buffer))
-          (
-           (call init-lisp-stack)
-           (i64:= (+ sigaction-struct 0 ) (function-pointer sigsegv-handler))
-           (i64:= (+ sigaction-struct 8 ) #x4000004) ; flags SA_SIGINFO | SA_RESTORER
-           (i64:= (+ sigaction-struct 16) (function-pointer sigaction-restorer))
-           (i64:= (+ sigaction-struct 24) 0) ; sig mask
-           (:= syscall-ret (syscall
-                    13 ; sigaction
-                    11 ; sigsegv signal
-                    sigaction-struct
-                    0 ; old sigaction struct
-                    8 ; sig mask size
-                    1 2))
-           ;(call print-newline)
-           (call test-print-object)
-
-           ,(upl-print-static-string "end\n")
-           (call tests)
-
-           (call a)
-          ))
-    ))
-
-(define compiled-func-list (compile-upl-to-native upl-code-2 globals-mapping compiled-func-list_))
-
 ; dictionary layout:
 ; [dictionary size][dictionary array]
 ; dictionary array item layout:
@@ -1364,11 +1338,75 @@
              (zip names name-ptrs))
     (write-mem-i64 proc-dict-ptr dict-ptr)))
 
-(create-proc-dict proc-dict-ptr (append compiled-func-list compiled-func-list_))
 
-;(foreach println upl-func-list)
-(println (list "func list size" (length compiled-func-list)))
-(println "native call:")
-(native-call (compiled-upl-func-ptr (findf (lambda (f) (equal? 'main (compiled-upl-func-name f))) compiled-func-list)))
-(println "native call end")
+(define-struct upl-compiler ((compile-next procedure?)
+                             (run procedure?)))
+
+(define (new-upl-compiler globals)
+  (let ((proc-dict-ptr (syscall-mmap-anon 4096))
+        (tmp-4k-buffer (syscall-mmap-anon 4096))
+        (globals-buffer (syscall-mmap-anon (* 8 (length globals))))
+        (globals-mapping (zip globals
+                              (map (lambda (i) (+ globals-buffer (* 8 i))) (range (length globals)))))
+        (core-functions
+          (compile-upl-to-native (core-upl-code proc-dict-ptr tmp-4k-buffer) globals-mapping '()))
+        (func-list-cell (cell core-functions))
+        (compile-next (lambda (code)
+                        (let ((new-funcs (compile-upl-to-native code globals-mapping (cell-get func-list-cell)))
+                              (all-funcs (append new-funcs (cell-get func-list-cell))))
+                          (cell-set func-list-cell all-funcs)
+                          (create-proc-dict proc-dict-ptr all-funcs)
+                          new-funcs)))
+        (run (lambda (locals code)
+               (let ((main-func-code 
+                       '(
+                         (proc main () ,(append '((syscall-ret 0)
+                                                  (sigaction-struct (fcall syscall-mmap-anon 4098)) ; assume that k_sigaction struct size is less than 4k
+                                                  (old-sigaction-struct (fcall syscall-mmap-anon 4098)))
+                                                locals)
+                               (
+                                (i64:= (+ sigaction-struct 0 ) (function-pointer sigsegv-handler))
+                                (i64:= (+ sigaction-struct 8 ) #x4000004) ; flags SA_SIGINFO | SA_RESTORER
+                                (i64:= (+ sigaction-struct 16) (function-pointer sigaction-restorer))
+                                (i64:= (+ sigaction-struct 24) 0) ; sig mask
+                                (:= syscall-ret (fcall chk-syscall
+                                                       13 ; sigaction
+                                                       11 ; sigsegv signal
+                                                       sigaction-struct
+                                                       old-sigaction-struct
+                                                       8 ; sig mask size
+                                                       1 2))
+
+                                (block ,code)
+
+                                (:= syscall-ret (fcall chk-syscall
+                                                       13 ; sigaction
+                                                       11 ; sigsegv signal
+                                                       old-sigaction-struct
+                                                       0 ; old sigaction struct
+                                                       8 ; sig mask size
+                                                       1 2))
+                                (call syscall-munmap sigaction-struct 4098)
+                                (call syscall-munmap old-sigaction-struct 4098)
+                                ))
+                         ))
+                       (compiled-func-list (compile-upl-to-native main-func-code globals-mapping (cell-get func-list-cell))))
+                     (native-call (compiled-upl-func-ptr (first compiled-func-list)))))))
+        (create-upl-compiler compile-next run)))
+
+
+(define upl-compiler (new-upl-compiler upl-globals))
+
+; TODO: native proc-dict 
+((upl-compiler-compile-next upl-compiler) upl-code)
+((upl-compiler-run upl-compiler) '() '(
+                                       (call init-lisp-stack)
+                                       ;(call print-newline)
+                                       (call test-print-object)
+
+                                       ,(upl-print-static-string "end\n")
+                                       (call tests)
+
+                                        (call a)
+                                       ))
 
