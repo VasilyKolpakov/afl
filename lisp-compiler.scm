@@ -238,30 +238,6 @@
     (proc b () ((d 0)) ((call c) (:= d 0)))
     (proc a () ((d 0)) ((call b) (:= d 0)))
 
-    (bytes sigaction-restorer
-           (
-            #xb8 #x0f #x00 #x00 #x00 ; mov    eax,0xf ; sigreturn
-            #x0f #x05                ; syscall
-            ))
-    
-    (bytes sigsegv-handler
-           (
-            ; return address is on the top of the stack
-            ; need to push a dummy value (saved fp placeholder)
-            ; then push the argument and then restore stack pointer
-            ; to match upl calling convention
-            #x50 #x52 ; push rax ; push rdx
-            #x48 #x83 #xc4 #x10 ; add rsp, 16 
-            ))
-    (proc __sigsegv-handler (ucontext) ((fp-reg 0) (ip-reg 0))
-          (
-           ,(upl-print-static-string "=========== Segmentation fault\n")
-           ; ucontext_t.uc_mcontext.__ctx = 40 bytes offset
-           (:= fp-reg (i64@ (+ 40 (+ (* 10 8) ucontext))))
-           (:= ip-reg (i64@ (+ 40 (+ (* 16 8) ucontext))))
-           (call print-stack-trace-from-fp-and-ip fp-reg ip-reg)
-           ,(upl-exit 1)
-           ))
     (proc test-print-object () ()
           (
            (block ,(compile-lisp-literal '(42 420 () 69)))
@@ -286,7 +262,6 @@
 
 (define upl-compiler (new-upl-compiler upl-globals))
 
-; TODO: native proc-dict 
 ((upl-compiler-compile-next upl-compiler) upl-code)
 ((upl-compiler-run upl-compiler) '() '(
                                        ;,(upl-exit 42)
