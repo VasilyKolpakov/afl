@@ -311,6 +311,22 @@
   (write-mem-i32 (+ ptr 1) rel-target)
   ))
 
+(define (call-instruction target-label)
+  (list 5
+        (lambda (ptr label-locs)
+          (generate-call ptr (assert (alist-lookup label-locs target-label) not-empty? "call target")))
+        (list "call" target-label)))
+
+(define indirect-call-instruction
+  (list 3
+        (lambda (ptr)
+          (begin
+            (write-mem-byte ptr        #x58) ; pop rax
+            (write-mem-byte (+ 1 ptr)  #xff)
+            (write-mem-byte (+ 2 ptr)  #xd0) ; call rax
+            ))
+        "indirect call"))
+
 (define syscall-instruction 
   (list 13 (lambda (ptr)
              (begin
@@ -329,12 +345,6 @@
                (write-mem-byte (+ 12 ptr) #x50) ; mov [r15], rax
                ))
         "syscall"))
-
-(define (call-instruction target-label)
-  (list 5
-        (lambda (ptr label-locs)
-          (generate-call ptr (assert (alist-lookup label-locs target-label) not-empty? "call target")))
-        (list "call" target-label)))
 
 (define (generate-cond-jmp code ptr target)
   (let ((rel-target (- target (+ ptr 11))))
@@ -544,20 +554,20 @@
         (stmt-args (cdr stmt))
         (local-vars (context-local-vars context))
         (label-list (context-label-list context))
-        (compile-expr (lambda (expr local-vars) (compile-expression expr context))))
+        (compile-expr (lambda (expr) (compile-expression expr context))))
     (cond ((equal? stmt-type 'i64:=)
            (begin
              (assert-stmt (list "u64:= statement has 2 parts" stmt) (equal? 2 (length stmt-args)))
              (--- append
-                  (compile-expr (first stmt-args) local-vars)
-                  (compile-expr (second stmt-args) local-vars)
+                  (compile-expr (first stmt-args))
+                  (compile-expr (second stmt-args))
                   (list set-i64-instruction))))
           ((equal? stmt-type 'u8:=)
            (begin
              (assert-stmt (list "u8:= statement has 2 parts" stmt) (equal? 2 (length stmt-args)))
              (--- append
-               (compile-expr (first stmt-args) local-vars)
-               (compile-expr (second stmt-args) local-vars)
+               (compile-expr (first stmt-args))
+               (compile-expr (second stmt-args))
                (list set-u8-instruction))))
           ((equal? stmt-type ':+=)
            (begin
@@ -598,10 +608,15 @@
              (assert-stmt (list (first stmt-args) "number of args") (= proc-arg-count (length proc-args)))
              (--- append
                (list (add-rsp-instruction -16))
-               (flatmap (lambda (expr) (compile-expr expr local-vars)) proc-args)
+               (flatmap compile-expr proc-args)
                (list
                  (add-rsp-instruction (* 8 (+ 2 proc-arg-count)))
                  (call-instruction proc-label)))))
+          ((equal? stmt-type 'indirect-call)
+           (let ((proc-ptr-expression (first stmt-args)))
+             (append 
+               (compile-expr proc-ptr-expression)
+               (list indirect-call-instruction))))
           ((equal? stmt-type 'return)
            (begin
              (assert-stmt "return has 0 args" (= 0 (length stmt-args)))
@@ -612,7 +627,7 @@
            (begin
              (assert-stmt "return-val has 1 args" (= 1 (length stmt-args)))
              (append
-               (compile-expr (first stmt-args) local-vars)
+               (compile-expr (first stmt-args))
                (list
                  set-rax-instruction
                  (add-rsp-instruction (* 8 (length local-vars)))
@@ -686,7 +701,7 @@
                (flatmap (lambda (s) (compile-statement s context)) statements)))
           ((equal? stmt-type 'drop)
            (append
-             (compile-expr (first stmt-args) local-vars)
+             (compile-expr (first stmt-args))
              (list set-rax-instruction)))
           (else (panic "bad statement" stmt)))))
 
