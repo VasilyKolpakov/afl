@@ -461,7 +461,7 @@
                  rest)))
       (else
         (let ((arg-count-and-inst (assert (alist-lookup symbol-to-instruction (car expr)) not-empty? (list "undefined operator:" (car expr)))))
-          (assert-stmt "arg count matches" (= (length (cdr expr)) (car arg-count-and-inst)))
+          (assert-stmt (list "arg count matches" expr) (= (length (cdr expr)) (car arg-count-and-inst)))
           (foldr
             (lambda (expr rest) (compile-expression-rec expr rest context))
             (cons (car (cdr arg-count-and-inst)) rest)
@@ -546,10 +546,12 @@
         (label-list (context-label-list context))
         (compile-expr (lambda (expr local-vars) (compile-expression expr context))))
     (cond ((equal? stmt-type 'i64:=)
-           (--- append
-             (compile-expr (first stmt-args) local-vars)
-             (compile-expr (second stmt-args) local-vars)
-             (list set-i64-instruction)))
+           (begin
+             (assert-stmt (list "u64:= statement has 2 parts" stmt) (equal? 2 (length stmt-args)))
+             (--- append
+                  (compile-expr (first stmt-args) local-vars)
+                  (compile-expr (second stmt-args) local-vars)
+                  (list set-i64-instruction))))
           ((equal? stmt-type 'u8:=)
            (begin
              (assert-stmt (list "u8:= statement has 2 parts" stmt) (equal? 2 (length stmt-args)))
@@ -558,10 +560,12 @@
                (compile-expr (second stmt-args) local-vars)
                (list set-u8-instruction))))
           ((equal? stmt-type ':+=)
-           (let ((var (car stmt-args))
-                 (var-index (index-of local-vars var))
-                 (val-expr (car (cdr stmt-args))))
-             (compile-statement '(:= ,var (+ ,var ,val-expr)) context)))
+           (begin
+             (assert-stmt (list ":+= statement has 2 parts" stmt) (equal? 2 (length stmt-args)))
+             (let ((var (car stmt-args))
+                   (var-index (index-of local-vars var))
+                   (val-expr (car (cdr stmt-args))))
+               (compile-statement '(:= ,var (+ ,var ,val-expr)) context))))
           ((equal? stmt-type ':-=)
            (let ((var (car stmt-args))
                  (var-index (index-of local-vars var))

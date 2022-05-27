@@ -1,3 +1,17 @@
+; dev notes
+
+;   - literal block list
+;   - lisp code compilation
+;       - generate literals and put them to literal block list
+;       - symbols
+;           - an interned string
+;           - binding
+;               - with 'value' field that holds an object (global binding)
+;               - dictionary - slow lookup in runtime
+;       - generate code
+;   - TCO
+;       - upl
+
 (import "upl-compiler.scm")
 
 (define alloc-arena-size 409600)
@@ -46,10 +60,74 @@
     lisp-stack-bottom
     lisp-stack-ptr
     lisp-stack-size
-     ))
+    literal-block-list
+    ))
+
+; block-list block layout
+; [size][next][values]{510}
+(define block-list-max-block-size (- (/ 4096 8) 2))
+
+(define (upl-block-list-block-set-next block next-block)
+  '(i64:= (+ ,block 8) ,next-block)
+  )
+(define (upl-block-list-block-next block)
+  '(i64@ (+ ,block 8))
+  )
+(define (upl-block-list-block-set-size block size)
+  '(i64:= ,block ,size)
+  )
+(define (upl-block-list-block-size block)
+  '(i64@ ,block)
+  )
+(define (upl-block-list-block-set-item block index value)
+  '(i64:= (+ ,block (+ 16 (* ,index 8))) ,value)
+  )
+(define (upl-block-list-block-item block index)
+  '(i64@ (+ ,block (+ 16 (* ,index 8))))
+  )
 
 (define upl-code 
   '(
+    (func create-block-list () ((block-ptr (fcall syscall-mmap-anon 4096)))
+          (
+           ,(upl-block-list-block-set-size 'block-ptr 0)
+           ,(upl-block-list-block-set-next 'block-ptr 0)
+           (return-val block-ptr)
+           ))
+    (proc add-item-to-block-list (ptr value) ((block-ptr (i64@ ptr)) (block-size 0))
+          (
+           (:= block-size ,(upl-block-list-block-size 'block-ptr))
+           (if (>= ,(upl-block-list-block-size 'block-ptr) ,block-list-max-block-size)
+             (
+              (i64:= ptr (fcall create-block-list))
+              ,(upl-block-list-block-set-next '(i64@ ptr) 'block-ptr)
+              (:= block-ptr (i64@ ptr))
+              (:= block-size 0)
+              ))
+           ,(upl-block-list-block-set-item 'block-ptr 'block-size 'value)
+           (:+= block-size 1)
+           ,(upl-block-list-block-set-size 'block-ptr 'block-size)
+           ))
+    (proc print-block-list-values (ptr-to-block-list) ((index 0)
+                                                       (block-ptr 0)
+                                                       (block-size 0))
+          (
+           (while (!= (i64@ ptr-to-block-list) 0)
+                  (
+                   (:= block-ptr (i64@ ptr-to-block-list))
+                   (:= block-size ,(upl-block-list-block-size 'block-ptr))
+                   (:= index (- block-size 1))
+                   (while (>= index 0)
+                          (
+                           (call print-hex-number ,(upl-block-list-block-item 'block-ptr 'index))
+                           (call print-newline)
+                           (:-= index 1)
+                           ))
+                   (i64:= ptr-to-block-list ,(upl-block-list-block-next 'block-ptr))
+                   (:= index 0)
+                   ))
+           ))
+
     (proc gc-malloc (addr-out size) ((bump-ptr 0))
           (
            (:= bump-ptr (i64@ ,alloc-bump-ptr))
@@ -244,6 +322,16 @@
            (call print-object (fcall peek-lisp-stack 0))
            (call print-newline)
            ))
+    (proc test-block-list () ((block-list 0) (index 0))
+          (
+           (:= block-list (fcall create-block-list))
+           (while (< index 1000)
+                  (
+                   (call add-item-to-block-list (-> block-list) index)
+                   (:+= index 1)
+                   ))
+           (call print-block-list-values (-> block-list))
+           ))
     (proc tests () ((tmp 0))
           (
            ,(upl-print-static-string "test mmap\n")
@@ -272,6 +360,8 @@
                                        ,(upl-print-static-string "end\n")
                                        (call tests)
 
+                                       (call test-block-list)
                                         (call a)
                                        ))
+
 
