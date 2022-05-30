@@ -470,7 +470,7 @@
          (append (list (push-var-addr-instruction var-index))
                  rest)))
       (else
-        (let ((arg-count-and-inst (assert (alist-lookup symbol-to-instruction (car expr)) not-empty? (list "undefined operator:" (car expr)))))
+        (let ((arg-count-and-inst (assert (alist-lookup symbol-to-instruction (car expr)) not-empty? (list "undefined operator:" expr))))
           (assert-stmt (list "arg count matches" expr) (= (length (cdr expr)) (car arg-count-and-inst)))
           (foldr
             (lambda (expr rest) (compile-expression-rec expr rest context))
@@ -1102,7 +1102,8 @@
 
 
 (define-struct upl-compiler ((compile-next procedure?)
-                             (run procedure?)))
+                             (run procedure?)
+                             (global-value procedure?)))
 
 (define (new-upl-compiler globals)
   (let ((proc-dict-ptr (syscall-mmap-anon 4096))
@@ -1123,8 +1124,8 @@
                (let ((main-func-code 
                        '(
                          (proc main () ,(append '((syscall-ret 0)
-                                                  (sigaction-struct (fcall syscall-mmap-anon 4098)) ; assume that k_sigaction struct size is less than 4k
-                                                  (old-sigaction-struct (fcall syscall-mmap-anon 4098)))
+                                                  (sigaction-struct (fcall syscall-mmap-anon 4096)) ; assume that k_sigaction struct size is less than 4k
+                                                  (old-sigaction-struct (fcall syscall-mmap-anon 4096)))
                                                 locals)
                                (
                                 (i64:= (+ sigaction-struct 0 ) (function-pointer sigsegv-handler))
@@ -1148,12 +1149,13 @@
                                                        0 ; old sigaction struct
                                                        8 ; sig mask size
                                                        1 2))
-                                (call syscall-munmap sigaction-struct 4098)
-                                (call syscall-munmap old-sigaction-struct 4098)
+                                (call syscall-munmap sigaction-struct 4096)
+                                (call syscall-munmap old-sigaction-struct 4096)
                                 ))
                          ))
                      (compiled-func-list (compile-upl-to-native main-func-code globals-mapping (cell-get func-list-cell))))
-                 (native-call (compiled-upl-func-ptr (first compiled-func-list)))))))
-                 ; TODO: unmap exec memory?
-    (create-upl-compiler compile-next run)))
-
+                 (native-call (compiled-upl-func-ptr (first compiled-func-list))))))
+        (global-value (lambda (var) 
+                        (read-mem-i64 (alist-lookup globals-mapping var)))))
+    ; TODO: unmap exec memory?
+    (create-upl-compiler compile-next run global-value)))
