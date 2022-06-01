@@ -35,12 +35,15 @@ def "open_file" {
     string_to_nts
 } ;
 
-constant "buffered_input_array_size" 1 ;
+constant "buffered_input_array_size" 1000 ;
 
 # buffered input layout
-# [input size] [index] [array] [file descriptor]
-# <fd> -> <buf input>
+# [input size] [index] [array] [file descriptor] [filename]
+# <fd> <filename> -> <buf input>
 def "buffered_input_create" {
+    keep { buffered_input_set_col_number swap 0 }
+    keep { buffered_input_set_line_number swap 1 }
+    keep { write_mem_i64 + 32 } 
     keep { write_mem_i64 + 24 } 
     keep { write_mem_i64 + 16 swap malloc buffered_input_array_size } 
     keep { write_mem_i64 + 8 swap 0 } 
@@ -54,6 +57,11 @@ def "buffered_input_index" { read_mem_i64 + 8 } ;
 def "buffered_input_set_index" { write_mem_i64 + 8 } ;
 def "buffered_input_array" { read_mem_i64 + 16 } ;
 def "buffered_input_fd" { read_mem_i64 + 24 } ;
+def "buffered_input_filename" { read_mem_i64 + 32 } ;
+def "buffered_input_line_number" { read_mem_i64 + 40 } ;
+def "buffered_input_set_line_number" { write_mem_i64 + 40 } ;
+def "buffered_input_col_number" { read_mem_i64 + 48 } ;
+def "buffered_input_set_col_number" { write_mem_i64 + 48 } ;
 
 # <bufin> -> <byte>
 def "buffered_input_read_current_byte" {
@@ -67,6 +75,12 @@ se_check_last_defined_function ;
 
 # <bufin> ->
 def "buffered_input_advance" {
+    if { lazy_and { = newline_char buffered_input_read_current_byte dup } not buffered_input_is_eof dup } {
+        buffered_input_set_col_number swap 0
+        keep { bi { buffered_input_set_line_number } { + 1 buffered_input_line_number } }
+    } { 
+        bi { buffered_input_set_col_number } { + 1 buffered_input_col_number }
+    }
     if { < bi { + 1 buffered_input_index } { buffered_input_input_size } dup } {
         bi { buffered_input_set_index } { + 1 buffered_input_index }
     } {
@@ -77,6 +91,7 @@ def "buffered_input_advance" {
         # <bufin> <size> <bufin>
         swap buffered_input_array_size dup
     }
+    dup
     assert "buffered_input has not reached EOF" not = 0 buffered_input_input_size dup
 } ;
 se_check_last_defined_function ;
@@ -91,6 +106,9 @@ def "buffered_input_is_eof" {
 # <bufin> ->
 def "buffered_input_close_fd_and_destroy" {
     free
+    # filename strings can be used in syntax error reporting even after the file is closed
+    # it is easier to just not destroy them
+    #byte_vector_destroy buffered_input_filename dup
     free buffered_input_array dup
     drop panic_on_syscall_error syscall_close buffered_input_fd dup
 } ;
@@ -131,17 +149,18 @@ constant "source_file_input_stack" array_list_new ;
 
 # <filename string> ->
 def "source_file_input_stack_push_file" {
-    array_list_append source_file_input_stack buffered_input_create open_file
+    array_list_append source_file_input_stack buffered_input_create open_file dup
 } ;
 se_check_last_defined_function ;
-array_list_append source_file_input_stack buffered_input_create 0 ; # stdin
+array_list_append source_file_input_stack buffered_input_create 0 "stdin" ;
 
+# -> <next byte or -1 if EOF>
 def "scanner_peek" {
-    buffered_input_read_current_byte array_list_get_last source_file_input_stack
     if { array_list_is_empty source_file_input_stack } {
-        exit 1
-        print_string "lisp interpreter: unexpected EOF\n"
-    } { }
+        -1
+    } { 
+        buffered_input_read_current_byte array_list_get_last source_file_input_stack
+    }
 } ;
 se_check_last_defined_function ;
 
@@ -155,6 +174,29 @@ def "scanner_advance" {
 } ;
 se_check_last_defined_function ;
 
+def "scanner_current_filename" {
+    buffered_input_filename array_list_get_last source_file_input_stack 
+} ;
+se_check_last_defined_function ;
+
+def "scanner_current_line_number" {
+    buffered_input_line_number array_list_get_last source_file_input_stack 
+} ;
+se_check_last_defined_function ;
+
+def "scanner_current_col_number" {
+    buffered_input_col_number array_list_get_last source_file_input_stack 
+} ;
+se_check_last_defined_function ;
+
+def "scanner_print_current_position" {
+    . scanner_current_col_number
+    print_string ":"
+    . scanner_current_line_number
+    print_string ": "
+    print_string scanner_current_filename
+} ;
+
 def "string_first_char" {
     byte_vector_get dip { 0 }
 } ;
@@ -162,6 +204,10 @@ se_check_last_defined_function ;
 
 constant "open_paren_char" string_first_char "(" ;
 constant "close_paren_char" string_first_char ")" ;
+constant "open_bracket_char" string_first_char "[" ;
+constant "close_bracket_char" string_first_char "]" ;
+constant "open_curly_bracket_char" string_first_char "{" ;
+constant "close_curly_bracket_char" string_first_char "}" ;
 constant "space_char" string_first_char " " ;
 constant "t_char" string_first_char "t" ;
 constant "n_char" string_first_char "n" ;
@@ -229,7 +275,13 @@ def "is_whitespace_char" {
 } ;
 
 def "is_paren_char" {
-    or bi { = open_paren_char } { = close_paren_char }
+    drop swap
+    lazy_or { = close_curly_bracket_char dup }
+    lazy_or { = open_curly_bracket_char dup }
+    lazy_or { = close_bracket_char dup }
+    lazy_or { = open_bracket_char dup }
+    lazy_or { = close_paren_char dup }
+              = open_paren_char dup
 } ;
 
 def "skip_whitespace_and_comments" {
@@ -244,14 +296,34 @@ def "skip_whitespace_and_comments" {
     }
 } ;
 
+constant "token_EOF_type"                  -1 ;
 constant "token_open_paren_type"            0 ;
 constant "token_close_paren_type"           1 ;
-constant "token_symbol_or_i64_literal_type" 2 ;
-constant "token_string_literal_type"        3 ;
-constant "token_char_literal_type"          4 ;
-constant "token_backquote_type"             5 ;
-constant "token_comma_type"                 6 ;
+constant "token_open_bracket_type"          2 ;
+constant "token_close_bracket_type"         3 ;
+constant "token_open_curly_bracket_type"    4 ;
+constant "token_close_curly_bracket_type"   5 ;
+constant "token_symbol_or_i64_literal_type" 6 ;
+constant "token_string_literal_type"        7 ;
+constant "token_char_literal_type"          8 ;
+constant "token_single_quote_type"          9 ;
+constant "token_comma_type"                 10 ;
 
+def "token_open_paren_couterpart_type"
+    when { = token_open_paren_type dup } then { token_close_paren_type drop } otherwise
+    when { = token_open_bracket_type dup } then { token_close_bracket_type drop } otherwise
+    when { = token_open_curly_bracket_type dup } then { token_close_curly_bracket_type drop } otherwise
+    { 0 . assert "not an open paren (bracket) token: " false }
+ ;
+
+# <token> -> <bool>
+def "token_is_close_paren_type" {
+    drop swap
+    lazy_or { = token_close_curly_bracket_type dup }
+    lazy_or { = token_close_bracket_type dup }
+              = token_close_paren_type dup
+    token_get_type_id
+} ;
 # <expr type id> <value> -> <token>
 def "token_create" {
     keep { write_mem_i64 + 8 }
@@ -270,8 +342,13 @@ def "token_get_value" {
 } ;
 
 def "token_print_switch"
+    when { = token_EOF_type dup } then { print_string "EOF" 2drop } otherwise
     when { = token_open_paren_type dup } then { print_string "open paren" 2drop } otherwise
     when { = token_close_paren_type dup } then { print_string "close paren" 2drop } otherwise
+    when { = token_open_bracket_type dup } then { print_string "open bracket" 2drop } otherwise
+    when { = token_close_bracket_type dup } then { print_string "close bracket" 2drop } otherwise
+    when { = token_open_curly_bracket_type dup } then { print_string "open curly bracket" 2drop } otherwise
+    when { = token_close_curly_bracket_type dup } then { print_string "close curly bracket" 2drop } otherwise
     when { = token_symbol_or_i64_literal_type dup } then { print_string "'" print_string token_get_value print_string "symbol or i64 literal: '" drop } otherwise
     when { = token_char_literal_type dup } then { print_string "'" print_string token_get_value print_string "char literal: '" drop } otherwise
     when { = token_string_literal_type dup } then {
@@ -288,8 +365,13 @@ def "token_print" {
 } ;
 
 def "token_destroy_switch"
+    when { = token_EOF_type dup } then { free drop } otherwise
     when { = token_open_paren_type dup } then { free drop } otherwise
     when { = token_close_paren_type dup } then { free drop } otherwise
+    when { = token_open_bracket_type dup } then { free drop } otherwise
+    when { = token_close_bracket_type dup } then { free drop } otherwise
+    when { = token_open_curly_bracket_type dup } then { free drop } otherwise
+    when { = token_close_curly_bracket_type dup } then { free drop } otherwise
     when { = token_symbol_or_i64_literal_type dup } then {
         bi { free } { byte_vector_destroy token_get_value } drop
     } otherwise
@@ -339,12 +421,16 @@ def "read_next_token_double_quote" {
 
 # -> <token> # scanner on the char's position
 def "read_next_token_switch"
+    when { = -1 scanner_peek } then {
+        token_create token_EOF_type 0
+        scanner_advance
+    } otherwise
     when { = comma_char scanner_peek } then {
         token_create token_comma_type 0
         scanner_advance
     } otherwise
     when { = single_quote_char scanner_peek } then {
-        token_create token_backquote_type 0
+        token_create token_single_quote_type 0
         scanner_advance
     } otherwise
     when { = open_paren_char scanner_peek } then {
@@ -355,13 +441,82 @@ def "read_next_token_switch"
         token_create token_close_paren_type 0
         scanner_advance
     } otherwise
+    when { = open_bracket_char scanner_peek } then {
+        token_create token_open_bracket_type 0
+        scanner_advance
+    } otherwise
+    when { = close_bracket_char scanner_peek } then {
+        token_create token_close_bracket_type 0
+        scanner_advance
+    } otherwise
+    when { = open_curly_bracket_char scanner_peek } then {
+        token_create token_open_curly_bracket_type 0
+        scanner_advance
+    } otherwise
+    when { = close_curly_bracket_char scanner_peek } then {
+        token_create token_close_curly_bracket_type 0
+        scanner_advance
+    } otherwise
     when { = double_quote_char scanner_peek } then { read_next_token_double_quote } otherwise
     { read_next_token_symbol_or_number }
 ;
 
+# token pos layout:
+# [filename][line num][col num]
+
+# <filename> <line num> <col num> -> <token pos>
+def "token_position_create" {
+    keep { write_mem_i64 + 16 }
+    keep { write_mem_i64 + 8 }
+    keep { write_mem_i64 }
+    malloc * 8 3
+} ;
+
+def "token_positon_destroy" {
+    # filename is destroyed in buffered_input_close_fd_and_destroy
+    free
+} ;
+
+def "token_positon_copy" {
+    keep { memcopy * 3 8 swap }
+    malloc * 8 3
+} ;
+
+def "token_position_print" {
+    drop
+    . read_mem_i64 + 16 dup
+    print_string ","
+    . read_mem_i64 + 8 dup
+    print_string ": "
+    print_string read_mem_i64 dup
+} ;
+se_check_last_defined_function ;
+
+constant "current_token_pos_ptr" malloc 8 ; 
+write_mem_i64 current_token_pos_ptr 0
+
+def "current_token_pos" {
+   read_mem_i64 current_token_pos_ptr
+} ;
+
+def "current_token_pos_reset" {
+    if { not array_list_is_empty source_file_input_stack } {
+        write_mem_i64 current_token_pos_ptr
+        token_position_create
+            scanner_current_filename
+            scanner_current_line_number
+            scanner_current_col_number
+        if { not = 0 current_token_pos } {
+            token_positon_destroy current_token_pos
+        } { }
+    } { }
+} ;
+se_check_last_defined_function ;
+
 # -> <token>
 def "read_next_token" {
     read_next_token_switch
+    current_token_pos_reset
     skip_whitespace_and_comments
 } ;
 se_check_last_defined_function ;
@@ -995,6 +1150,7 @@ constant "current_token_ptr" malloc 8 ;
 def "token_scanner_advance" {
     write_mem_i64 current_token_ptr 0
 } ;
+
 def "token_scanner_peek" {
     read_mem_i64 current_token_ptr
     if { = read_mem_i64 current_token_ptr 0 } {
@@ -1002,6 +1158,12 @@ def "token_scanner_peek" {
     } { }
 } ;
 
+def "token_scanner_print_position" {
+    read_mem_i64 current_token_ptr
+    if { = read_mem_i64 current_token_ptr 0 } {
+        write_mem_i64 current_token_ptr read_next_token
+    } { }
+} ;
 
 # <char*> <size> -> <bool> <number>
 def "parse_i64_non_empty" {
@@ -1340,6 +1502,25 @@ def "lisp_run_gc" {
     } { }
 } ;
 
+constant "open_paren_position_stack" array_list_new ;
+
+def "open_paren_position_stack_push_current_pos" {
+    array_list_append open_paren_position_stack token_positon_copy current_token_pos
+} ;
+se_check_last_defined_function ;
+
+def "open_paren_position_stack_drop" {
+    token_positon_destroy array_list_pop_last open_paren_position_stack
+} ;
+
+def "open_paren_position_stack_peek_top" {
+    array_list_peek open_paren_position_stack 0
+} ;
+
+def "open_paren_position_stack_is_empty" {
+    array_list_is_empty open_paren_position_stack
+} ;
+
 def "read_next_expression_switch"
     when { = token_comma_type token_get_type_id token_scanner_peek } then {
         lisp_value_stack_push drop lisp_value_stack_pop
@@ -1349,7 +1530,7 @@ def "read_next_expression_switch"
         read_next_expression
         token_scanner_advance
     } otherwise
-    when { = token_backquote_type token_get_type_id token_scanner_peek } then {
+    when { = token_single_quote_type token_get_type_id token_scanner_peek } then {
         lisp_value_stack_push drop lisp_value_stack_pop
         alloc_pair lisp_quote_symbol lisp_value_stack_peek_top
         lisp_value_stack_push drop lisp_value_stack_pop
@@ -1357,7 +1538,11 @@ def "read_next_expression_switch"
         read_next_expression
         token_scanner_advance
     } otherwise
-    when { = token_open_paren_type token_get_type_id token_scanner_peek } then {
+    when { 
+        lazy_or { = token_open_curly_bracket_type token_get_type_id token_scanner_peek }
+        lazy_or { = token_open_bracket_type token_get_type_id token_scanner_peek }
+                  = token_open_paren_type token_get_type_id token_scanner_peek
+    } then {
         drop
         while { < 0 dup } {
             lisp_value_stack_push
@@ -1368,12 +1553,39 @@ def "read_next_expression_switch"
         }
         lisp_value_stack_push 0
         token_scanner_advance
-        while { not = token_close_paren_type token_get_type_id token_scanner_peek } {
-            + 1
+
+        open_paren_position_stack_drop
+        if { not = token_get_type_id token_scanner_peek } {
+            exit 1
+            print_newline
+            print_string " "
+            token_print token_scanner_peek
+            print_string " parsing error: unexpected close paren: "
+            token_position_print current_token_pos
+        } { }
+        while { not token_is_close_paren_type token_scanner_peek } {
+            dip { + 1 }
             read_next_expression
         }
-        0
+        swap 0
         token_scanner_advance
+#        # [close paren type id]
+        token_open_paren_couterpart_type token_get_type_id token_scanner_peek
+        open_paren_position_stack_push_current_pos
+    } otherwise
+    when { token_is_close_paren_type token_scanner_peek } then {
+        exit 1
+        print_string " parsing error: unexpected close paren\n"
+        token_position_print current_token_pos
+    } otherwise
+    when { = token_EOF_type token_get_type_id token_scanner_peek } then {
+        exit 1
+        print_newline
+        if { not open_paren_position_stack_is_empty } {
+            token_position_print open_paren_position_stack_peek_top
+            print_string ": unclosed parent at "
+        } { }
+        print_string "parsing error: unexpected EOF"
     } otherwise
     when { = token_symbol_or_i64_literal_type token_get_type_id token_scanner_peek } then {
         token_scanner_advance
@@ -1396,11 +1608,7 @@ def "read_next_expression_switch"
         token_destroy token_scanner_peek
         lisp_value_stack_push alloc_string token_get_value token_scanner_peek
     } otherwise
-    when { = token_close_paren_type token_get_type_id token_scanner_peek } then {
-        exit 1
-        print_string "parsing error: unexpected close paren\n"
-    } otherwise
-    { assert "suppoted literal type" false print_newline . token_get_type_id token_scanner_peek }
+    { assert "supported literal type" false print_newline . token_get_type_id token_scanner_peek }
 ;
 
 def "read_next_expression" {
@@ -2661,7 +2869,7 @@ lisp_register_builtin_function "random-int" 0 {
 
 lisp_register_builtin_function "import" 1 {
     lisp_value_stack_push
-    byte_vector_destroy # destroy string
+    # do not destroy the filename string, it will be stored in buffered_inputs 
     if { } {
         keep { source_file_input_stack_push_file }
     } {
@@ -2697,6 +2905,7 @@ def "print_string_instruction_func" { call print_string_instruction } ;
 se_check_last_defined_function ;
 
 #se_enable ;
+se_check_function_by_name "buffered_input_advance" ;
 se_check_function_by_name "lisp builtin: string-concat" ;
 se_check_function_by_name "lisp builtin: symbol-to-string" ;
 se_check_function_by_name "lisp builtin: string-to-symbol" ;
@@ -2714,6 +2923,7 @@ se_check_function_by_name "obj_is_symbol" ;
 se_check_function_by_name "lisp_register_builtin_function" ;
 se_check_function_by_name "lisp_gc_push_roots_to_stack" ;
 se_check_function_by_name "lisp_gc_mark_push_refs_switch" ;
+se_check_function_by_name "token_open_paren_couterpart" ;
 se_check_function_by_name "read_next_expression" ;
 se_check_function_by_name "print_obj" ;
 se_check_function_by_name "not_instruction_f" ;
