@@ -426,10 +426,15 @@
           (cond-jmp-instruction-gen #x8d))
     ))
 
-(define (create-context local-vars label-list globals-mapping) (list local-vars label-list globals-mapping))
-(define (context-local-vars context) (first context))
-(define (context-label-list context) (second context))
-(define (context-globals-mapping context) (nth 2 context))
+(define-struct context ([proc-name symbol?]
+                        [local-vars list?]
+                        [label-list list?]
+                        [globals-mapping list?]))
+
+;(define (create-context local-vars label-list globals-mapping) (list local-vars label-list globals-mapping))
+;(define (context-local-vars context) (first context))
+;(define (context-label-list context) (second context))
+;(define (context-globals-mapping context) (nth 2 context))
 
 (define (find-upl-func func-list name)
   (assert
@@ -464,11 +469,16 @@
              push-rax-instruction)
            rest)))
       ((equal? '-> (car expr))
-       (let ((var (car (cdr expr)))
-             (var-index (index-of local-vars var)))
-         (if (empty? var-index) (panic "ref: bad variable:" var) '())
-         (append (list (push-var-addr-instruction var-index))
-                 rest)))
+       (let ([var (car (cdr expr))]
+             [var-index (index-of local-vars var)]
+             [global-var-ptr (alist-lookup (context-globals-mapping context) var)])
+         (cond [(not-empty? var-index)
+                (append (list (push-var-addr-instruction var-index))
+                        rest)]
+               [(not-empty? global-var-ptr)
+                (append (list (push-imm-instruction global-var-ptr))
+                        rest)]
+               [else (panic "ref: bad variable:" var)])))
       (else
         (let ((arg-count-and-inst (assert (alist-lookup symbol-to-instruction (car expr)) not-empty? (list "undefined operator:" expr))))
           (assert-stmt (list "arg count matches" expr) (= (length (cdr expr)) (car arg-count-and-inst)))
@@ -491,7 +501,7 @@
                                      rest))
       ((number? expr) (cons (push-imm-instruction expr) rest))
       ((list? expr) (compile-list expr rest context))
-      (else (panic "bad expression: " (list "expression:" expr "context:" context))))))
+      (else (panic "bad expression: " (list ">" expr "<" "context:" context))))))
 
 (define (compile-expression expr context)
   (compile-expression-rec expr '() context))
@@ -706,7 +716,8 @@
           (else (panic "bad statement" stmt)))))
 
 
-(define (compile-procedure args
+(define (compile-procedure name
+                           args
                            local-vars-with-inits
                            statements
                            upl-func-list
@@ -720,9 +731,9 @@
         (list
           set-frame-pointer-instruction
           (add-rsp-instruction (- 0 (* 8 (length args)))))
-        (flatmap (lambda (var-init) (compile-expression var-init (create-context args upl-func-list globals-mapping)))
+        (flatmap (lambda (var-init) (compile-expression var-init (create-context name args upl-func-list globals-mapping)))
                  local-var-inits)
-        (flatmap (lambda (stmt) (compile-statement stmt (create-context local-vars upl-func-list globals-mapping)))
+        (flatmap (lambda (stmt) (compile-statement stmt (create-context name local-vars upl-func-list globals-mapping)))
                  statements)
         (list (add-rsp-instruction (* 8 (length local-vars)))
           return-instruction)))))
@@ -771,10 +782,11 @@
                 (label (cdr c-with-l)))
             (cond
               ((or (equal? 'proc chunk-type) (equal? 'func chunk-type))
-               (let ((args (nth 2 chunk))
-                     (local-vars-with-inits (nth 3 chunk))
-                     (statements (nth 4 chunk)))
-                 (cons label (compile-procedure args local-vars-with-inits statements all-upl-funcs globals-mapping))))
+               (let ([name (nth 1 chunk)]
+                     [args (nth 2 chunk)]
+                     [local-vars-with-inits (nth 3 chunk)]
+                     [statements (nth 4 chunk)])
+                 (cons label (compile-procedure name args local-vars-with-inits statements all-upl-funcs globals-mapping))))
               ((equal? 'bytes chunk-type)
                (let ((bytes-list (nth 2 chunk)))
                  (cons label (list
@@ -891,20 +903,28 @@
              (append (cdr resolved-labels) (list (list '() last-ptr))))))))
 
 
-(define upl-print-static-string
+; returns (list string-ptr string-length)
+(define upl-static-string
   (let ((ret-val-buffer (syscall-mmap-anon 100))
         (str-buffer-size 10000)
         (str-buffer (syscall-mmap-anon str-buffer-size))
         (bump-index (cell 0)))
     (lambda (str)
       (let ((str-length (string-length str))
-            (original-bump-index (cell-get bump-index)))
-        (begin
-          (assert-stmt "bump-index + string length <= str-buffer-size"
-                       (<= (+ (cell-get bump-index) str-length) str-buffer-size))
-          (string-to-native-buffer str (+ str-buffer (cell-get bump-index)))
-          (cell-set bump-index (+ str-length (cell-get bump-index)))
-          '(i64:= ,ret-val-buffer (syscall 1 1 ,(+ str-buffer original-bump-index) ,str-length 1 2 3)))))))
+            (original-bump-index (cell-get bump-index))
+            (string-ptr (+ str-buffer (cell-get bump-index)))
+            (_  (assert-stmt "static string buffer overflow"
+                             (<= (+ string-ptr str-length) (+ str-buffer str-buffer-size)))))
+        (string-to-native-buffer str string-ptr)
+        (cell-set bump-index (+ str-length (cell-get bump-index)))
+        (list string-ptr str-length)))))
+
+
+(define (upl-print-static-string str)
+  (let ((ss (upl-static-string str))
+        (str-ptr (first ss))
+        (str-len (second ss)))
+    '(drop (syscall 1 1 ,str-ptr ,str-len 1 2 3))))
 
 (define (upl-exit code)
   '(drop (syscall 60 ,code 1 2 3 4 5)))
@@ -1159,3 +1179,11 @@
                         (read-mem-i64 (alist-lookup globals-mapping var)))))
     ; TODO: unmap exec memory?
     (create-upl-compiler compile-next run global-value)))
+
+(define (upl-debug-print-hex-value msg value)
+  (list 'block
+        (list
+          (upl-print-static-string msg)
+          '(call print-hex-number ,value)
+          '(call print-newline))))
+
