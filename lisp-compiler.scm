@@ -1,6 +1,5 @@
 ; dev notes
 
-;   - literal block list
 ;   - lisp code compilation
 ;       - generate literals and put them to literal block list
 ;       - symbols
@@ -22,6 +21,9 @@
 ;   object header layout [gc flags (1 byte)][type id (1 byte)]
 (define (upl-obj-type-id expr)
   '(u8@ (+ 1 ,expr)))
+(define (upl-obj-set-type-id obj obj-type)
+  '(u8:= (+ 1 ,obj) ,obj-type))
+
 (define obj-header-size 2)
 (define i64-obj-type-id 0)
 ;   [value: i64]
@@ -36,6 +38,7 @@
   '(i64@ (+ ,(+ 8 obj-header-size) ,expr)))
 
 (define function-obj-type-id 2)
+;   [fptr][nargs][nfields][fields ...]
 (define (upl-obj-function-fptr expr)
   '(i64@ (+ ,obj-header-size ,expr)))
 (define (upl-obj-function-nargs expr)
@@ -44,6 +47,30 @@
   '(i64@ (+ ,(+ 16 obj-header-size) ,expr)))
 (define (upl-obj-function-field n expr)
   '(i64@ (+ (* ,n 8) (+ ,(+ 24 obj-header-size) ,expr))))
+
+
+(define symbol-obj-type-id 3)
+;   [name length][u8 is bound][binding][name bytes ...]
+(define (upl-obj-symbol-name-length expr)
+  '(i64@ (+ ,obj-header-size ,expr)))
+(define (upl-obj-symbol-set-name-length expr length)
+  '(i64:= (+ ,obj-header-size ,expr) ,length))
+
+(define (upl-obj-symbol-is-bound expr)
+  '(u8@ (+ ,(+ 8 obj-header-size) ,expr)))
+(define (upl-obj-symbol-set-is-bound expr is-bound)
+  '(u8:= (+ ,(+ 8 obj-header-size) ,expr) ,is-bound))
+
+(define (upl-obj-symbol-binding expr)
+  '(i64@ (+ ,(+ 9 obj-header-size) ,expr)))
+(define (upl-obj-symbol-set-binding expr binding)
+  '(i64:= (+ ,(+ 9 obj-header-size) ,expr) ,binding))
+
+(define (upl-obj-symbol-name-buf expr)
+  '(+ ,(+ 17 obj-header-size) ,expr))
+
+(define (upl-obj-symbol-struct-size name-size)
+  '(+ ,(+ 17 obj-header-size) ,name-size))
 
 (define (compile-lisp-literal obj)
   (cond
@@ -55,12 +82,15 @@
                    '((call lisp-cons))))
     (else (panic (list "bad obj: " obj)))))
 
-(define upl-globals
+(define lisp-globals
   '(
     lisp-stack-bottom
     lisp-stack-ptr
     lisp-stack-size
     literal-block-list
+    symbol-block-list
+    symbol-alloc-4k-buffer-ptr
+    test
     ))
 
 ; block-list block layout
@@ -86,8 +116,35 @@
   '(i64@ (+ ,block (+ 16 (* ,index 8))))
   )
 
+
+(define (upl-lisp-symbol name)
+  (let ([ss (upl-static-string name)])
+    '(fcall get-or-create-symbol ,(first ss) ,(second ss))))
+
 (define upl-code 
   '(
+    (proc memcopy (src dest length) ((index 0))
+          (
+            (while (< index length)
+                   (
+                    (u8:= (+ dest index) (u8@ (+ src index)))
+                    (:+= index 1)
+                    ))
+           ))
+    (func memcmp (left right length) ((index 0))
+          (
+            (while (< index length)
+                   (
+                    (cond
+                      [(< (u8@ (+ left index)) (u8@ (+ right index)))
+                       ((return-val -1))]
+                      [(> (u8@ (+ left index)) (u8@ (+ right index)))
+                       ((return-val 1))]
+                      [else ()])
+                    (:+= index 1)
+                    ))
+            (return-val 0)
+           ))
     (func create-block-list () ((block-ptr (fcall syscall-mmap-anon 4096)))
           (
            ,(upl-block-list-block-set-size 'block-ptr 0)
@@ -112,18 +169,18 @@
                                                        (block-ptr 0)
                                                        (block-size 0))
           (
-           (while (!= (i64@ ptr-to-block-list) 0)
+           (:= block-ptr (i64@ ptr-to-block-list))
+           (while (!= block-ptr 0)
                   (
-                   (:= block-ptr (i64@ ptr-to-block-list))
                    (:= block-size ,(upl-block-list-block-size 'block-ptr))
                    (:= index (- block-size 1))
                    (while (>= index 0)
                           (
-                           (call print-hex-number ,(upl-block-list-block-item 'block-ptr 'index))
+                           (call print-number ,(upl-block-list-block-item 'block-ptr 'index))
                            (call print-newline)
                            (:-= index 1)
                            ))
-                   (i64:= ptr-to-block-list ,(upl-block-list-block-next 'block-ptr))
+                   (:= block-ptr ,(upl-block-list-block-next 'block-ptr))
                    (:= index 0)
                    ))
            ))
@@ -168,12 +225,22 @@
                     0 0 ; dummy args
                     ))
            ))
+
     (proc init-lisp-stack () ()
           (
            (:= lisp-stack-size (* 10 4096))
            (:= lisp-stack-bottom (fcall syscall-mmap-anon lisp-stack-size))
            (:= lisp-stack-ptr (- lisp-stack-bottom 8))
            ))
+    (proc init-symbol-allocator () ()
+          (
+           (:= symbol-alloc-4k-buffer-ptr (fcall syscall-mmap-anon 4096))
+           ))
+    (proc init-symbol-block-list () ()
+          (
+           (:= symbol-block-list (fcall create-block-list))
+           ))
+
     (proc push-to-lisp-stack (obj) ()
           (
            (if (>= (+ 8 lisp-stack-ptr) (+ lisp-stack-bottom lisp-stack-size))
@@ -195,6 +262,11 @@
               ))
            (return-val (i64@ (- lisp-stack-ptr (* 8 index))))
            ))
+    (func pop-lisp-stack () ([value (fcall peek-lisp-stack 0)])
+          (
+           (call drop-lisp-stack 1)
+           (return-val value)
+           ))
     (proc drop-lisp-stack (n) ()
           (
            (if (< n 0)
@@ -211,6 +283,7 @@
               ))
            (:-= lisp-stack-ptr (* 8 n))
            ))
+
     (func allocate-i64 (num) ((addr 0))
           ((call gc-malloc (-> addr) 10)
            (u8:=  addr 0)
@@ -224,7 +297,7 @@
           (i64:= (+ addr 2) first)
           (i64:= (+ addr 10) second)
           (return-val addr)))
-    (func allocate-function (fptr nargs nfields) ((addr 0))
+    (func allocate-procedure (fptr nargs nfields) ((addr 0))
           (
            (if (< nargs 0)
              (
@@ -245,10 +318,102 @@
            (i64:= (+ addr 10) nargs)
            (i64:= (+ addr 18) nfields)
            (return-val addr)))
+    (func allocate-symbol (name-buf name-length) ((alloc-buf-ptr (% symbol-alloc-4k-buffer-ptr 4096))
+                                                  (symbol-struct-size ,(upl-obj-symbol-struct-size 'name-length))
+                                                  (symbol-ptr 0))
+          (
+           (if (> symbol-struct-size 4096)
+             (
+              ,(upl-print-static-string "symbol struct size is too large\n")
+              (call print-stack-trace)
+              ,(upl-exit 1)
+              ))
+           (if (>= (+ alloc-buf-ptr symbol-struct-size) 4096)
+             (
+               (call init-symbol-allocator) 
+               (:= alloc-buf-ptr (% symbol-alloc-4k-buffer-ptr 4096))
+              ))
+           (:= symbol-ptr symbol-alloc-4k-buffer-ptr)
+           (:+= symbol-alloc-4k-buffer-ptr symbol-struct-size)
+           ,(upl-obj-set-type-id 'symbol-ptr symbol-obj-type-id)
+           ,(upl-obj-symbol-set-name-length 'symbol-ptr 'name-length)
+           ,(upl-obj-symbol-set-is-bound 'symbol-ptr 0)
+           (call memcopy name-buf ,(upl-obj-symbol-name-buf 'symbol-ptr) name-length)
+           (return-val symbol-ptr)
+           ))
+    (func get-or-create-symbol (name-buf name-length) ((block-ptr 0)
+                                                       (block-size 0)
+                                                       (index 0)
+                                                       (symbol 0))
+          (
+           (:= block-ptr symbol-block-list)
+           (while (!= block-ptr 0)
+                  (
+                   (:= block-size ,(upl-block-list-block-size 'block-ptr))
+                   (:= index (- block-size 1))
+                   (while (>= index 0)
+                          (
+                           (:= symbol ,(upl-block-list-block-item 'block-ptr 'index))
+                           (if (and
+                                 (= ,(upl-obj-symbol-name-length 'symbol) name-length)
+                                 (= 0 (fcall memcmp ,(upl-obj-symbol-name-buf 'symbol) name-buf name-length)))
+                             (
+                              (return-val symbol)
+                              ))
+                           (:-= index 1)
+                           ))
+                   (:= block-ptr ,(upl-block-list-block-next 'block-ptr))
+                   (:= index 0)
+                   ))
+           (:= symbol (fcall allocate-symbol name-buf name-length))
 
+           (call add-item-to-block-list (-> symbol-block-list) symbol)
+           (return-val symbol)
+           ))
+
+    (proc call-lisp-procedure () ((lisp-proc 0))
+          (
+           (:= lisp-proc (fcall peek-lisp-stack 0)) 
+           (indirect-call ,(upl-obj-function-fptr 'lisp-proc))
+           ))
     (proc push-number-to-lisp-stack (num) ()
           (
            (call push-to-lisp-stack (fcall allocate-i64 num))
+           ))
+    (proc lisp-define (symbol) ([value 0])
+          (
+           (:= value (fcall pop-lisp-stack))
+           (if (!= 0 ,(upl-obj-symbol-is-bound 'symbol))
+             (
+              ,(upl-print-static-string "symbol ")
+              (call print-object symbol)
+              ,(upl-print-static-string " is already bound\n")
+              (call print-stack-trace)
+              ,(upl-exit 1)
+              ))
+           ,(upl-obj-symbol-set-binding 'symbol 'value)
+           ,(upl-obj-symbol-set-is-bound 'symbol 1)
+    ))
+    (proc push-symbol-bound-value (symbol) ()
+          (
+           (if (= 0 ,(upl-obj-symbol-is-bound 'symbol))
+             (
+              ,(upl-print-static-string "symbol ")
+              (call print-object symbol)
+              ,(upl-print-static-string " is not bound\n")
+              (call print-stack-trace)
+              ,(upl-exit 1)
+              ))
+           (call push-to-lisp-stack ,(upl-obj-symbol-binding 'symbol))
+           ))
+    (proc lisp-procedure-cons () ((pair 0))
+          (
+           ; stack state: [proc] [cdr] [car]
+           (:= pair (fcall allocate-pair
+                           (fcall peek-lisp-stack 2)
+                           (fcall peek-lisp-stack 1)))
+           (call drop-lisp-stack 3)
+           (call push-to-lisp-stack pair)
            ))
     (proc lisp-cons () ((pair 0))
           (
@@ -267,7 +432,8 @@
            ))
     (proc print-object (obj) ()
           (
-           (if (= 0 (fcall zero-if-list obj))
+           (if (or (= 0 (fcall zero-if-list obj))
+                   (= ,symbol-obj-type-id ,(upl-obj-type-id 'obj)))
              (
               ,(upl-print-static-string "'")
               ))
@@ -308,20 +474,52 @@
                (call print-object ,(upl-obj-pair-cdr 'obj))
                ,(upl-print-static-string ")")
                ))
+             [(= obj-type-id ,symbol-obj-type-id)
+              (
+               (call write-to-stdout ,(upl-obj-symbol-name-buf 'obj) ,(upl-obj-symbol-name-length 'obj))
+               )]
              (else (
                     ,(upl-print-static-string "bad obj-type\n")
                     )))
+           ))
+    (proc init-globals () ()
+          (
+           (call init-lisp-stack)
+           (call init-symbol-allocator)
+           (call init-symbol-block-list)
            ))
     (proc c () () ((i64:= 0 0)))
     (proc b () ((d 0)) ((call c) (:= d 0)))
     (proc a () ((d 0)) ((call b) (:= d 0)))
 
-    (proc test-print-object () ()
-          (
-           (block ,(compile-lisp-literal '(42 420 () 69)))
+    (proc test-lisp () ((proc 0))
+          {
+           ;(block ,(compile-lisp-literal '(42 420 () 69)))
+
+           (call push-number-to-lisp-stack 1)
+           (call lisp-define ,(upl-lisp-symbol "a"))
+           
+           ,(upl-print-static-string "a is bound to ")
+           (call print-object ,(upl-obj-symbol-binding (upl-lisp-symbol "a")))
+           (call print-newline)
+
+           (call push-number-to-lisp-stack 42)
+           (call lisp-define ,(upl-lisp-symbol "b"))
+           ,(upl-print-static-string "after define\n")
+
+           ,(upl-print-static-string "symbol a: ")
+           (call print-object ,(upl-lisp-symbol "a"))
+           (call print-newline)
+           (call push-symbol-bound-value ,(upl-lisp-symbol "a"))
+           (call push-symbol-bound-value ,(upl-lisp-symbol "b"))
+           ,(upl-print-static-string "after push\n")
+           (:= proc (fcall allocate-procedure (function-pointer lisp-procedure-cons) 2 0))
+           (call push-to-lisp-stack proc)
+           (call call-lisp-procedure)
+           ,(upl-print-static-string "after call\n")
            (call print-object (fcall peek-lisp-stack 0))
            (call print-newline)
-           ))
+           })
     (proc test-block-list () ((block-list 0) (index 0))
           (
            (:= block-list (fcall create-block-list))
@@ -348,20 +546,69 @@
            ))
     ))
 
-(define upl-compiler (new-upl-compiler upl-globals))
+(define upl-compiler (new-upl-compiler lisp-globals))
 
 ((upl-compiler-compile-next upl-compiler) upl-code)
-((upl-compiler-run upl-compiler) '() '(
+
+(define (compile-native-one-arg-func arg-name local-vars body)
+  (let ([funcs ((upl-compiler-compile-next upl-compiler) 
+                '(
+                  (bytes native-arg
+                         (
+                          ; return address is on the top of the stack
+                          ; need to push a dummy value (saved fp placeholder)
+                          ; then push the argument and then restore the stack pointer
+                          ; to match upl calling convention
+                          #x50 #x50 ; push rax ; push rax
+                          #x48 #x83 #xc4 #x10 ; add rsp, 16
+                          ))
+                  (proc __native-arg (,arg-name) ,local-vars ,body)
+                  ))])
+    (compiled-upl-func-ptr (first funcs))))
+
+
+(define native-arg-func
+  (compile-native-one-arg-func 
+    'arg 
+    '()
+    '(
+      ,(upl-print-static-string "native arg: ")
+      (call print-number arg)
+      (call print-newline)
+      )))
+
+(native-call-one-arg native-arg-func 42)
+
+((upl-compiler-run upl-compiler) '((left-str-ptr 0) (right-str-ptr 0)) '(
                                        ;,(upl-exit 42)
-                                       (call init-lisp-stack)
+                                       (call init-globals)
                                        ;(call print-newline)
-                                       (call test-print-object)
+                                       (call test-lisp)
+                                       ,(upl-exit 0)
+
+                                       ,(upl-debug-print-hex-value "after after init: symbol-block-list: " 'symbol-block-list)
 
                                        ,(upl-print-static-string "end\n")
                                        (call tests)
 
-                                       (call test-block-list)
-                                        (call a)
+                                       ;(call test-block-list)
+                                       ;(call a)
+                                       ,(list 'block
+                                              (list
+                                                (let ((ss (upl-static-string "a aa")))
+                                                  '(:= left-str-ptr ,(first ss)))
+                                                (let ((ss (upl-static-string "aaa")))
+                                                  '(:= right-str-ptr ,(first ss)))))
+                                       (:= test (fcall memcmp left-str-ptr right-str-ptr 3))
+                                       (if (= ,(upl-lisp-symbol "aaaa") ,(upl-lisp-symbol "aaa"))
+                                         (
+                                          ,(upl-print-static-string "symbols are equal\n")
+                                          )
+                                         (
+                                          ,(upl-print-static-string "symbols are not equal\n")
+                                          ))
+
                                        ))
 
+(println ((upl-compiler-global-value upl-compiler) 'test))
 
