@@ -301,13 +301,13 @@
           (
            (if (< nargs 0)
              (
-              ,(upl-print-static-string "nargs should be >= 0")
+              ,(upl-print-static-string "nargs should be >= 0\n")
               (call print-stack-trace)
               ,(upl-exit 1)
               ))
            (if (< nfields 0)
              (
-              ,(upl-print-static-string "nfields should be >= 0")
+              ,(upl-print-static-string "nfields should be >= 0\n")
               (call print-stack-trace)
               ,(upl-exit 1)
               ))
@@ -549,6 +549,9 @@
 (define upl-compiler (new-upl-compiler lisp-globals))
 
 ((upl-compiler-compile-next upl-compiler) upl-code)
+((upl-compiler-run upl-compiler) '() '( 
+                                       (call init-globals)
+                                       ))
 
 (define (compile-native-one-arg-func arg-name local-vars body)
   (let ([funcs ((upl-compiler-compile-next upl-compiler) 
@@ -567,18 +570,45 @@
     (compiled-upl-func-ptr (first funcs))))
 
 
-(define native-arg-func
+(define native-get-or-create-symbol
   (compile-native-one-arg-func 
-    'arg 
+    'name-buf-and-size-struct 
     '()
     '(
-      ,(upl-print-static-string "native arg: ")
-      (call print-number arg)
-      (call print-newline)
+      (return-val (fcall get-or-create-symbol (i64@ name-buf-and-size-struct) (i64@ (+ 8 name-buf-and-size-struct))))
       )))
 
-(native-call-one-arg native-arg-func 42)
+(define ffi-get-or-create-symbol
+  (let ([tmp-buffer-size 4096]
+        [tmp-buffer (syscall-mmap-anon tmp-buffer-size)]
+        [native-get-or-create-symbol
+          (compile-native-one-arg-func 
+            'str 
+            '()
+            '(
+              (return-val (fcall get-or-create-symbol (+ 8 str) (i64@ str)))
+              ))])
+    (lambda (name) [begin
+                     (assert-stmt "symbol name fits to the buffer" (>= tmp-buffer-size (+ 8 (string-length name))))
+                     (write-mem-i64 tmp-buffer (string-length name))
+                     (string-to-native-buffer name (+ 8 tmp-buffer))
+                     (native-call-one-arg native-get-or-create-symbol tmp-buffer)])))
 
+(define ffi-print-object
+  (let ([fptr
+          (compile-native-one-arg-func 
+            'obj 
+            '()
+            '(
+              (call print-object obj)
+              ))])
+    (lambda (obj) (native-call-one-arg fptr obj))))
+
+(println (ffi-get-or-create-symbol "asdf"))
+(println (ffi-get-or-create-symbol "asdf"))
+(println (ffi-get-or-create-symbol "as"))
+(ffi-print-object (ffi-get-or-create-symbol "the-symbol"))
+(print-string "\n")
 ((upl-compiler-run upl-compiler) '((left-str-ptr 0) (right-str-ptr 0)) '(
                                        ;,(upl-exit 42)
                                        (call init-globals)
@@ -595,7 +625,7 @@
                                        ;(call a)
                                        ,(list 'block
                                               (list
-                                                (let ((ss (upl-static-string "a aa")))
+                                                (let ((ss (upl-static-string "asdf")))
                                                   '(:= left-str-ptr ,(first ss)))
                                                 (let ((ss (upl-static-string "aaa")))
                                                   '(:= right-str-ptr ,(first ss)))))
