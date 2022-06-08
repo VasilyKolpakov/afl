@@ -2739,6 +2739,12 @@ symbol_bind lisp_s2_return_stack_ptr_symbol alloc_i64 return_stack_bottom ;
 lisp_register_builtin_function "exit" 1 exit_instruction ;
 lisp_register_builtin_function "syscall" 7 syscall_instruction ;
 lisp_register_builtin_function "native-call" 1 native_call_instruction ;
+lisp_register_builtin_function "native-call-one-arg" 2 {
+    lisp_value_stack_push
+    alloc_i64 native_call_one_arg bi@ { obj_i64_get_value } lisp_value_stack_pop lisp_value_stack_pop
+    lisp_assert_type "native-call-one-arg func is i64" i64_obj_type_id lisp_value_stack_peek 1
+    lisp_assert_type "native-call-one-arg arg is i64" i64_obj_type_id lisp_value_stack_peek_top
+} ;
 
 lisp_register_builtin_function "read-mem-i64" 1 read_mem_i64_instruction ;
 lisp_register_builtin_function "write-mem-i64" 2 write_mem_i64_instruction ;

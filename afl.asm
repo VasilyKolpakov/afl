@@ -53,6 +53,8 @@
 %endmacro
 
 %macro  debug 0
+        push        rax
+        push        rdi
         mov         rdx, rax
         mov         rax, 1
         mov         rdi, 1
@@ -61,6 +63,8 @@
         push        r14
         syscall
         pop         r14
+        pop         rax
+        pop         rdi
 %endmacro
 
 %macro  jump_to_next_instruction 0
@@ -518,11 +522,19 @@ i_native_indirect_call:
         mov         [r12 - 8*1], rax        ; write return value to data stack
         jump_to_next_instruction
 
+; <ptr> <arg> -> <ret val>
+i_native_indirect_call_one_arg:
+        drop_data_stack 2
+        mov         rdi,  [r12 + 8*1]       ; native instruciton pointer
+        mov         rax,  [r12 + 8*0]       ; arg
+        call        rdi
+        add         r12, 8
+        mov         [r12 - 8*1], rax        ; write return value to data stack
+        jump_to_next_instruction
+
 native_indirect_call_test:
-        mov         rbx, -9223372036854775808
-        mov         rdx, -9223372036854775808
-        mov         rcx, -9223372036854775808
-        mov         rax, -9223372036854775808
+        ;debug
+        add         rax, 42
         ret
 
 i_late_bind_and_call_word:
@@ -2736,7 +2748,8 @@ f_tests: equ     $-8
                  
                     def_instruction_word 'i', i_indirect_call
                     def_instruction_word_2 'n','i', i_native_indirect_call
-                    def_instruction_word_2 'n','t', native_indirect_call_test
+                    def_instruction_word_2 'n','I', i_native_indirect_call_one_arg
+                    def_constant_word_2    'n','t', native_indirect_call_test
                     def_instruction_word 'j', i_indirect_jmp
                     def_instruction_word 'l', i_late_bind_and_call_word
 
