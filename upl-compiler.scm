@@ -250,17 +250,35 @@
 (define (push-var-instruction index)
   (list 5 (lambda (ptr) (generate-push-var ptr index)) (list "push-var" index)))
 
-(define push-rax-instruction
-  (list 1 (lambda (ptr)
-            (write-mem-byte ptr #x50) ; push rax
-            )
-        (list "push rax")))
+(define (single-byte-instruction byte instruciton-name)
+    (list 1 
+          (lambda (ptr) (write-mem-byte ptr byte))
+          instruciton-name))
 
-(define set-rax-instruction
-  (list 1 (lambda (ptr)
-            (write-mem-byte ptr #x58) ; pop rax
-            )
-        (list "pop rax")))
+(define (two-byte-instruction first-byte second-byte instruciton-name)
+    (list 2 
+          (lambda (ptr) 
+            (begin
+              (write-mem-byte ptr first-byte)
+              (write-mem-byte (+ 1 ptr) second-byte)
+            ))
+          instruciton-name))
+
+(define push-rax-instruction (single-byte-instruction #x50 "push rax"))
+(define push-rdi-instruction (single-byte-instruction #x57 "push rdi"))
+(define push-rsi-instruction (single-byte-instruction #x56 "push rsi"))
+(define push-rdx-instruction (single-byte-instruction #x52 "push rdx"))
+(define push-rcx-instruction (single-byte-instruction #x51 "push rcx"))
+(define push-r8-instruction  (two-byte-instruction    #x41 #x50 "push r8"))
+(define push-r9-instruction  (two-byte-instruction    #x41 #x51 "push r9"))
+
+(define pop-rax-instruction (single-byte-instruction #x58 "pop rax"))
+(define pop-rdi-instruction (single-byte-instruction #x5f "pop rdi"))
+(define pop-rsi-instruction (single-byte-instruction #x5e "pop rsi"))
+(define pop-rdx-instruction (single-byte-instruction #x5a "pop rdx"))
+(define pop-rcx-instruction (single-byte-instruction #x59 "pop rcx"))
+(define pop-r8-instruction  (two-byte-instruction    #x41 #x58 "pop r8"))
+(define pop-r9-instruction  (two-byte-instruction    #x41 #x59 "pop r9"))
 
 (define (generate-set-var ptr index)
   (write-mem-byte ptr       #x58) ; pop rax
@@ -639,7 +657,7 @@
              (append
                (compile-expr (first stmt-args))
                (list
-                 set-rax-instruction
+                 pop-rax-instruction
                  (add-rsp-instruction (* 8 (length local-vars)))
                  return-instruction))))
           ((equal? stmt-type 'while)
@@ -712,7 +730,7 @@
           ((equal? stmt-type 'drop)
            (append
              (compile-expr (first stmt-args))
-             (list set-rax-instruction)))
+             (list pop-rax-instruction)))
           (else (panic "bad statement" stmt)))))
 
 
@@ -1067,10 +1085,10 @@
            (
             ; return address is on the top of the stack
             ; need to push a dummy value (saved fp placeholder)
-            ; then push the argument and then restore stack pointer
+            ; then push the argument and then restore the stack pointer
             ; to match upl calling convention
             #x50 #x52 ; push rax ; push rdx
-            #x48 #x83 #xc4 #x10 ; add rsp, 16 
+            #x48 #x83 #xc4 #x10 ; add rsp, 16
             ))
     (proc __sigsegv-handler (ucontext) ((fp-reg 0) (ip-reg 0))
           (
