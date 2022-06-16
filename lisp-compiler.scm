@@ -238,7 +238,7 @@
           (
            (:= lisp-stack-size (* 10 4096))
            (:= lisp-stack-bottom (fcall syscall-mmap-anon lisp-stack-size))
-           (:= lisp-stack-ptr (- lisp-stack-bottom 8))
+           (:= lisp-stack-ptr lisp-stack-bottom)
            ))
     (proc init-symbol-allocator () ()
           (
@@ -289,7 +289,6 @@
               ))
            (if (< (- lisp-stack-ptr (* 8 n)) lisp-stack-bottom)
              (
-              ,(upl-print-static-string "=== lisp stack underflow\n")
               (call print-stack-trace)
               ,(upl-exit 1)
               ))
@@ -503,7 +502,6 @@
     (proc init-globals () ()
           (
            (call init-lisp-stack)
-           (call init-lisp-stack)
            (call init-symbol-allocator)
            (call init-symbol-block-list)
            (call init-literals-block-list)
@@ -622,9 +620,30 @@
                      (string-to-native-buffer name (+ 8 tmp-buffer))
                      (native-call-one-arg native-get-or-create-symbol tmp-buffer)])))
 
+(define ffi-lisp-define 
+  (let ([tmp-buffer (syscall-mmap-anon 4096)]
+        [native-define
+          (compile-native-one-arg-func 
+            'arg-buf 
+            '()
+            '(
+              (call push-to-lisp-stack (i64@ arg-buf)) ;  obj
+              (call lisp-define (i64@ (+ arg-buf 8)))  ; symbol
+              ,(upl-print-static-string "after define\n")
+              ))])
+    (lambda (symbol-name obj) 
+      (let ([symbol-ptr (ffi-get-or-create-symbol symbol-name)])
+        (write-mem-i64 tmp-buffer obj)
+        (write-mem-i64 (+ tmp-buffer 8) symbol-ptr)
+        (native-call-one-arg native-define tmp-buffer)))))
+
 (define ffi-print-object (make-ffi-one-arg-proc 'print-object))
 
 (define ffi-allocate-number-literal (make-ffi-one-arg-func 'allocate-number-literal))
+(define ffi-allocate-i64 (make-ffi-one-arg-func 'allocate-i64))
+
+
+(ffi-lisp-define "a" (ffi-allocate-i64 42))
 
 (println (ffi-get-or-create-symbol "asdf"))
 (println (ffi-get-or-create-symbol "asdf"))
@@ -637,7 +656,6 @@
                                  '(
                                    ;,(upl-exit 42)
                                    ,(upl-print-static-string "before init-globals\n")
-                                   ;(call init-globals)
                                    ;(call print-newline)
                                    ;(call test-lisp)
 
@@ -652,7 +670,7 @@
                                    (call lisp-define ,(upl-lisp-symbol "cons"))
 
                                    ,(upl-print-static-string "after define\n")
-                                   (call push-to-lisp-stack (i64@ ,(ffi-allocate-number-literal 42)))
+                                   (call push-symbol-bound-value ,(upl-lisp-symbol "a"))
                                    (call push-to-lisp-stack (i64@ ,(ffi-allocate-number-literal 4242)))
 
                                    ,(upl-print-static-string "after literals\n")
