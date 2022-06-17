@@ -37,15 +37,15 @@
 (define (upl-obj-pair-cdr expr)
   '(i64@ (+ ,(+ 8 obj-header-size) ,expr)))
 
-(define function-obj-type-id 2)
+(define procedure-obj-type-id 2)
 ;   [fptr][nargs][nfields][fields ...]
-(define (upl-obj-function-fptr expr)
+(define (upl-obj-procedure-fptr expr)
   '(i64@ (+ ,obj-header-size ,expr)))
-(define (upl-obj-function-nargs expr)
+(define (upl-obj-procedure-nargs expr)
   '(i64@ (+ ,(+ 8 obj-header-size) ,expr)))
-(define (upl-obj-function-nfields expr)
+(define (upl-obj-procedure-nfields expr)
   '(i64@ (+ ,(+ 16 obj-header-size) ,expr)))
-(define (upl-obj-function-field n expr)
+(define (upl-obj-procedure-field n expr)
   '(i64@ (+ (* ,n 8) (+ ,(+ 24 obj-header-size) ,expr))))
 
 
@@ -324,7 +324,7 @@
               ))
            (call gc-malloc (-> addr) (+ (* 8 nfields) ,(+ 24 2)))
            (u8:=  addr 0)
-           (u8:=  (+ addr 1) ,function-obj-type-id)
+           (u8:=  (+ addr 1) ,procedure-obj-type-id)
            (i64:= (+ addr 2) fptr)
            (i64:= (+ addr 10) nargs)
            (i64:= (+ addr 18) nfields)
@@ -385,7 +385,7 @@
     (proc call-lisp-procedure () ((lisp-proc 0))
           (
            (:= lisp-proc (fcall peek-lisp-stack 0)) 
-           (indirect-call ,(upl-obj-function-fptr 'lisp-proc))
+           (indirect-call ,(upl-obj-procedure-fptr 'lisp-proc))
            ))
     (proc push-number-to-lisp-stack (num) ()
           (
@@ -447,6 +447,29 @@
                    (:= pair-ptr ,(upl-obj-pair-cdr 'pair-ptr))))
            (return-val pair-ptr)
            ))
+    (proc print-obj-type-id-name (type-id) ()
+          [
+           (cond [(= type-id ,i64-obj-type-id) [,(upl-print-static-string "i64")]]
+                 [(= type-id ,procedure-obj-type-id) [,(upl-print-static-string "procedure")]]
+                 [(= type-id ,pair-obj-type-id) [,(upl-print-static-string "pair")]]
+                 [else
+                   [,(upl-print-static-string "unknown obj type: ")
+                     (call print-number type-id)]])
+           ])
+    (proc check-lisp-type (obj type-id msg msg-length) ()
+          [
+           (if (or (= obj 0)
+                   (!= ,(upl-obj-type-id 'obj) type-id))
+             [
+                (call write-to-stdout msg msg-length)
+                ,(upl-print-static-string ": expected ")
+                (call print-obj-type-id-name type-id)
+                ,(upl-print-static-string ", but was ")
+                (call print-object obj)
+                (call print-newline)
+                ,(upl-exit 1)
+              ])
+           ])
     (proc print-object (obj) ()
           (
            (if (or (= 0 (fcall zero-if-list obj))
@@ -571,6 +594,13 @@
                                        (call init-globals)
                                        ))
 
+(define (compile-native-func name local-vars body)
+  (let ([funcs ((upl-compiler-compile-next upl-compiler) 
+                '(
+                  (proc ,name () ,local-vars ,body)
+                  ))])
+    (compiled-upl-func-ptr (first funcs))))
+
 (define (compile-native-one-arg-func arg-name local-vars body)
   (let ([funcs ((upl-compiler-compile-next upl-compiler) 
                 '(
@@ -629,7 +659,6 @@
             '(
               (call push-to-lisp-stack (i64@ arg-buf)) ;  obj
               (call lisp-define (i64@ (+ arg-buf 8)))  ; symbol
-              ,(upl-print-static-string "after define\n")
               ))])
     (lambda (symbol-name obj) 
       (let ([symbol-ptr (ffi-get-or-create-symbol symbol-name)])
@@ -637,10 +666,51 @@
         (write-mem-i64 (+ tmp-buffer 8) symbol-ptr)
         (native-call-one-arg native-define tmp-buffer)))))
 
+(define ffi-lisp-define-procedure
+  (let ([tmp-buffer (syscall-mmap-anon 4096)]
+        [native-proc-define
+          (compile-native-func 
+            'anon-func
+            '()
+            '(
+              (call push-to-lisp-stack (fcall allocate-procedure
+                                              (i64@ (+ ,tmp-buffer 8))  ; fptr
+                                              (i64@ (+ ,tmp-buffer 16)) ; number of args
+                                              0))
+              (call lisp-define (i64@ ,tmp-buffer)))  ; symbol
+              )])
+    (lambda (name number-of-args local-vars code) 
+      (let ([name-str (symbol-to-string name)]
+            [symbol-ptr (ffi-get-or-create-symbol name-str)]
+            [fptr (compile-native-func name local-vars code)])
+        (write-mem-i64 tmp-buffer (ffi-get-or-create-symbol name-str))
+        (write-mem-i64 (+ tmp-buffer 8) fptr)
+        (write-mem-i64 (+ tmp-buffer 16) number-of-args)
+        (native-call native-proc-define)))))
+
 (define ffi-print-object (make-ffi-one-arg-proc 'print-object))
 
 (define ffi-allocate-number-literal (make-ffi-one-arg-func 'allocate-number-literal))
 (define ffi-allocate-i64 (make-ffi-one-arg-func 'allocate-i64))
+
+(define (upl-check-lisp-type obj type-id msg)
+  (let ([ss (upl-static-string msg)])
+    '(call check-lisp-type ,obj ,type-id ,(first ss) ,(second ss))))
+
+(ffi-lisp-define-procedure '+ 2
+                           '((left 0) (right 0) (obj 0))
+                           '(
+                             ; TODO: add type check
+                             (:= left  (fcall peek-lisp-stack 2))
+                             (:= right (fcall peek-lisp-stack 1))
+                             ,(upl-check-lisp-type 'left i64-obj-type-id "first arg of '+'")
+                             ,(upl-check-lisp-type 'right i64-obj-type-id "second arg of '+'")
+                             (call drop-lisp-stack 2)
+                             ,(upl-print-static-string "lisp +: ")
+                             (call print-number (+ ,(upl-obj-i64-value 'left) ,(upl-obj-i64-value 'right)))
+                             (call print-newline)
+                             (call push-number-to-lisp-stack (+ left right))
+                             ))
 
 
 (ffi-lisp-define "a" (ffi-allocate-i64 42))
@@ -671,11 +741,12 @@
 
                                    ,(upl-print-static-string "after define\n")
                                    (call push-symbol-bound-value ,(upl-lisp-symbol "a"))
-                                   (call push-to-lisp-stack (i64@ ,(ffi-allocate-number-literal 4242)))
+                                   (call push-to-lisp-stack 0)
+                                   ;(call push-to-lisp-stack (i64@ ,(ffi-allocate-number-literal 4242)))
 
                                    ,(upl-print-static-string "after literals\n")
 
-                                   (call push-symbol-bound-value ,(upl-lisp-symbol "cons"))
+                                   (call push-symbol-bound-value ,(upl-lisp-symbol "+"))
                                    (call call-lisp-procedure)
 
                                    ,(upl-print-static-string "after call\n")
