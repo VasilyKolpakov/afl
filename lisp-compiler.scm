@@ -697,21 +697,25 @@
   (let ([ss (upl-static-string msg)])
     '(call check-lisp-type ,obj ,type-id ,(first ss) ,(second ss))))
 
-(ffi-lisp-define-procedure '+ 2
-                           '((left 0) (right 0) (obj 0))
-                           '(
-                             ; TODO: add type check
-                             (:= left  (fcall peek-lisp-stack 2))
-                             (:= right (fcall peek-lisp-stack 1))
-                             ,(upl-check-lisp-type 'left i64-obj-type-id "first arg of '+'")
-                             ,(upl-check-lisp-type 'right i64-obj-type-id "second arg of '+'")
-                             (call drop-lisp-stack 2)
-                             ,(upl-print-static-string "lisp +: ")
-                             (call print-number (+ ,(upl-obj-i64-value 'left) ,(upl-obj-i64-value 'right)))
-                             (call print-newline)
-                             (call push-number-to-lisp-stack (+ left right))
-                             ))
+; define arithmetic operations
+(foreach 
+  (lambda (op)
+    (ffi-lisp-define-procedure op 2
+                               '((left 0) (right 0) (obj 0))
+                               '(
+                                 (:= left  (fcall peek-lisp-stack 1))
+                                 (:= right (fcall peek-lisp-stack 2))
+                                 ,(upl-check-lisp-type 'left  i64-obj-type-id (--- string-concat "first arg of '"  (symbol-to-string op) "'"))
+                                 ,(upl-check-lisp-type 'right i64-obj-type-id (--- string-concat "second arg of '" (symbol-to-string op) "'"))
+                                 (call drop-lisp-stack 2)
+                                 (call push-number-to-lisp-stack (,op ,(upl-obj-i64-value 'left) ,(upl-obj-i64-value 'right)))
+                                 )))
+  '(+ - * / %))
 
+; to compile lisp expression:
+;   - symbol: emit push bound value
+;   - literal: emit push literal
+;   - list: compile items in reverse order and emit function call code at the end
 
 (ffi-lisp-define "a" (ffi-allocate-i64 42))
 
@@ -741,12 +745,12 @@
 
                                    ,(upl-print-static-string "after define\n")
                                    (call push-symbol-bound-value ,(upl-lisp-symbol "a"))
-                                   (call push-to-lisp-stack 0)
-                                   ;(call push-to-lisp-stack (i64@ ,(ffi-allocate-number-literal 4242)))
+                                   ;(call push-to-lisp-stack 0)
+                                   (call push-to-lisp-stack (i64@ ,(ffi-allocate-number-literal 4242)))
 
                                    ,(upl-print-static-string "after literals\n")
 
-                                   (call push-symbol-bound-value ,(upl-lisp-symbol "+"))
+                                   (call push-symbol-bound-value ,(upl-lisp-symbol "-"))
                                    (call call-lisp-procedure)
 
                                    ,(upl-print-static-string "after call\n")
