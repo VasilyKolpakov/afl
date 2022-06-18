@@ -29,17 +29,6 @@
         (print-stack-trace)
         (exit 1)))))
 
-(define alist-lookup-rec
-  (lambda (l k)
-    (if (empty? l)
-      '()
-      (if (equal? (car (car l)) k)
-        (cdr (car l))
-        (alist-lookup-rec (cdr l) k)))))
-
-(define alist-lookup
-  (lambda (l k) (alist-lookup-rec (assert l list? "alist-lookup") k)))
-
 (define fixed-point-with-limit
   (lambda (f l i)
     (if (< l 1)

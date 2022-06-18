@@ -2837,6 +2837,26 @@ lisp_register_builtin_function "print-function" 1 {
     lisp_value_stack_pop
 } ;
 
+lisp_register_builtin_function "alist-lookup" 2 {
+    lisp_value_stack_push
+    if { not = 0 dup } {
+        obj_pair_cdr obj_pair_car
+    } { }
+    drop lisp_value_stack_pop
+    drop lisp_value_stack_pop
+    while { lazy_and { not obj_equal lisp_value_stack_peek_top obj_pair_car obj_pair_car dup } not = 0 dup } {
+        obj_pair_cdr
+    }
+    if { not obj_is_list dup } {
+        exit 1
+        stacktrace_print_return_stack_except_n_slots 2
+        print_newline
+        print_obj dup
+        print_string "alist-lookup expects the frist arg to be a list but was: "
+    } { }
+    lisp_value_stack_peek 1
+} ;
+
 lisp_register_builtin_function "enable-eval-debug-logging" 0 {
     lisp_value_stack_push 0
     lisp_eval_debug_enable
@@ -2915,6 +2935,7 @@ def "print_string_instruction_func" { call print_string_instruction } ;
 se_check_last_defined_function ;
 
 #se_enable ;
+se_check_function_by_name "lisp builtin: alist-lookup" ;
 se_check_function_by_name "buffered_input_advance" ;
 se_check_function_by_name "lisp builtin: string-concat" ;
 se_check_function_by_name "lisp builtin: symbol-to-string" ;
