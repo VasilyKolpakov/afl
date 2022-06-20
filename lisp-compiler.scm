@@ -72,16 +72,6 @@
 (define (upl-obj-symbol-struct-size name-size)
   '(+ ,(+ 17 obj-header-size) ,name-size))
 
-(define (compile-lisp-literal obj)
-  (cond
-    ((empty? obj) '((call push-to-lisp-stack 0)))
-    ((number? obj) '((call push-number-to-lisp-stack ,obj)))
-    ((pair? obj) (--- append
-                   (compile-lisp-literal (car obj))
-                   (compile-lisp-literal (cdr obj))
-                   '((call lisp-cons))))
-    (else (panic (list "bad obj: " obj)))))
-
 (define lisp-globals
   '(
     lisp-stack-bottom
@@ -715,51 +705,46 @@
 ; to compile lisp expression:
 ;   - symbol: emit push bound value
 ;   - literal: emit push literal
-;   - list: compile items in reverse order and emit function call code at the end
+;   - list:
+;       - define
+;       - quote
+;       - if
+;       - cond?
+;       - let
+;       - begin
+;       - lambda
+;       - default: compile items in reverse order and emit function call code at the end
+
+(define (compile-lisp-expression expr local-vals)
+  (cond
+    [(symbol? expr) 
+     '(
+       (call push-symbol-bound-value ,(upl-lisp-symbol (symbol-to-string expr)))
+       )]
+    [(number? expr)
+     '(
+       (call push-to-lisp-stack (i64@ ,(ffi-allocate-number-literal expr)))
+       )]
+    [(list? expr)
+     '(
+       (block ,(flatmap (lambda (e) (compile-lisp-expression e local-vals))
+                        (reverse expr)))
+       (call call-lisp-procedure) ; TODO: check arg count
+       )]
+    [else (panic (list "bad obj: " obj))]))
+
 
 (ffi-lisp-define "a" (ffi-allocate-i64 42))
+(ffi-lisp-define "b" (ffi-allocate-i64 4242))
 
-(println (ffi-get-or-create-symbol "asdf"))
-(println (ffi-get-or-create-symbol "asdf"))
-(println (ffi-get-or-create-symbol "as"))
-(ffi-print-object (ffi-get-or-create-symbol "the-symbol"))
-(print-string "\n")
-((upl-compiler-run upl-compiler) '([left-str-ptr 0]
-                                   [right-str-ptr 0]
-                                   [proc 0]) 
+((upl-compiler-run upl-compiler) '() 
                                  '(
-                                   ;,(upl-exit 42)
-                                   ,(upl-print-static-string "before init-globals\n")
-                                   ;(call print-newline)
-                                   ;(call test-lisp)
+                                   ;(call tests)
+                                   (block ,(compile-lisp-expression '(- b a) '()))
 
-                                   ,(upl-debug-print-hex-value "after after init: symbol-block-list: " 'symbol-block-list)
-                                   (call tests)
-
-                                   ,(upl-print-static-string "test-block-list\n")
-
-
-                                   (:= proc (fcall allocate-procedure (function-pointer lisp-procedure-cons) 2 0))
-                                   (call push-to-lisp-stack proc)
-                                   (call lisp-define ,(upl-lisp-symbol "cons"))
-
-                                   ,(upl-print-static-string "after define\n")
-                                   (call push-symbol-bound-value ,(upl-lisp-symbol "a"))
-                                   ;(call push-to-lisp-stack 0)
-                                   (call push-to-lisp-stack (i64@ ,(ffi-allocate-number-literal 4242)))
-
-                                   ,(upl-print-static-string "after literals\n")
-
-                                   (call push-symbol-bound-value ,(upl-lisp-symbol "-"))
-                                   (call call-lisp-procedure)
-
-                                   ,(upl-print-static-string "after call\n")
                                    (call print-object (fcall peek-lisp-stack 0))
                                    (call print-newline)
                                    ;(call test-block-list)
                                    ;(call a)
-
                                    ))
-
-(println ((upl-compiler-global-value upl-compiler) 'test))
 
