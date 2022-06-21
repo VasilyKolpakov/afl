@@ -726,21 +726,36 @@
        (call push-to-lisp-stack (i64@ ,(ffi-allocate-number-literal expr)))
        )]
     [(list? expr)
-     '(
-       (block ,(flatmap (lambda (e) (compile-lisp-expression e local-vals))
-                        (reverse expr)))
-       (call call-lisp-procedure) ; TODO: check arg count
-       )]
-    [else (panic (list "bad obj: " obj))]))
+     (cond
+       [(equal? 'define (first expr))
+        [begin
+          (assert-stmt (list "'define' has 2 args, not: " expr) (equal? (length expr) 3))
+          (assert-stmt (list "first arg of 'define' must be a symbol: " expr) (symbol? (second expr)))
+          '(
+            (block ,(compile-lisp-expression (nth 2 expr) local-vals))
+            (call lisp-define ,(upl-lisp-symbol (symbol-to-string (second expr))))
+            )]]
+       [(equal? 'begin (first expr))
+        (cdr
+          (flatmap (lambda (e) (let ([compiled-expr (compile-lisp-expression e local-vals)])
+                                 (append '((call drop-lisp-stack 1)) compiled-expr)))
+                   (cdr expr)))]
+       [else
+         '(
+           (block ,(flatmap (lambda (e) (compile-lisp-expression e local-vals))
+                            (reverse expr)))
+           (call call-lisp-procedure) ; TODO: check arg count
+           )])]
+    [else (panic (list "bad expression: " expr))]))
 
 
-(ffi-lisp-define "a" (ffi-allocate-i64 42))
 (ffi-lisp-define "b" (ffi-allocate-i64 4242))
 
 ((upl-compiler-run upl-compiler) '() 
                                  '(
                                    ;(call tests)
-                                   (block ,(compile-lisp-expression '(- b a) '()))
+                                   (block ,(compile-lisp-expression '(define a 42) '()))
+                                   (block ,(compile-lisp-expression '(begin (* a 2) 4242) '()))
 
                                    (call print-object (fcall peek-lisp-stack 0))
                                    (call print-newline)
