@@ -25,6 +25,7 @@
   '(u8:= (+ 1 ,obj) ,obj-type))
 
 (define obj-header-size 2)
+(define nil-obj-type-id -1)
 (define i64-obj-type-id 0)
 ;   [value: i64]
 (define (upl-obj-i64-value expr)
@@ -71,6 +72,10 @@
 
 (define (upl-obj-symbol-struct-size name-size)
   '(+ ,(+ 17 obj-header-size) ,name-size))
+
+(define boolean-obj-type-id 4)
+(define boolean-obj-true-value -1)
+(define boolean-obj-false-value -2)
 
 (define lisp-globals
   '(
@@ -192,6 +197,12 @@
                 ,(upl-exit 1)
                 ) ())
            (i64:= ,alloc-bump-ptr (+ bump-ptr size))
+           (if (or (= bump-ptr -1) (= bump-ptr -2))
+             [
+                ,(upl-print-static-string "gc-malloc returned -1 or -2 (those addressed are reseved for boolean values)\n")
+                ,(upl-exit 1)
+              ])
+
            (i64:= addr-out bump-ptr)
            ))
     (func syscall-mmap-anon (size) ()
@@ -432,28 +443,37 @@
            ))
     (func zero-if-list (list) ((pair-ptr list))
           (
-           (while (and (!= pair-ptr 0) (= ,pair-obj-type-id ,(upl-obj-type-id 'pair-ptr)))
+           (while (and (!= pair-ptr 0) (= ,pair-obj-type-id (fcall obj-type-id pair-ptr)))
                   (
                    (:= pair-ptr ,(upl-obj-pair-cdr 'pair-ptr))))
            (return-val pair-ptr)
            ))
-    (proc print-obj-type-id-name (type-id) ()
+    (func obj-type-id (obj) ()
           [
-           (cond [(= type-id ,i64-obj-type-id) [,(upl-print-static-string "i64")]]
-                 [(= type-id ,procedure-obj-type-id) [,(upl-print-static-string "procedure")]]
-                 [(= type-id ,pair-obj-type-id) [,(upl-print-static-string "pair")]]
-                 [else
-                   [,(upl-print-static-string "unknown obj type: ")
-                     (call print-number type-id)]])
+           (cond
+             [(= obj 0) [(return-val ,nil-obj-type-id)]]
+             [(or (= obj -1) (= obj -2)) [(return-val ,boolean-obj-type-id)]]
+             [else [(return-val ,(upl-obj-type-id 'obj))]])
+           ])
+    (proc print-obj-type-id-name (obj) ([type-id 0])
+          [
+           (cond
+             [(= type-id ,nil-obj-type-id) [,(upl-print-static-string "nil-type")]]
+             [(= type-id ,boolean-obj-type-id) [,(upl-print-static-string "boolean")]]
+             [(= type-id ,i64-obj-type-id) [,(upl-print-static-string "i64")]]
+             [(= type-id ,procedure-obj-type-id) [,(upl-print-static-string "procedure")]]
+             [(= type-id ,pair-obj-type-id) [,(upl-print-static-string "pair")]]
+             [else
+               [,(upl-print-static-string "unknown obj type: ")
+                 (call print-number type-id)]])
            ])
     (proc check-lisp-type (obj type-id msg msg-length) ()
           [
-           (if (or (= obj 0)
-                   (!= ,(upl-obj-type-id 'obj) type-id))
+           (if (!= (fcall obj-type-id obj) type-id)
              [
                 (call write-to-stdout msg msg-length)
                 ,(upl-print-static-string ": expected ")
-                (call print-obj-type-id-name type-id)
+                (call print-obj-type-id-name (fcall obj-type-id obj))
                 ,(upl-print-static-string ", but was ")
                 (call print-object obj)
                 (call print-newline)
@@ -463,7 +483,7 @@
     (proc print-object (obj) ()
           (
            (if (or (= 0 (fcall zero-if-list obj))
-                   (= ,symbol-obj-type-id ,(upl-obj-type-id 'obj)))
+                   (= ,symbol-obj-type-id (fcall obj-type-id obj)))
              (
               ,(upl-print-static-string "'")
               ))
@@ -471,12 +491,24 @@
            ))
     (proc print-quoted-object (obj) ((obj-type-id 0) (tmp 0))
           (
-           (if (= obj 0)
-             (
-              ,(upl-print-static-string "()")
-              (return)
-              ))
-           (:= obj-type-id ,(upl-obj-type-id 'obj))
+           (cond
+             [(= obj 0)
+              (
+               ,(upl-print-static-string "()")
+               (return)
+               )]
+             [(= obj -1)
+              (
+               ,(upl-print-static-string "#t")
+               (return)
+               )]
+             [(= obj -2)
+              (
+               ,(upl-print-static-string "#f")
+               (return)
+               )]
+             [else ()])
+           (:= obj-type-id (fcall obj-type-id obj))
            (cond
              ((= (fcall zero-if-list obj) 0)
               (
@@ -707,11 +739,11 @@
 ;   - literal: emit push literal
 ;   - list:
 ;       - define
-;       - quote
+;       - begin
 ;       - if
+;       - quote
 ;       - cond?
 ;       - let
-;       - begin
 ;       - lambda
 ;       - default: compile items in reverse order and emit function call code at the end
 
@@ -720,6 +752,10 @@
     [(symbol? expr) 
      '(
        (call push-symbol-bound-value ,(upl-lisp-symbol (symbol-to-string expr)))
+       )]
+    [(boolean? expr)
+     '(
+       (call push-to-lisp-stack ,(if expr boolean-obj-true-value boolean-obj-false-value))
        )]
     [(number? expr)
      '(
@@ -749,13 +785,14 @@
     [else (panic (list "bad expression: " expr))]))
 
 
-(ffi-lisp-define "b" (ffi-allocate-i64 4242))
+(ffi-lisp-define "nil" 0)
 
 ((upl-compiler-run upl-compiler) '() 
                                  '(
                                    ;(call tests)
                                    (block ,(compile-lisp-expression '(define a 42) '()))
-                                   (block ,(compile-lisp-expression '(begin (* a 2) 4242) '()))
+                                   ;(block ,(compile-lisp-expression '(begin (* a nil) 4242) '()))
+                                   (block ,(compile-lisp-expression #t '()))
 
                                    (call print-object (fcall peek-lisp-stack 0))
                                    (call print-newline)

@@ -1525,6 +1525,24 @@ def "open_paren_position_stack_is_empty" {
     array_list_is_empty open_paren_position_stack
 } ;
 
+def "parse_symbol_or_number_or_boolean_switch"
+    when { parse_i64_string token_get_value token_scanner_peek } then {
+        lisp_value_stack_push alloc_i64
+    } otherwise
+    when { parse_hex_i64_string token_get_value token_scanner_peek drop } then {
+        lisp_value_stack_push alloc_i64
+    } otherwise
+    when { string_equals "#t" token_get_value token_scanner_peek drop } then {
+        lisp_value_stack_push obj_bool_true
+    } otherwise
+    when { string_equals "#f" token_get_value token_scanner_peek } then {
+        lisp_value_stack_push obj_bool_false
+    } otherwise
+    {
+        lisp_value_stack_push get_or_create_symbol token_get_value token_scanner_peek
+    }
+;
+
 def "read_next_expression_switch"
     when { = token_comma_type token_get_type_id token_scanner_peek } then {
         lisp_value_stack_push drop lisp_value_stack_pop
@@ -1594,18 +1612,7 @@ def "read_next_expression_switch"
     when { = token_symbol_or_i64_literal_type token_get_type_id token_scanner_peek } then {
         token_scanner_advance
         token_destroy token_scanner_peek
-        if { } {
-            lisp_value_stack_push alloc_i64
-        } {
-            if { } {
-                lisp_value_stack_push alloc_i64
-            } {
-                lisp_value_stack_push get_or_create_symbol token_get_value token_scanner_peek drop
-            }
-            parse_hex_i64_string token_get_value token_scanner_peek
-            drop
-        }
-        parse_i64_string token_get_value token_scanner_peek
+        parse_symbol_or_number_or_boolean_switch
     } otherwise
     when { = token_string_literal_type token_get_type_id token_scanner_peek } then {
         token_scanner_advance
@@ -2675,6 +2682,14 @@ lisp_register_builtin_function "symbol?" 1 {
     }
     lisp_value_stack_pop
 } ;
+lisp_register_builtin_function "boolean?" 1 {
+    if { drop swap lazy_and { = bool_obj_type_id obj_get_type_id dup } not = 0 dup } {
+        lisp_value_stack_push obj_bool_true
+    } {
+        lisp_value_stack_push obj_bool_false
+    }
+    lisp_value_stack_pop
+} ;
 lisp_register_builtin_function "number?" 1 {
     if { drop swap lazy_and { = i64_obj_type_id obj_get_type_id dup } not = 0 dup } {
         lisp_value_stack_push obj_bool_true
@@ -2935,6 +2950,7 @@ def "print_string_instruction_func" { call print_string_instruction } ;
 se_check_last_defined_function ;
 
 #se_enable ;
+se_check_function_by_name "parse_symbol_or_number_or_boolean_switch" ;
 se_check_function_by_name "lisp builtin: alist-lookup" ;
 se_check_function_by_name "buffered_input_advance" ;
 se_check_function_by_name "lisp builtin: string-concat" ;
@@ -2954,14 +2970,12 @@ se_check_function_by_name "obj_is_symbol" ;
 se_check_function_by_name "lisp_register_builtin_function" ;
 se_check_function_by_name "lisp_gc_push_roots_to_stack" ;
 se_check_function_by_name "lisp_gc_mark_push_refs_switch" ;
-se_check_function_by_name "token_open_paren_couterpart" ;
 se_check_function_by_name "read_next_expression" ;
 se_check_function_by_name "print_obj" ;
 se_check_function_by_name "not_instruction_f" ;
 se_check_function_by_name "lisp_gc_sweep" ;
 se_check_function_by_name "lisp_assert_type" ;
 se_check_function_by_name "alloc_lambda" ;
-
 #constant "cb" code_buffer_new ;
 #code_buffer_prepend_code cb { print_string "test\n" } ;
 #code_buffer_prepend_code cb { if { true } { assert "tail call if_then" false } { } } ;
