@@ -763,6 +763,16 @@
        )]
     [(list? expr)
      (cond
+       [(equal? 'if (first expr))
+        [begin
+          (assert-stmt (list "'if' has 3 args, not: " expr) (equal? (length expr) 4))
+          '(
+            (block ,(compile-lisp-expression (second expr) local-vals))
+            ,(upl-check-lisp-type '(fcall peek-lisp-stack 0) boolean-obj-type-id "first if arg")
+            (if (= (fcall pop-lisp-stack) ,boolean-obj-true-value)
+              [(block ,(compile-lisp-expression (nth 2 expr) local-vals))]
+              [(block ,(compile-lisp-expression (nth 3 expr) local-vals))])
+            )]]
        [(equal? 'define (first expr))
         [begin
           (assert-stmt (list "'define' has 2 args, not: " expr) (equal? (length expr) 3))
@@ -792,7 +802,7 @@
                                    ;(call tests)
                                    (block ,(compile-lisp-expression '(define a 42) '()))
                                    ;(block ,(compile-lisp-expression '(begin (* a nil) 4242) '()))
-                                   (block ,(compile-lisp-expression #t '()))
+                                   (block ,(compile-lisp-expression '(if #t 1 2) '()))
 
                                    (call print-object (fcall peek-lisp-stack 0))
                                    (call print-newline)
