@@ -424,21 +424,19 @@
            (i64:= handle (fcall allocate-i64 num))
            (return-val handle)
            ])
+    (func allocate-literal-from-stack () ([handle 0])
+          [
+           (:= handle (fcall next-value-slot-in-block-list (-> literals-block-list)))
+           (i64:= handle (fcall pop-lisp-stack))
+           (return-val handle)
+           ])
     (proc lisp-procedure-cons () ((pair 0))
           (
-           ; stack state: [proc] [cdr] [car]
-           (:= pair (fcall allocate-pair
-                           (fcall peek-lisp-stack 2)
-                           (fcall peek-lisp-stack 1)))
-           (call drop-lisp-stack 3)
-           (call push-to-lisp-stack pair)
-           ))
-    (proc lisp-cons () ((pair 0))
-          (
+           ; stack state: [proc] [car] [cdr]
            (:= pair (fcall allocate-pair
                            (fcall peek-lisp-stack 1)
-                           (fcall peek-lisp-stack 0)))
-           (call drop-lisp-stack 2)
+                           (fcall peek-lisp-stack 2)))
+           (call drop-lisp-stack 3)
            (call push-to-lisp-stack pair)
            ))
     (func zero-if-list (list) ((pair-ptr list))
@@ -647,6 +645,7 @@
       (call ,func-name arg)
       ))])
     (lambda (arg) (native-call-one-arg fptr arg))))
+
 (define (make-ffi-one-arg-func func-name)
   (let ([fptr (compile-native-one-arg-func 
     'arg 
@@ -655,6 +654,12 @@
       (return-val (fcall ,func-name arg))
       ))])
     (lambda (arg) (native-call-one-arg fptr arg))))
+
+(define (make-ffi-no-arg-func func-name)
+  (let ([funcs ((upl-compiler-get-functions upl-compiler))]
+        [func (findf (lambda (f) (equal? func-name (compiled-upl-func-name f))) funcs)]
+        [fptr (compiled-upl-func-ptr func)])
+    (lambda () (native-call fptr))))
 
 (define ffi-get-or-create-symbol
   (let ([tmp-buffer-size 4096]
@@ -713,6 +718,7 @@
 (define ffi-print-object (make-ffi-one-arg-proc 'print-object))
 
 (define ffi-allocate-number-literal (make-ffi-one-arg-func 'allocate-number-literal))
+(define ffi-allocate-literal-from-stack (make-ffi-no-arg-func 'allocate-literal-from-stack))
 (define ffi-allocate-i64 (make-ffi-one-arg-func 'allocate-i64))
 
 (define (upl-check-lisp-type obj type-id msg)
@@ -734,6 +740,38 @@
                                  )))
   '(+ - * / %))
 
+(define (compile-lisp-literal expr)
+  (cond
+    [(symbol? expr) 
+     '(
+       (call push-to-lisp-stack ,(upl-lisp-symbol (symbol-to-string expr)))
+       )]
+    [(boolean? expr)
+     '(
+       (call push-to-lisp-stack ,(if expr boolean-obj-true-value boolean-obj-false-value))
+       )]
+    [(number? expr)
+     '(
+       (call push-to-lisp-stack (i64@ ,(ffi-allocate-number-literal expr)))
+       )]
+    [(empty? expr)
+     '(
+       (call push-to-lisp-stack 0)
+       )]
+    [(pair? expr)
+     '(
+       (block ,(compile-lisp-literal (cdr expr)))
+       (block ,(compile-lisp-literal (car expr)))
+       (call push-to-lisp-stack 0)
+       (call lisp-procedure-cons)
+       )]
+    [else (panic (list "bad expression: " expr))]))
+
+(define (upl-create-lisp-literal expr)
+  ((upl-compiler-run upl-compiler) '()
+                                   '((block ,(compile-lisp-literal expr))))
+  (ffi-allocate-literal-from-stack))
+
 ; to compile lisp expression:
 ;   - symbol: emit push bound value
 ;   - literal: emit push literal
@@ -742,7 +780,6 @@
 ;       - begin
 ;       - if
 ;       - quote
-;       - cond?
 ;       - let
 ;       - lambda
 ;       - default: compile items in reverse order and emit function call code at the end
@@ -786,6 +823,12 @@
           (flatmap (lambda (e) (let ([compiled-expr (compile-lisp-expression e local-vals)])
                                  (append '((call drop-lisp-stack 1)) compiled-expr)))
                    (cdr expr)))]
+       [(equal? 'quote (first expr))
+        [begin
+          (assert-stmt (list "'quote' has 1 arg, not: " expr) (equal? (length expr) 2))
+          '(
+            (call push-to-lisp-stack (i64@ ,(upl-create-lisp-literal expr)))
+            )]]
        [else
          '(
            (block ,(flatmap (lambda (e) (compile-lisp-expression e local-vals))
@@ -794,7 +837,6 @@
            )])]
     [else (panic (list "bad expression: " expr))]))
 
-
 (ffi-lisp-define "nil" 0)
 
 ((upl-compiler-run upl-compiler) '() 
@@ -802,7 +844,9 @@
                                    ;(call tests)
                                    (block ,(compile-lisp-expression '(define a 42) '()))
                                    ;(block ,(compile-lisp-expression '(begin (* a nil) 4242) '()))
-                                   (block ,(compile-lisp-expression '(if #t 1 2) '()))
+                                   (block ,(compile-lisp-expression ''a '()))
+
+                                   
 
                                    (call print-object (fcall peek-lisp-stack 0))
                                    (call print-newline)

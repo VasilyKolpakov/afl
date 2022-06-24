@@ -156,9 +156,7 @@
     ((symbol? expr) (list 'quote expr))
     ((not (list? expr)) expr)
     ((empty? expr) '(quote ()))
-    ((not (expr-has-unquote expr)) (if (equal? (car expr) 'quote)
-                                       expr
-                                       (list 'quote expr)))
+    ((not (expr-has-unquote expr)) (list 'quote expr))
     ((equal? (car expr) 'unquote) (car (cdr expr)))
     (else (cons 'list (map transform-quasiquote expr)))))
 

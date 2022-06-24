@@ -1139,9 +1139,10 @@
     (write-mem-i64 proc-dict-ptr dict-ptr)))
 
 
-(define-struct upl-compiler ((compile-next procedure?)
-                             (run procedure?)
-                             (global-value procedure?)))
+(define-struct upl-compiler ([compile-next procedure?]
+                             [run procedure?]
+                             [global-value procedure?]
+                             [get-functions procedure?]))
 
 (define (new-upl-compiler globals)
   (let ((proc-dict-ptr (syscall-mmap-anon 4096))
@@ -1152,6 +1153,7 @@
         (core-functions
           (compile-upl-to-native (core-upl-code proc-dict-ptr tmp-4k-buffer) globals-mapping '()))
         (func-list-cell (cell core-functions))
+        (get-functions (lambda () (cell-get func-list-cell)))
         (compile-next (lambda (code)
                         (let ((new-funcs (compile-upl-to-native code globals-mapping (cell-get func-list-cell)))
                               (all-funcs (append new-funcs (cell-get func-list-cell))))
@@ -1196,7 +1198,7 @@
         (global-value (lambda (var) 
                         (read-mem-i64 (alist-lookup globals-mapping var)))))
     ; TODO: unmap exec memory?
-    (create-upl-compiler compile-next run global-value)))
+    (create-upl-compiler compile-next run global-value get-functions)))
 
 (define (upl-debug-print-hex-value msg value)
   (list 'block
