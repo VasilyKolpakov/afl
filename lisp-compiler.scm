@@ -81,7 +81,16 @@
   '(
     lisp-stack-bottom
     lisp-stack-ptr
-    lisp-stack-size
+    lisp-stack-capacity
+
+    lisp-local-val-stack-bottom
+    lisp-local-val-stack-ptr
+    lisp-local-val-stack-capacity
+
+    lisp-fp-stack-bottom
+    lisp-fp-stack-ptr
+    lisp-fp-stack-capacity
+
     literals-block-list
     symbol-block-list
     symbol-alloc-4k-buffer-ptr
@@ -237,9 +246,21 @@
 
     (proc init-lisp-stack () ()
           (
-           (:= lisp-stack-size (* 10 4096))
-           (:= lisp-stack-bottom (fcall syscall-mmap-anon lisp-stack-size))
+           (:= lisp-stack-capacity (* 10 4096))
+           (:= lisp-stack-bottom (fcall syscall-mmap-anon lisp-stack-capacity))
            (:= lisp-stack-ptr lisp-stack-bottom)
+           ))
+    (proc init-lisp-local-val-stack () ()
+          (
+           (:= lisp-local-val-stack-capacity (* 10 4096))
+           (:= lisp-local-val-stack-bottom (fcall syscall-mmap-anon lisp-local-val-stack-capacity))
+           (:= lisp-local-val-stack-ptr lisp-local-val-stack-bottom)
+           ))
+    (proc init-lisp-fp-stack () ()
+          (
+           (:= lisp-fp-stack-capacity 4096)
+           (:= lisp-fp-stack-bottom (fcall syscall-mmap-anon lisp-fp-stack-capacity))
+           (:= lisp-fp-stack-ptr lisp-fp-stack-bottom)
            ))
     (proc init-symbol-allocator () ()
           (
@@ -256,7 +277,7 @@
 
     (proc push-to-lisp-stack (obj) ()
           (
-           (if (>= (+ 8 lisp-stack-ptr) (+ lisp-stack-bottom lisp-stack-size))
+           (if (>= (+ 8 lisp-stack-ptr) (+ lisp-stack-bottom lisp-stack-capacity))
              (
               ,(upl-print-static-string "==== lisp stack overflow\n")
               (call print-stack-trace)
@@ -290,10 +311,49 @@
               ))
            (if (< (- lisp-stack-ptr (* 8 n)) lisp-stack-bottom)
              (
+              ,(upl-print-static-string "lisp stack underflow\n")
               (call print-stack-trace)
               ,(upl-exit 1)
               ))
            (:-= lisp-stack-ptr (* 8 n))
+           ))
+
+    (proc push-to-lisp-local-val-stack () ([obj (fcall pop-lisp-stack)])
+          (
+           (if (>= (+ 8 lisp-local-val-stack-ptr) (+ lisp-local-val-stack-bottom lisp-local-val-stack-capacity))
+             (
+              ,(upl-print-static-string "==== lisp val stack overflow\n")
+              (call print-stack-trace)
+              ,(upl-exit 1)
+              ))
+           (:+= lisp-local-val-stack-ptr 8)
+           (i64:= lisp-local-val-stack-ptr obj)
+           ))
+    (func peek-lisp-local-val-stack (index) ()
+          (
+           (if (< (- lisp-local-val-stack-ptr (* 8 index)) lisp-local-val-stack-bottom)
+             (
+              ,(upl-print-static-string "==== lisp local val stack underflow\n")
+              (call print-stack-trace)
+              ,(upl-exit 1)
+              ))
+           (return-val (i64@ (- lisp-local-val-stack-ptr (* 8 index))))
+           ))
+    (proc drop-lisp-local-val-stack (n) ()
+          (
+           (if (< n 0)
+             (
+              ,(upl-print-static-string "n should be >=0 \n")
+              (call print-stack-trace)
+              ,(upl-exit 1)
+              ))
+           (if (< (- lisp-local-val-stack-ptr (* 8 n)) lisp-local-val-stack-bottom)
+             (
+              ,(upl-print-static-string "lisp local-val stack underflow\n")
+              (call print-stack-trace)
+              ,(upl-exit 1)
+              ))
+           (:-= lisp-local-val-stack-ptr (* 8 n))
            ))
 
     (func allocate-i64 (num) ((addr 0))
@@ -545,6 +605,8 @@
     (proc init-globals () ()
           (
            (call init-lisp-stack)
+           (call init-lisp-local-val-stack)
+           (call init-lisp-fp-stack)
            (call init-symbol-allocator)
            (call init-symbol-block-list)
            (call init-literals-block-list)
@@ -784,12 +846,32 @@
 ;       - lambda
 ;       - default: compile items in reverse order and emit function call code at the end
 
+(define (compile-lisp-let-expression bindings result-expr local-vals)
+  (assert-stmt (list "let bindings are a list" bindings) (list? bindings))
+  (if (empty? bindings)
+    (compile-lisp-expression result-expr local-vals)
+    (let ([binding (first bindings)])
+      (assert-stmt (list "let binding is a list of 2 elements" binding) (and (list? binding) (equal? (length binding) 2)))
+      (let ([sym (first binding)]
+            [expr (second binding)])
+        (assert-stmt (list "let binding's first element is a symbol" ) (symbol? sym))
+        '(
+          (block ,(compile-lisp-expression expr local-vals))
+          (call push-to-lisp-local-val-stack)
+          (block ,(compile-lisp-let-expression (cdr bindings) result-expr (cons sym local-vals)))
+          )))))
+
 (define (compile-lisp-expression expr local-vals)
   (cond
     [(symbol? expr) 
-     '(
-       (call push-symbol-bound-value ,(upl-lisp-symbol (symbol-to-string expr)))
-       )]
+     (let ([val-index (index-of local-vals expr)])
+       (if (empty? val-index)
+         '(
+           (call push-symbol-bound-value ,(upl-lisp-symbol (symbol-to-string expr)))
+           )
+         '(
+           (call push-to-lisp-stack (fcall peek-lisp-local-val-stack ,val-index))
+           )))]
     [(boolean? expr)
      '(
        (call push-to-lisp-stack ,(if expr boolean-obj-true-value boolean-obj-false-value))
@@ -829,6 +911,16 @@
           '(
             (call push-to-lisp-stack (i64@ ,(upl-create-lisp-literal expr)))
             )]]
+       [(equal? 'let (first expr))
+        [begin
+          (assert-stmt (list "'let' has 2 args, not: " expr) (equal? (length expr) 3))
+          (let ([bindings (second expr)]
+                [result-expr (nth 2 expr)])
+            (assert-stmt (list "let bindings is a list, not:" bindings) (list? bindings))
+            '(
+              (block ,(compile-lisp-let-expression bindings result-expr local-vals))
+              (call drop-lisp-local-val-stack ,(length bindings))
+              ))]]
        [else
          '(
            (block ,(flatmap (lambda (e) (compile-lisp-expression e local-vals))
@@ -844,12 +936,19 @@
                                    ;(call tests)
                                    (block ,(compile-lisp-expression '(define a 42) '()))
                                    ;(block ,(compile-lisp-expression '(begin (* a nil) 4242) '()))
-                                   (block ,(compile-lisp-expression ''a '()))
-
-                                   
-
-                                   (call print-object (fcall peek-lisp-stack 0))
+                                   ;(block ,(compile-lisp-expression ''a '()))
+                                   (block ,(compile-lisp-expression '(let ([a 1] [b 2] [c 3]) c) '()))
+                                   (call print-object (fcall pop-lisp-stack))
                                    (call print-newline)
+
+                                   (block ,(compile-lisp-expression '(let ([a 1] [b 2] [c 3]) b) '()))
+                                   (call print-object (fcall pop-lisp-stack))
+                                   (call print-newline)
+
+                                   (block ,(compile-lisp-expression '(let ([a 1] [b 2] [c 3]) a) '()))
+                                   (call print-object (fcall pop-lisp-stack))
+                                   (call print-newline)
+                                   (call drop-lisp-local-val-stack 1)
                                    ;(call test-block-list)
                                    ;(call a)
                                    ))
