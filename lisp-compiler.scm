@@ -87,6 +87,7 @@
     lisp-local-val-stack-ptr
     lisp-local-val-stack-capacity
 
+    ; TODO: remove fp stack
     lisp-fp-stack-bottom
     lisp-fp-stack-ptr
     lisp-fp-stack-capacity
@@ -906,6 +907,24 @@
               (block ,(compile-lisp-let-expression bindings result-expr local-vals))
               (call drop-lisp-local-val-stack ,(length bindings))
               ))]]
+       [(equal? 'lambda (first expr))
+        [begin
+          (assert-stmt (list "'lambda' has 2 args, not: " expr) (equal? (length expr) 3))
+          (let ([args (second expr)]
+                [body (nth 2 expr)])
+            (assert-stmt (list "lambda args is a list, not:" args) (list? args))
+            (let ([fptr
+                    (compile-native-func 'lambda '()
+                                         '(
+                                           ; push lambda args to local value stack
+                                           (block ,(map (lambda (_) '(call push-to-lisp-local-val-stack)) (range (+ (length args) 1))))
+                                           (block ,(compile-lisp-expression body (reverse args)))
+                                           (call drop-lisp-local-val-stack ,(+ (length args) 1))
+                                           ))])
+              '(
+                (call push-to-lisp-stack (fcall allocate-procedure ,fptr ,(length args) 0))
+                )))
+            ]]
        [else
          '(
            (block ,(flatmap (lambda (e)
@@ -940,7 +959,11 @@
                                    (block ,(compile-lisp-expression '(let ([a 1] [b 2] [c 3]) a) '()))
                                    (call print-object (fcall pop-lisp-stack))
                                    (call print-newline)
-                                   (call drop-lisp-local-val-stack 1)
+
+                                   (block ,(compile-lisp-expression '((lambda (x) (- x 1)) 1) '()))
+                                   (call print-object (fcall pop-lisp-stack))
+                                   (call print-newline)
+                                   ;(call drop-lisp-local-val-stack 1)
                                    ;(call test-block-list)
                                    ;(call a)
                                    ))

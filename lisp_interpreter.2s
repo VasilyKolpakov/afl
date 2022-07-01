@@ -2240,7 +2240,11 @@ def "lisp_compile_lambda" {
     captured_values_list_stack_push_new
 
     assert "lambda has arg list" obj_is_list obj_pair_car dup
-    assert "lambda has 2 args" = 2 obj_list_length dup
+    if { not = 2 obj_list_length dup } {
+        exit 1
+        print_obj dup
+        print_string "lisp_interpreter error: lambda must have 2 args, not "
+    } { }
     obj_pair_cdr
 } ;
 
