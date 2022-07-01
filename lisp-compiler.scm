@@ -128,6 +128,10 @@
   (let ([ss (upl-static-string name)])
     '(fcall get-or-create-symbol ,(first ss) ,(second ss))))
 
+(define (upl-check-lisp-type obj type-id msg)
+  (let ([ss (upl-static-string msg)])
+    '(call check-lisp-type ,obj ,type-id ,(first ss) ,(second ss))))
+
 (define upl-code 
   '(
     (proc memcopy (src dest length) ((index 0))
@@ -443,9 +447,22 @@
            (return-val symbol)
            ))
 
-    (proc call-lisp-procedure () ((lisp-proc 0))
+    (proc call-lisp-procedure (nargs) ((lisp-proc 0))
           (
            (:= lisp-proc (fcall peek-lisp-stack 0)) 
+           ,(upl-check-lisp-type 'lisp-proc procedure-obj-type-id "trying to call a non-procedure object")
+           (if (!= nargs ,(upl-obj-procedure-nargs 'lisp-proc))
+             [
+              ,(upl-print-static-string "lisp procedure ")
+              (call print-object lisp-proc)
+              ,(upl-print-static-string "takes ")
+              (call print-number ,(upl-obj-procedure-nargs 'lisp-proc))
+              ,(upl-print-static-string "arguments, not ")
+              (call print-number nargs)
+              (call print-newline)
+              (call print-stack-trace)
+              ,(upl-exit 1)
+              ])
            (indirect-call ,(upl-obj-procedure-fptr 'lisp-proc))
            ))
     (proc push-number-to-lisp-stack (num) ()
@@ -513,7 +530,7 @@
              [(or (= obj -1) (= obj -2)) [(return-val ,boolean-obj-type-id)]]
              [else [(return-val ,(upl-obj-type-id 'obj))]])
            ])
-    (proc print-obj-type-id-name (obj) ([type-id 0])
+    (proc print-obj-type-id-name (type-id) ()
           [
            (cond
              [(= type-id ,nil-obj-type-id) [,(upl-print-static-string "nil-type")]]
@@ -531,7 +548,7 @@
              [
                 (call write-to-stdout msg msg-length)
                 ,(upl-print-static-string ": expected ")
-                (call print-obj-type-id-name (fcall obj-type-id obj))
+                (call print-obj-type-id-name type-id)
                 ,(upl-print-static-string ", but was ")
                 (call print-object obj)
                 (call print-newline)
@@ -615,34 +632,6 @@
     (proc b () ((d 0)) ((call c) (:= d 0)))
     (proc a () ((d 0)) ((call b) (:= d 0)))
 
-    (proc test-lisp () ((proc 0))
-          {
-           ;(block ,(compile-lisp-literal '(42 420 () 69)))
-
-           (call push-number-to-lisp-stack 1)
-           (call lisp-define ,(upl-lisp-symbol "a"))
-           
-           ,(upl-print-static-string "a is bound to ")
-           (call print-object ,(upl-obj-symbol-binding (upl-lisp-symbol "a")))
-           (call print-newline)
-
-           (call push-number-to-lisp-stack 42)
-           (call lisp-define ,(upl-lisp-symbol "b"))
-           ,(upl-print-static-string "after define\n")
-
-           ,(upl-print-static-string "symbol a: ")
-           (call print-object ,(upl-lisp-symbol "a"))
-           (call print-newline)
-           (call push-symbol-bound-value ,(upl-lisp-symbol "a"))
-           (call push-symbol-bound-value ,(upl-lisp-symbol "b"))
-           ,(upl-print-static-string "after push\n")
-           (:= proc (fcall allocate-procedure (function-pointer lisp-procedure-cons) 2 0))
-           (call push-to-lisp-stack proc)
-           (call call-lisp-procedure)
-           ,(upl-print-static-string "after call\n")
-           (call print-object (fcall peek-lisp-stack 0))
-           (call print-newline)
-           })
     (proc test-block-list () ((block-list 0) (index 0))
           (
            (:= block-list (fcall create-block-list))
@@ -783,10 +772,6 @@
 (define ffi-allocate-literal-from-stack (make-ffi-no-arg-func 'allocate-literal-from-stack))
 (define ffi-allocate-i64 (make-ffi-one-arg-func 'allocate-i64))
 
-(define (upl-check-lisp-type obj type-id msg)
-  (let ([ss (upl-static-string msg)])
-    '(call check-lisp-type ,obj ,type-id ,(first ss) ,(second ss))))
-
 ; define arithmetic operations
 (foreach 
   (lambda (op)
@@ -923,10 +908,14 @@
               ))]]
        [else
          '(
-           (block ,(flatmap (lambda (e) (compile-lisp-expression e local-vals))
+           (block ,(flatmap (lambda (e)
+                              '(
+                                (block, (compile-lisp-expression e local-vals))
+                                ))
                             (reverse expr)))
-           (call call-lisp-procedure) ; TODO: check arg count
-           )])]
+           (call call-lisp-procedure ,(- (length expr) 1))
+           )
+         ])]
     [else (panic (list "bad expression: " expr))]))
 
 (ffi-lisp-define "nil" 0)
@@ -937,6 +926,9 @@
                                    (block ,(compile-lisp-expression '(define a 42) '()))
                                    ;(block ,(compile-lisp-expression '(begin (* a nil) 4242) '()))
                                    ;(block ,(compile-lisp-expression ''a '()))
+                                   (block ,(compile-lisp-expression ''(1 2 3) '()))
+                                   (call print-object (fcall pop-lisp-stack))
+                                   (call print-newline)
                                    (block ,(compile-lisp-expression '(let ([a 1] [b 2] [c 3]) c) '()))
                                    (call print-object (fcall pop-lisp-stack))
                                    (call print-newline)
