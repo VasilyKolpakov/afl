@@ -46,8 +46,10 @@
   '(i64@ (+ ,(+ 8 obj-header-size) ,expr)))
 (define (upl-obj-procedure-nfields expr)
   '(i64@ (+ ,(+ 16 obj-header-size) ,expr)))
-(define (upl-obj-procedure-field n expr)
+(define (upl-obj-procedure-field expr n)
   '(i64@ (+ (* ,n 8) (+ ,(+ 24 obj-header-size) ,expr))))
+(define (upl-obj-procedure-set-field expr n val-expr)
+  '(i64:= (+ (* ,n 8) (+ ,(+ 24 obj-header-size) ,expr)) ,val-expr))
 
 
 (define symbol-obj-type-id 3)
@@ -832,29 +834,75 @@
 ;       - lambda
 ;       - default: compile items in reverse order and emit function call code at the end
 
-(define (compile-lisp-let-expression bindings result-expr local-vals)
+(define (find-captured-values-in-let-expression-rec bindings result-expr bound-vals outer-scope-vals)
+  (if (empty? bindings)
+    (find-captured-values-rec result-expr bound-vals outer-scope-vals)
+    (let ([binding (first bindings)])
+      (append
+        (find-captured-values-rec (second binding) bound-vals outer-scope-vals)
+        (find-captured-values-in-let-expression-rec
+          (cdr bindings)
+          result-expr
+          (cons (first binding) bound-vals)
+          outer-scope-vals)))))
+
+(define (find-captured-values-rec expr bound-vals outer-scope-vals)
+  (cond
+    [(symbol? expr) (if
+                      (and (empty? (member expr bound-vals)) (non-empty-list? (member expr outer-scope-vals)))
+                      (list expr)
+                      '())]
+    [(boolean? expr) '()]
+    [(number? expr) '()]
+    [(list? expr)
+     (cond
+       [(equal? 'if (first expr))
+        (--- append
+             (find-captured-values-rec (nth 1 expr) bound-vals outer-scope-vals)
+             (find-captured-values-rec (nth 2 expr) bound-vals outer-scope-vals)
+             (find-captured-values-rec (nth 3 expr) bound-vals outer-scope-vals))]
+       [(equal? 'define (first expr)) (panic "define is not supported in lambdas" expr)]
+       [(equal? 'begin (first expr)) (flatmap (lambda (e) (find-captured-values-rec e bound-vals outer-scope-vals)) (cdr expr))]
+       [(equal? 'quote (first expr)) '()]
+       [(equal? 'let (first expr))
+          (find-captured-values-in-let-expression-rec (nth 1 expr) (nth 2 expr) bound-vals outer-scope-vals)]
+       [(equal? 'lambda (first expr))
+        (let ([lambda-args (second expr)])
+          (find-captured-values-rec (nth 2 expr) (append lambda-args bound-vals) outer-scope-vals))]
+       [else (flatmap (lambda (e) (find-captured-values-rec e bound-vals outer-scope-vals)) expr)])]
+    [else (panic (list "bad expression: " expr))]))
+
+(define (find-captured-values expr bound-vals outer-scope-vals)
+  (remove-duplicates (find-captured-values-rec expr bound-vals outer-scope-vals)))
+
+(define (compile-lisp-let-expression bindings result-expr local-vals captured-vals)
   (assert-stmt (list "let bindings are a list" bindings) (list? bindings))
   (if (empty? bindings)
-    (compile-lisp-expression result-expr local-vals)
+    (compile-lisp-expression result-expr local-vals captured-vals)
     (let ([binding (first bindings)])
       (assert-stmt (list "let binding is a list of 2 elements" binding) (and (list? binding) (equal? (length binding) 2)))
       (let ([sym (first binding)]
             [expr (second binding)])
         (assert-stmt (list "let binding's first element is a symbol" ) (symbol? sym))
         '(
-          (block ,(compile-lisp-expression expr local-vals))
+          (block ,(compile-lisp-expression expr local-vals captured-vals))
           (call push-to-lisp-local-val-stack)
-          (block ,(compile-lisp-let-expression (cdr bindings) result-expr (cons sym local-vals)))
+          (block ,(compile-lisp-let-expression (cdr bindings) result-expr (cons sym local-vals) captured-vals))
           )))))
 
-(define (compile-lisp-expression expr local-vals)
+(define (compile-lisp-expression expr local-vals captured-vals)
   (cond
     [(symbol? expr) 
      (let ([val-index (index-of local-vals expr)])
        (if (empty? val-index)
-         '(
-           (call push-symbol-bound-value ,(upl-lisp-symbol (symbol-to-string expr)))
-           )
+         (let ([val-index (index-of captured-vals expr)])
+           (if (empty? val-index)
+             '(
+               (call push-symbol-bound-value ,(upl-lisp-symbol (symbol-to-string expr)))
+               )
+             '(
+               (call push-to-lisp-stack ,(upl-obj-procedure-field '(fcall peek-lisp-local-val-stack ,(length local-vals)) val-index))
+               )))
          '(
            (call push-to-lisp-stack (fcall peek-lisp-local-val-stack ,val-index))
            )))]
@@ -872,23 +920,23 @@
         [begin
           (assert-stmt (list "'if' has 3 args, not: " expr) (equal? (length expr) 4))
           '(
-            (block ,(compile-lisp-expression (second expr) local-vals))
+            (block ,(compile-lisp-expression (second expr) local-vals captured-vals))
             ,(upl-check-lisp-type '(fcall peek-lisp-stack 0) boolean-obj-type-id "first if arg")
             (if (= (fcall pop-lisp-stack) ,boolean-obj-true-value)
-              [(block ,(compile-lisp-expression (nth 2 expr) local-vals))]
-              [(block ,(compile-lisp-expression (nth 3 expr) local-vals))])
+              [(block ,(compile-lisp-expression (nth 2 expr) local-vals captured-vals))]
+              [(block ,(compile-lisp-expression (nth 3 expr) local-vals captured-vals))])
             )]]
        [(equal? 'define (first expr))
         [begin
           (assert-stmt (list "'define' has 2 args, not: " expr) (equal? (length expr) 3))
           (assert-stmt (list "first arg of 'define' must be a symbol: " expr) (symbol? (second expr)))
           '(
-            (block ,(compile-lisp-expression (nth 2 expr) local-vals))
+            (block ,(compile-lisp-expression (nth 2 expr) local-vals captured-vals))
             (call lisp-define ,(upl-lisp-symbol (symbol-to-string (second expr))))
             )]]
        [(equal? 'begin (first expr))
         (cdr
-          (flatmap (lambda (e) (let ([compiled-expr (compile-lisp-expression e local-vals)])
+          (flatmap (lambda (e) (let ([compiled-expr (compile-lisp-expression e local-vals captured-vals)])
                                  (append '((call drop-lisp-stack 1)) compiled-expr)))
                    (cdr expr)))]
        [(equal? 'quote (first expr))
@@ -904,7 +952,7 @@
                 [result-expr (nth 2 expr)])
             (assert-stmt (list "let bindings is a list, not:" bindings) (list? bindings))
             '(
-              (block ,(compile-lisp-let-expression bindings result-expr local-vals))
+              (block ,(compile-lisp-let-expression bindings result-expr local-vals captured-vals))
               (call drop-lisp-local-val-stack ,(length bindings))
               ))]]
        [(equal? 'lambda (first expr))
@@ -913,23 +961,33 @@
           (let ([args (second expr)]
                 [body (nth 2 expr)])
             (assert-stmt (list "lambda args is a list, not:" args) (list? args))
-            (let ([fptr
+            (let (
+                  [lambda-captured-vals (find-captured-values body args (append local-vals captured-vals))]
+                  [fptr
                     (compile-native-func 'lambda '()
                                          '(
                                            ; push lambda args to local value stack
                                            (block ,(map (lambda (_) '(call push-to-lisp-local-val-stack)) (range (+ (length args) 1))))
-                                           (block ,(compile-lisp-expression body (reverse args)))
+                                           (block ,(compile-lisp-expression body (reverse args) lambda-captured-vals))
                                            (call drop-lisp-local-val-stack ,(+ (length args) 1))
-                                           ))])
+                                           ))]
+                  )
               '(
                 (call push-to-lisp-stack (fcall allocate-procedure ,fptr ,(length args) 0))
+                (block ,(map
+                          (lambda (v-and-index)
+                            '(block (
+                              (block ,(compile-lisp-expression (car v-and-index) local-vals captured-vals))
+                              ,(upl-obj-procedure-set-field '(fcall peek-lisp-stack 1) (cdr v-and-index) '(fcall pop-lisp-stack))
+                              )))
+                          (zip-with-index lambda-captured-vals)))
                 )))
             ]]
        [else
          '(
            (block ,(flatmap (lambda (e)
                               '(
-                                (block, (compile-lisp-expression e local-vals))
+                                (block, (compile-lisp-expression e local-vals captured-vals))
                                 ))
                             (reverse expr)))
            (call call-lisp-procedure ,(- (length expr) 1))
@@ -939,28 +997,35 @@
 
 (ffi-lisp-define "nil" 0)
 
+(define (compile-top-level-lisp-expression expr)
+  (compile-lisp-expression expr '() '()))
+
 ((upl-compiler-run upl-compiler) '() 
                                  '(
                                    ;(call tests)
-                                   (block ,(compile-lisp-expression '(define a 42) '()))
+                                   (block ,(compile-top-level-lisp-expression '(define a 42)))
                                    ;(block ,(compile-lisp-expression '(begin (* a nil) 4242) '()))
                                    ;(block ,(compile-lisp-expression ''a '()))
-                                   (block ,(compile-lisp-expression ''(1 2 3) '()))
+                                   (block ,(compile-top-level-lisp-expression ''(1 2 3)))
                                    (call print-object (fcall pop-lisp-stack))
                                    (call print-newline)
-                                   (block ,(compile-lisp-expression '(let ([a 1] [b 2] [c 3]) c) '()))
-                                   (call print-object (fcall pop-lisp-stack))
-                                   (call print-newline)
-
-                                   (block ,(compile-lisp-expression '(let ([a 1] [b 2] [c 3]) b) '()))
+                                   (block ,(compile-top-level-lisp-expression '(let ([a 1] [b 2] [c 3]) c)))
                                    (call print-object (fcall pop-lisp-stack))
                                    (call print-newline)
 
-                                   (block ,(compile-lisp-expression '(let ([a 1] [b 2] [c 3]) a) '()))
+                                   (block ,(compile-top-level-lisp-expression '(let ([a 1] [b 2] [c 3]) b)))
                                    (call print-object (fcall pop-lisp-stack))
                                    (call print-newline)
 
-                                   (block ,(compile-lisp-expression '((lambda (x) (- x 1)) 1) '()))
+                                   (block ,(compile-top-level-lisp-expression '(let ([a 1] [b 2] [c 3]) a)))
+                                   (call print-object (fcall pop-lisp-stack))
+                                   (call print-newline)
+
+                                   (block ,(compile-top-level-lisp-expression 
+                                             '(let ([_ 13]
+                                                    [a 10])
+                                                 ((lambda (x) (+ x a)) 1))
+                                               ))
                                    (call print-object (fcall pop-lisp-stack))
                                    (call print-newline)
                                    ;(call drop-lisp-local-val-stack 1)

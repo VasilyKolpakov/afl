@@ -379,3 +379,20 @@
 (define (compose f g)
   (lambda (x) (f (g x))))
 
+(define (member v lst)
+  (cond
+    [(empty? lst) lst]
+    [(equal? v (car lst)) lst]
+    [else (member v (cdr lst))]))
+
+(define (remove-duplicates-rec lst acc)
+  (cond
+    [(empty? lst) acc]
+    [(empty? (member (car lst) acc)) (remove-duplicates-rec (cdr lst) (cons (car lst) acc))]
+    [else (remove-duplicates-rec (cdr lst) acc)]))
+
+(define (remove-duplicates lst)
+  (reverse (remove-duplicates-rec lst '())))
+
+(define (zip-with-index xs) (zip xs (range (length xs))))
+
