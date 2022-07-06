@@ -221,35 +221,6 @@
 
            (i64:= addr-out bump-ptr)
            ))
-    (func syscall-mmap-anon (size) ()
-          (
-           (return-val (fcall chk-syscall ,syscall-mmap 
-                    0 ; address hint
-                    size
-                    ,(bitwise-ior syscall-mmap-PROT-READ syscall-mmap-PROT-WRITE)
-                    ,(bitwise-ior syscall-mmap-MAP-ANONYMOUS syscall-mmap-MAP-PRIVATE)
-                    ,syscall-mmap-ABSENT-FD
-                    0 ; offset
-                    ))
-           ))
-    (proc syscall-munmap (ptr size) ((syscall-ret 0))
-          (
-           (:= syscall-ret (fcall chk-syscall ,syscall-munmap 
-                    ptr
-                    size
-                    0 0 0 0
-                    ))
-           ))
-    (func syscall-mremap-maymove (addr oldsize newsize) ()
-          (
-           (return-val (fcall chk-syscall ,syscall-mremap 
-                    addr
-                    oldsize
-                    newsize
-                    ,syscall-mremap-MREMAP-MAYMOVE
-                    0 0 ; dummy args
-                    ))
-           ))
 
     (proc init-lisp-stack () ()
           (
@@ -1022,9 +993,7 @@
                                    (call print-newline)
 
                                    (block ,(compile-top-level-lisp-expression 
-                                             '(let ([_ 13]
-                                                    [a 10])
-                                                 ((lambda (x) (+ x a)) 1))
+                                             '(((lambda (x) (lambda (y) (+ x y))) 1) 2)
                                                ))
                                    (call print-object (fcall pop-lisp-stack))
                                    (call print-newline)

@@ -961,6 +961,35 @@
                ,(upl-exit 1)))
            (return-val ret)
            ))
+    (func syscall-mmap-anon (size) ()
+          (
+           (return-val (fcall chk-syscall ,syscall-mmap 
+                    0 ; address hint
+                    size
+                    ,(bitwise-ior syscall-mmap-PROT-READ syscall-mmap-PROT-WRITE)
+                    ,(bitwise-ior syscall-mmap-MAP-ANONYMOUS syscall-mmap-MAP-PRIVATE)
+                    ,syscall-mmap-ABSENT-FD
+                    0 ; offset
+                    ))
+           ))
+    (proc syscall-munmap (ptr size) ((syscall-ret 0))
+          (
+           (:= syscall-ret (fcall chk-syscall ,syscall-munmap 
+                    ptr
+                    size
+                    0 0 0 0
+                    ))
+           ))
+    (func syscall-mremap-maymove (addr oldsize newsize) ()
+          (
+           (return-val (fcall chk-syscall ,syscall-mremap 
+                    addr
+                    oldsize
+                    newsize
+                    ,syscall-mremap-MREMAP-MAYMOVE
+                    0 0 ; dummy args
+                    ))
+           ))
     (proc write-to-stdout (buf length) ((sys-ret 0) (written 0))
           ((while (> length written)
                   (
