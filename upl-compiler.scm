@@ -250,6 +250,24 @@
 (define (push-var-instruction index)
   (list 5 (lambda (ptr) (generate-push-var ptr index)) (list "push-var" index)))
 
+(define (set-tail-call-arg-instruction arg-count index)
+  (assert-stmt "index >= 0" (>= index 0))
+  (assert-stmt "index < 15" (< index 15))
+  (list 9
+        (lambda (ptr)
+          [begin
+            (write-mem-byte ptr       #x48) ; mov    rax,QWORD PTR [rsp+(arg-count - 1 - index)]
+            (write-mem-byte (+ 1 ptr) #x8b)
+            (write-mem-byte (+ 2 ptr) #x44)
+            (write-mem-byte (+ 3 ptr) #x24)
+            (write-mem-byte (+ 4 ptr) (* (- (- arg-count 1) index) 8))
+
+            (write-mem-byte (+ 5 ptr) #x48) ; QWORD PTR [rbp+___],rax
+            (write-mem-byte (+ 6 ptr) #x89)
+            (write-mem-byte (+ 7 ptr) #x45)
+            (write-mem-byte (+ 8 ptr) (- 0 (* (+ 1 index) 8)))
+            ])))
+
 (define (single-byte-instruction byte instruciton-name)
     (list 1 
           (lambda (ptr) (write-mem-byte ptr byte))
@@ -291,13 +309,19 @@
 (define (set-var-instruction index)
   (list 5 (lambda (ptr) (generate-set-var ptr index)) (list "set-var" index)))
 
-(define set-frame-pointer-instruction
-  (list 4 (lambda (ptr)
+(define save-frame-pointer-instruction
+  (list 1 (lambda (ptr)
             (begin
               (write-mem-byte ptr       #x55) ; push rbp
-              (write-mem-byte (+ 1 ptr) #x48) ; mov rbp,rsp
-              (write-mem-byte (+ 2 ptr) #x89)
-              (write-mem-byte (+ 3 ptr) #xe5)))
+              ))
+        "save-frame-pointer"))
+
+(define set-frame-pointer-instruction
+  (list 3 (lambda (ptr)
+            (begin
+              (write-mem-byte (+ 0 ptr) #x48) ; mov rbp,rsp
+              (write-mem-byte (+ 1 ptr) #x89)
+              (write-mem-byte (+ 2 ptr) #xe5)))
         "set-frame-pointer"))
 
 (define push-frame-pointer-instruction
@@ -320,6 +344,16 @@
         (lambda (ptr label-locs)
           (generate-jmp ptr (assert (alist-lookup label-locs target-label) not-empty? "jmp target")))
         (list "jmp" target-label)))
+
+; HACK
+(define (tail-call-instruction target-label)
+  (list 5
+        (lambda (ptr label-locs)
+          (generate-jmp ptr (+ 
+                              ; assume that the first instruction of the function is save-frame-pointer-instruction
+                              (first save-frame-pointer-instruction)
+                              (assert (alist-lookup label-locs target-label) not-empty? "jmp target"))))
+        (list "tail-call" target-label)))
 
 (define (generate-call ptr target)
   (let ((rel-target (- target (+ ptr 5))))
@@ -645,6 +679,21 @@
              (append 
                (compile-expr proc-ptr-expression)
                (list indirect-call-instruction))))
+          ((equal? stmt-type 'tail-call)
+           (let ((name (second stmt))
+                 (proc (find-upl-func label-list name))
+                 (proc-args (drop stmt 2))
+                 (proc-label (upl-func-label proc))
+                 (proc-arg-count (upl-func-arity proc)))
+             (assert-stmt (list proc "is a proc") (equal? 'proc (upl-func-type proc)))
+             (assert-stmt (list (first stmt-args) "number of args") (= proc-arg-count (length proc-args)))
+             (--- append
+               (flatmap compile-expr proc-args)
+               (map (lambda (index) (set-tail-call-arg-instruction proc-arg-count index)) (range proc-arg-count))
+               (list
+                 ; drop proc-arg-count + local var count 
+                 (add-rsp-instruction (* 8 (--- + proc-arg-count (length local-vars))))
+                 (tail-call-instruction proc-label)))))
           ((equal? stmt-type 'return)
            (begin
              (assert-stmt "return has 0 args" (= 0 (length stmt-args)))
@@ -747,6 +796,7 @@
           (local-vars (append args (map car local-vars-with-inits))))
       (--- append
         (list
+          save-frame-pointer-instruction
           set-frame-pointer-instruction
           (add-rsp-instruction (- 0 (* 8 (length args)))))
         (flatmap (lambda (var-init) (compile-expression var-init (create-context name args upl-func-list globals-mapping)))
