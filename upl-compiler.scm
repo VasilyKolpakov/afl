@@ -341,18 +341,18 @@
 
 (define (jmp-instruction target-label)
   (list 5
-        (lambda (ptr label-locs)
-          (generate-jmp ptr (assert (alist-lookup label-locs target-label) not-empty? "jmp target")))
+        (lambda (ptr label-locator)
+          (generate-jmp ptr (assert (label-locator target-label) not-empty? "jmp target")))
         (list "jmp" target-label)))
 
 ; HACK
 (define (tail-call-instruction target-label)
   (list 5
-        (lambda (ptr label-locs)
+        (lambda (ptr label-locator)
           (generate-jmp ptr (+ 
                               ; assume that the first instruction of the function is save-frame-pointer-instruction
                               (first save-frame-pointer-instruction)
-                              (assert (alist-lookup label-locs target-label) not-empty? "jmp target"))))
+                              (assert (label-locator target-label) not-empty? "jmp target"))))
         (list "tail-call" target-label)))
 
 (define (generate-call ptr target)
@@ -365,8 +365,8 @@
 
 (define (call-instruction target-label)
   (list 5
-        (lambda (ptr label-locs)
-          (generate-call ptr (assert (alist-lookup label-locs target-label) not-empty? "call target")))
+        (lambda (ptr label-locator)
+          (generate-call ptr (assert (label-locator target-label) not-empty? "call target")))
         (list "call" target-label)))
 
 (define indirect-call-instruction
@@ -414,8 +414,8 @@
 
 (define (cond-jmp-instruction cond-code target-label)
   (list 11
-        (lambda (ptr label-locs)
-          (generate-cond-jmp cond-code ptr (assert (alist-lookup label-locs target-label) not-empty? "cond-jmp target")))
+        (lambda (ptr label-locator)
+          (generate-cond-jmp cond-code ptr (assert (label-locator target-label) not-empty? "cond-jmp target")))
         (list "cond-jmp" cond-code target-label)))
 
 (define (cond-jmp-instruction-gen cond-code)
@@ -424,9 +424,9 @@
 
 (define (push-label-pointer-instruction label)
   (list 11
-        (lambda (ptr label-locs)
+        (lambda (ptr label-locator)
              (let ((label-ptr
-                     (assert (alist-lookup label-locs label) not-empty? "label pointer")))
+                     (assert (label-locator label) not-empty? "label pointer")))
                (generate-push-imm ptr label-ptr)))
         (list "push-label-pointer" label)))
 
@@ -939,13 +939,14 @@
         (inst-locations (prefix-sum exec-buffer inst-sizes))
         (with-locations (zip instructions inst-locations))
         (insts-and-locations (filter (lambda (x) (not (label? (car x)))) with-locations))
-        (labels-and-locations (append (filter (lambda (x) (label? (car x))) with-locations) existing-labels)))
+        (labels-and-locations (append (filter (lambda (x) (label? (car x))) with-locations) existing-labels))
+        (label-locator (lambda (label) (alist-lookup labels-and-locations label))))
     (foreach (lambda (i-and-loc)
                (let ((inst (car i-and-loc))
                      (loc (cdr i-and-loc))
                      (generator (second inst)))
                  (if (= (arity generator) 2)
-                   (generator loc labels-and-locations)
+                   (generator loc label-locator)
                    (generator loc))))
              insts-and-locations)
 
