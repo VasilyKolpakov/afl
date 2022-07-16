@@ -2441,7 +2441,12 @@ def "lisp_compile_define" {
     lisp_compile_expression obj_pair_car obj_pair_cdr dup
     tco_postpone_count_increment
     lisp_assert_type "define: first arg is a symbol" symbol_obj_type_id obj_pair_car dup
-    assert "define has two arguments" = 2 obj_list_length dup
+    if { not = 2 obj_list_length dup } {
+        exit 1
+        print_newline
+        print_obj dup
+        print_string "define must have 2 args, not: "
+    } { }
     obj_pair_cdr
 } ;
 

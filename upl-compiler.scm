@@ -649,6 +649,7 @@
                  (globals-mapping (context-globals-mapping context))
                  (global-var-ptr (alist-lookup globals-mapping var))
                  (val-expr (car (cdr stmt-args))))
+             (assert-stmt (list ":= has 2 args, not:" stmt-args) (= (length stmt-args) 2))
              (cond
                ((not-empty? var-index) (compile-expression-rec
                                          val-expr
@@ -999,6 +1000,12 @@
 
 (define (core-upl-code proc-dict-ptr tmp-4k-buffer)
   '(
+    (proc swap-i64 (a-ptr b-ptr) ([tmp 0])
+          [
+           (:= tmp (i64@ a-ptr))
+           (i64:= a-ptr (i64@ b-ptr))
+           (i64:= b-ptr tmp)
+           ])
     (func chk-syscall (call-code arg1 arg2 arg3 arg4 arg5 arg6) ((ret 0) (hack-8-byte-buf 0) (num-length 0))
           ((:= ret (syscall call-code arg1 arg2 arg3 arg4 arg5 arg6))
            (if (and (< ret 0) (> ret -4096))

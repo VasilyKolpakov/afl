@@ -19,12 +19,23 @@
 (write-mem-i64 alloc-bump-ptr alloc-arena)
 
 ;   object header layout [gc flags (1 byte)][type id (1 byte)]
+(define obj-header-size 2)
+
 (define (upl-obj-type-id expr)
   '(u8@ (+ 1 ,expr)))
 (define (upl-obj-set-type-id obj obj-type)
   '(u8:= (+ 1 ,obj) ,obj-type))
 
-(define obj-header-size 2)
+(define (upl-obj-is-moved expr)
+  '(u8@ ,expr))
+(define (upl-obj-set-is-moved obj expr)
+  '(u8:= ,obj ,expr))
+
+(define (upl-obj-moved-ref expr)
+  '(i64@ (+ ,obj-header-size ,expr)))
+(define (upl-obj-set-moved-ref obj expr)
+  '(i64:= (+ ,obj-header-size ,obj) ,expr))
+
 (define nil-obj-type-id -1)
 (define i64-obj-type-id 0)
 ;   [value: i64]
@@ -35,8 +46,12 @@
 ;   [car: ref][cdr: ref]
 (define (upl-obj-pair-car expr)
   '(i64@ (+ ,obj-header-size ,expr)))
+(define (upl-obj-pair-car-ptr expr)
+  '(+ ,obj-header-size ,expr))
 (define (upl-obj-pair-cdr expr)
   '(i64@ (+ ,(+ 8 obj-header-size) ,expr)))
+(define (upl-obj-pair-cdr-ptr expr)
+  '(+ ,(+ 8 obj-header-size) ,expr))
 
 (define procedure-obj-type-id 2)
 ;   [fptr][nargs][nfields][fields ...]
@@ -48,6 +63,8 @@
   '(i64@ (+ ,(+ 16 obj-header-size) ,expr)))
 (define (upl-obj-procedure-field expr n)
   '(i64@ (+ (* ,n 8) (+ ,(+ 24 obj-header-size) ,expr))))
+(define (upl-obj-procedure-field-ptr expr n)
+  '(+ (* ,n 8) (+ ,(+ 24 obj-header-size) ,expr)))
 (define (upl-obj-procedure-set-field expr n val-expr)
   '(i64:= (+ (* ,n 8) (+ ,(+ 24 obj-header-size) ,expr)) ,val-expr))
 
@@ -66,6 +83,8 @@
 
 (define (upl-obj-symbol-binding expr)
   '(i64@ (+ ,(+ 9 obj-header-size) ,expr)))
+(define (upl-obj-symbol-binding-ptr expr)
+  '(+ ,(+ 9 obj-header-size) ,expr))
 (define (upl-obj-symbol-set-binding expr binding)
   '(i64:= (+ ,(+ 9 obj-header-size) ,expr) ,binding))
 
@@ -89,16 +108,33 @@
     lisp-local-val-stack-ptr
     lisp-local-val-stack-capacity
 
-    ; TODO: remove fp stack
-    lisp-fp-stack-bottom
-    lisp-fp-stack-ptr
-    lisp-fp-stack-capacity
-
     literals-block-list
     symbol-block-list
     symbol-alloc-4k-buffer-ptr
-    test
+
+    gc-command-stack-bottom
+    gc-command-stack-ptr
+    gc-command-stack-capacity
+
+    gc-active-arena-ptr
+    gc-active-arena-size
+    gc-inactive-arena-ptr
+    gc-inactive-arena-size
+
+    gc-alloc-bump-ptr
+
+    run-gc-recursive-guard
     ))
+
+(define gc-command-stack-item-size (+ 1 8))
+(define gc-command-move-op-code 1)
+(define gc-command-update-ref-op-code 2)
+
+(define (upl-gccsi-op-code item-ptr-expr)
+  '(u8@ ,item-ptr-expr))
+
+(define (upl-gccsi-op-arg item-ptr-expr)
+  '(i64@ (+ 1 ,item-ptr-expr)))
 
 ; block-list block layout
 ; [size][next][values]{510}
@@ -137,14 +173,34 @@
 
 (define upl-code 
   '(
-    (proc memcopy (src dest length) ((index 0))
-          (
-            (while (< index length)
-                   (
-                    (u8:= (+ dest index) (u8@ (+ src index)))
-                    (:+= index 1)
-                    ))
-           ))
+    (proc memzero (buf length) ([index 0]
+                                [word-length (* (/ length 8) 8)])
+          [
+           (while (< index word-length)
+                  (
+                   (i64:= (+ buf index) 0)
+                   (:+= index 8)
+                   ))
+           (while (< index length)
+                  (
+                   (u8:= (+ buf index) 0)
+                   (:+= index 1)
+                   ))
+           ])
+    (proc memcopy (src dest length) ([index 0]
+                                     [word-length (* (/ length 8) 8)])
+          [
+           (while (< index word-length)
+                  (
+                   (i64:= (+ dest index) (i64@ (+ src index)))
+                   (:+= index 8)
+                   ))
+           (while (< index length)
+                  (
+                   (u8:= (+ dest index) (u8@ (+ src index)))
+                   (:+= index 1)
+                   ))
+           ])
     (func memcmp (left right length) ((index 0))
           (
             (while (< index length)
@@ -204,41 +260,52 @@
                    ))
            ))
 
-    (proc gc-malloc (addr-out size) ((bump-ptr 0))
+    (func gc-malloc (size) ([obj 0])
           (
-           (:= bump-ptr (i64@ ,alloc-bump-ptr))
-           (if (> (+ bump-ptr size) ,(+ alloc-arena alloc-arena-size))
+           (if (> (+ gc-alloc-bump-ptr size) (+ gc-active-arena-ptr gc-active-arena-size))
                (
-                ,(upl-print-static-string "malloc arena overflow\n")
+                ,(upl-print-static-string "gc malloc arena overflow\n")
                 ,(upl-exit 1)
                 ) ())
-           (i64:= ,alloc-bump-ptr (+ bump-ptr size))
-           (if (or (= bump-ptr -1) (= bump-ptr -2))
+           (:= obj gc-alloc-bump-ptr)
+           ; TODO: move this check to gc-active-arena update code
+           (if (or (= obj -1) (= obj -2))
              [
                 ,(upl-print-static-string "gc-malloc returned -1 or -2 (those addressed are reseved for boolean values)\n")
                 ,(upl-exit 1)
               ])
-
-           (i64:= addr-out bump-ptr)
+           (:+= gc-alloc-bump-ptr size)
+           (return-val obj)
            ))
 
     (proc init-lisp-stack () ()
           (
            (:= lisp-stack-capacity (* 10 4096))
            (:= lisp-stack-bottom (fcall syscall-mmap-anon lisp-stack-capacity))
-           (:= lisp-stack-ptr lisp-stack-bottom)
+           (:= lisp-stack-ptr (- lisp-stack-bottom 8))
            ))
     (proc init-lisp-local-val-stack () ()
           (
            (:= lisp-local-val-stack-capacity (* 10 4096))
            (:= lisp-local-val-stack-bottom (fcall syscall-mmap-anon lisp-local-val-stack-capacity))
-           (:= lisp-local-val-stack-ptr lisp-local-val-stack-bottom)
+           (:= lisp-local-val-stack-ptr (- lisp-local-val-stack-bottom 8))
            ))
-    (proc init-lisp-fp-stack () ()
+    (proc init-gc-command-stack () ()
           (
-           (:= lisp-fp-stack-capacity 4096)
-           (:= lisp-fp-stack-bottom (fcall syscall-mmap-anon lisp-fp-stack-capacity))
-           (:= lisp-fp-stack-ptr lisp-fp-stack-bottom)
+           (:= run-gc-recursive-guard 0)
+           (:= gc-command-stack-capacity (* 1000 4096))
+           (:= gc-command-stack-bottom (fcall syscall-mmap-anon gc-command-stack-capacity))
+           (:= gc-command-stack-ptr (- gc-command-stack-bottom 8))
+           ))
+    (proc init-gc () ([arena-size 4096000])
+          (
+           (:= gc-active-arena-size arena-size)
+           (:= gc-active-arena-ptr (fcall syscall-mmap-anon arena-size))
+           (:= gc-alloc-bump-ptr gc-active-arena-ptr)
+
+           (:= gc-inactive-arena-size arena-size)
+           (:= gc-inactive-arena-ptr (fcall syscall-mmap-anon arena-size))
+           (call init-gc-command-stack)
            ))
     (proc init-symbol-allocator () ()
           (
@@ -266,7 +333,7 @@
            ))
     (func peek-lisp-stack (index) ()
           (
-           (if (< (- lisp-stack-ptr (* 8 index)) lisp-stack-bottom)
+           (if (< (- lisp-stack-ptr (* 8 index)) (- lisp-stack-bottom 8))
              (
               ,(upl-print-static-string "==== lisp stack underflow\n")
               (call print-stack-trace)
@@ -287,7 +354,7 @@
               (call print-stack-trace)
               ,(upl-exit 1)
               ))
-           (if (< (- lisp-stack-ptr (* 8 n)) lisp-stack-bottom)
+           (if (< (- lisp-stack-ptr (* 8 n)) (- lisp-stack-bottom 8))
              (
               ,(upl-print-static-string "lisp stack underflow\n")
               (call print-stack-trace)
@@ -309,7 +376,7 @@
            ))
     (func peek-lisp-local-val-stack (index) ()
           (
-           (if (< (- lisp-local-val-stack-ptr (* 8 index)) lisp-local-val-stack-bottom)
+           (if (< (- lisp-local-val-stack-ptr (* 8 index)) (- lisp-local-val-stack-bottom 8))
              (
               ,(upl-print-static-string "==== lisp local val stack underflow\n")
               (call print-stack-trace)
@@ -325,7 +392,7 @@
               (call print-stack-trace)
               ,(upl-exit 1)
               ))
-           (if (< (- lisp-local-val-stack-ptr (* 8 n)) lisp-local-val-stack-bottom)
+           (if (< (- lisp-local-val-stack-ptr (* 8 n)) (- lisp-local-val-stack-bottom 8))
              (
               ,(upl-print-static-string "lisp local-val stack underflow\n")
               (call print-stack-trace)
@@ -334,19 +401,260 @@
            (:-= lisp-local-val-stack-ptr (* 8 n))
            ))
 
+    (proc push-to-gc-command-stack (op-code arg) ()
+          (
+           (if (>= (+ ,gc-command-stack-item-size gc-command-stack-ptr)
+                   (+ gc-command-stack-bottom gc-command-stack-capacity))
+             (
+              ,(upl-print-static-string "==== gc command stack overflow\n")
+              (call print-stack-trace)
+              ,(upl-exit 1)
+              ))
+           (:+= gc-command-stack-ptr 8)
+           (i64:= gc-command-stack-ptr op-code)
+           (:+= gc-command-stack-ptr 8)
+           (i64:= gc-command-stack-ptr arg)
+           ))
+    (proc pop-from-gc-command-stack (op-code-ptr arg-ptr) ()
+          (
+           (if (< (- gc-command-stack-ptr ,gc-command-stack-item-size) (- 8 gc-command-stack-bottom))
+             (
+              ,(upl-print-static-string "==== gc command stack underflow\n")
+              (call print-stack-trace)
+              ,(upl-exit 1)
+              ))
+           (i64:= arg-ptr (i64@ gc-command-stack-ptr))
+           (:-= gc-command-stack-ptr 8)
+           (i64:= op-code-ptr (i64@ gc-command-stack-ptr))
+           (:-= gc-command-stack-ptr 8)
+           ))
+    (func gc-command-stack-size () ()
+          (
+           (return-val (/ (- gc-command-stack-ptr gc-command-stack-bottom)
+                          ,gc-command-stack-item-size))
+           ))
+    (proc push-ref-to-gc-stack (ptr-to-obj-ptr) ([obj (i64@ ptr-to-obj-ptr)])
+          [
+           ;,(upl-print-static-string "push-ref-to-gc-stack(") (call print-object obj) ,(upl-print-static-string ")\n")
+           ; if the object is in the new space, then do nothing
+           (if (and (>= obj gc-active-arena-ptr)
+                    (< obj (+ gc-active-arena-ptr gc-active-arena-size)))
+             [
+              ,(upl-print-static-string "obj is in the new space\n")
+              (return)
+              ])
+           (cond 
+             [(and (= ,symbol-obj-type-id (fcall obj-type-id obj))
+                   (= 1 ,(upl-obj-symbol-is-bound 'obj)))
+              [
+               (call push-ref-to-gc-stack ,(upl-obj-symbol-binding-ptr 'obj))
+               ]]
+             [(= 0 (fcall zero-if-heap-object obj))
+              [
+               (call push-to-gc-command-stack ,gc-command-update-ref-op-code ptr-to-obj-ptr)
+               (call push-to-gc-command-stack ,gc-command-move-op-code obj)
+               ]]
+             [else []]
+             )
+           ])
+    (proc gc-move-obj (obj) ([type-id 0]
+                             [moved-obj 0]
+                             [index 0])
+          [
+           (if (= 1 ,(upl-obj-is-moved 'obj))
+             [
+              (return)
+              ])
+           (:= type-id (fcall obj-type-id obj))
+           (cond
+             [(= ,i64-obj-type-id type-id)
+              [
+               (:= moved-obj (fcall allocate-i64 ,(upl-obj-i64-value 'obj)))
+               ]]
+             [(= ,pair-obj-type-id type-id)
+              [
+               (:= moved-obj (fcall allocate-pair
+                              ,(upl-obj-pair-car 'obj)
+                              ,(upl-obj-pair-cdr 'obj)))
+               (call push-ref-to-gc-stack ,(upl-obj-pair-car-ptr 'moved-obj))
+               (call push-ref-to-gc-stack ,(upl-obj-pair-cdr-ptr 'moved-obj))
+               ]]
+             [(= ,procedure-obj-type-id type-id)
+              [
+               (:= moved-obj (fcall allocate-procedure
+                                    ,(upl-obj-procedure-fptr 'obj)
+                                    ,(upl-obj-procedure-nargs 'obj)
+                                    ,(upl-obj-procedure-nfields 'obj)))
+               
+               (:= index 0)
+               (while (< index ,(upl-obj-procedure-nfields 'moved-obj))
+                      [
+                       (call push-ref-to-gc-stack ,(upl-obj-procedure-field-ptr 'moved-obj 'index))
+                       ])
+               ]]
+             [else [
+                    ,(upl-print-static-string "bad obj type: ")
+                    (call print-number type-id)
+                    (call print-newline)
+                    (call print-stack-trace)
+                    ,(upl-exit 1)
+                    ]]
+             )
+           ,(upl-obj-set-is-moved 'obj 1)
+           ,(upl-obj-set-moved-ref 'obj 'moved-obj)
+           ])
+
+    (proc run-gc () (
+                     [op-code 0]
+                     [op-arg 0]
+                     [ptr-to-obj-ptr 0]
+                     [block-ptr 0]
+                     [block-size 0]
+                     [index 0]
+                     [type-id 0]
+                     [obj 0]
+                     [sym 0]
+                     )
+          [
+           (if (= run-gc-recursive-guard 1)
+             [
+              ,(upl-print-static-string "error: recursive run-gc call\n")
+              (call print-stack-trace)
+              ,(upl-exit 1)
+              ])
+           (:= run-gc-recursive-guard 1)
+           ; swap allocation arenas
+           (call swap-i64 (-> gc-active-arena-ptr) (-> gc-inactive-arena-ptr))
+           (call swap-i64 (-> gc-active-arena-size) (-> gc-inactive-arena-size))
+           ; push gc roots to the stack
+           ; push temp values
+           (:= ptr-to-obj-ptr lisp-stack-bottom)
+           (while (<= ptr-to-obj-ptr lisp-stack-ptr)
+                  [
+                   (call push-ref-to-gc-stack ptr-to-obj-ptr)
+                   (:+= ptr-to-obj-ptr 8)
+                   ])
+           ; push local values
+           (:= ptr-to-obj-ptr lisp-local-val-stack-bottom)
+           (while (<= ptr-to-obj-ptr lisp-local-val-stack-ptr)
+                  [
+                   (call push-ref-to-gc-stack ptr-to-obj-ptr)
+                   (:+= ptr-to-obj-ptr 8)
+                   ])
+           ; push literals
+           (:= block-ptr literals-block-list)
+           (while (!= block-ptr 0)
+                  (
+                   (:= block-size ,(upl-block-list-block-size 'block-ptr))
+                   (:= index (- block-size 1))
+                   (while (>= index 0)
+                          (
+                           (call push-ref-to-gc-stack ,(upl-block-list-block-item-ptr 'block-ptr 'index))
+                           (:-= index 1)
+                           ))
+                   (:= block-ptr ,(upl-block-list-block-next 'block-ptr))
+                   (:= index 0)
+                   ))
+           ; push symbol-bound values
+           (:= block-ptr symbol-block-list)
+           (while (!= block-ptr 0)
+                  (
+                   (:= block-size ,(upl-block-list-block-size 'block-ptr))
+                   (:= index (- block-size 1))
+                   (while (>= index 0)
+                          (
+                           (:= sym ,(upl-block-list-block-item 'block-ptr 'index))
+                           (call push-ref-to-gc-stack ,(upl-obj-symbol-binding-ptr 'sym))
+                           (:-= index 1)
+                           ))
+                   (:= block-ptr ,(upl-block-list-block-next 'block-ptr))
+                   (:= index 0)
+                   ))
+           ; copy objects
+           ,(upl-print-static-string "gc command stack size: ")
+           (call print-number (fcall gc-command-stack-size))
+           (call print-newline)
+           (:= gc-alloc-bump-ptr gc-active-arena-ptr)
+           (while (> (fcall gc-command-stack-size) 0)
+                  [
+                   ;,(upl-print-static-string "in while\n")
+                   (call pop-from-gc-command-stack (-> op-code) (-> op-arg))
+                   (cond
+                     [(= ,gc-command-move-op-code op-code)
+                      [
+                       ;,(upl-print-static-string "moving object ") (call print-object op-arg) (call print-newline)
+                       (call gc-move-obj op-arg)
+                       ]]
+                     [(= ,gc-command-update-ref-op-code op-code)
+                      [
+                       (:= obj (i64@ op-arg))
+                       (if (not (and (>= obj gc-active-arena-ptr)
+                                (< obj (+ gc-active-arena-ptr gc-active-arena-size))))
+                         [
+                          (if (= 0 ,(upl-obj-is-moved 'obj))
+                            [
+                             ,(upl-print-static-string "gc panic: updating ref of a non-moved object\n")
+                             ,(upl-exit 1)
+                             ])
+                          (i64:= op-arg ,(upl-obj-moved-ref 'obj))
+                          ])
+                       ]]
+                     [else 
+                       (
+                        ,(upl-print-static-string "bad gc command stack op-code: ")
+                        (call print-number op-arg)
+                        (call print-newline)
+                        (call print-stack-trace)
+                        ,(upl-exit 1)
+                        )]
+                     )
+                   ])
+           (:= run-gc-recursive-guard 0)
+           (:= index 0)
+           ; TODO remove memzero
+           (call memzero gc-inactive-arena-ptr gc-inactive-arena-size)
+           ])
+    ; gc algorithm
+    ;   - gc stack contains commands
+    ;       - 'move object command (obj ref arg)' - moves the specified object to the new space
+    ;       - 'update object ref (pointer to obj's pointer (another obj field or root slot)' - updates the object field
+    ;   - allocate new object space
+    ;   - put gc roots to the command stack ('move' and 'update-ref' commands)
+    ;       - value stack
+    ;       - local value stack
+    ;       - literals
+    ;   move all objects
+    ;   - while there are commands on the stack
+    ;       - pop one command from the stack
+    ;           - 'move'
+    ;               - if the object's 'move' flag is not set, then
+    ;                   - copy the object to the new space
+    ;                   - set 'moved' flag in the original object
+    ;                   - put new address to the first field of the object in the old space
+    ;                   - push 'update refs' commands to the command stack
+    ;                       - object's refs that are not in the new space
+    ;                   - push 'move' commands to the command stack
+    ;                       - object's refs that are not in the new space
+    ;           - 'update object ref'
+    ;               - if object ref is not in the new space yet, then
+    ;                   - update the ref
+
     (func allocate-i64 (num) ((addr 0))
-          ((call gc-malloc (-> addr) 10)
-           (u8:=  addr 0)
+          (
+           (:= addr (fcall gc-malloc 10))
+           (u8:=  addr 0) ;moved flag
            (u8:=  (+ addr 1) ,i64-obj-type-id)
            (i64:= (+ addr 2) num)
            (return-val addr)))
     (func allocate-pair (first second) ((addr 0))
-          ((call gc-malloc (-> addr) 18)
-          (u8:=  addr 0)
-          (u8:=  (+ addr 1) ,pair-obj-type-id)
-          (i64:= (+ addr 2) first)
-          (i64:= (+ addr 10) second)
-          (return-val addr)))
+          (
+           (:= addr (fcall gc-malloc 18))
+           (u8:=  addr 0)
+           (u8:=  (+ addr 1) ,pair-obj-type-id)
+           (i64:= (+ addr 2) first)
+           (i64:= (+ addr 10) second)
+           (return-val addr)
+           ))
     (func allocate-procedure (fptr nargs nfields) ((addr 0))
           (
            (if (< nargs 0)
@@ -361,7 +669,7 @@
               (call print-stack-trace)
               ,(upl-exit 1)
               ))
-           (call gc-malloc (-> addr) (+ (* 8 nfields) ,(+ 24 2)))
+           (:= addr (fcall gc-malloc (+ (* 8 nfields) ,(+ 24 2))))
            (u8:=  addr 0)
            (u8:=  (+ addr 1) ,procedure-obj-type-id)
            (i64:= (+ addr 2) fptr)
@@ -420,9 +728,18 @@
            (call add-item-to-block-list (-> symbol-block-list) symbol)
            (return-val symbol)
            ))
+    (func zero-if-heap-object (obj) ([type-id (fcall obj-type-id obj)])
+          [
+           (cond
+             [(= type-id ,nil-obj-type-id) [(return-val 1)]]
+             [(= type-id ,boolean-obj-type-id) [(return-val 1)]]
+             [(= type-id ,symbol-obj-type-id) [(return-val 1)]]
+             [else [(return-val 0)]])
+           ])
 
     (proc call-lisp-procedure (nargs) ((lisp-proc 0))
           (
+           (call print-lisp-stack)
            (:= lisp-proc (fcall peek-lisp-stack 0)) 
            ,(upl-check-lisp-type 'lisp-proc procedure-obj-type-id "trying to call a non-procedure object")
            (if (!= nargs ,(upl-obj-procedure-nargs 'lisp-proc))
@@ -585,19 +902,27 @@
                (call print-object ,(upl-obj-pair-cdr 'obj))
                ,(upl-print-static-string ")")
                ))
+             [(= obj-type-id ,procedure-obj-type-id)
+              (
+               ,(upl-print-static-string "<procedure>")
+               )]
              [(= obj-type-id ,symbol-obj-type-id)
               (
                (call write-to-stdout ,(upl-obj-symbol-name-buf 'obj) ,(upl-obj-symbol-name-length 'obj))
                )]
              (else (
-                    ,(upl-print-static-string "bad obj-type\n")
+                    ,(upl-print-static-string "bad obj-type: ")
+                    (call print-number obj-type-id)
+                    (call print-newline)
+                    (call print-stack-trace)
+                    ,(upl-exit 1)
                     )))
            ))
     (proc init-globals () ()
           (
            (call init-lisp-stack)
            (call init-lisp-local-val-stack)
-           (call init-lisp-fp-stack)
+           (call init-gc)
            (call init-symbol-allocator)
            (call init-symbol-block-list)
            (call init-literals-block-list)
@@ -616,20 +941,18 @@
                    ))
            (call print-block-list-values (-> block-list))
            ))
-    (proc tests () ((tmp 0))
-          (
-           ,(upl-print-static-string "test mmap\n")
-           (:= tmp (fcall syscall-mmap-anon 4096))
-           (u8:= (+ 4095 tmp) 100)
-           ,(upl-print-static-string "test mremap\n")
-           (:= tmp (fcall syscall-mremap-maymove tmp 4096 (* 2 4096)))
-           (call print-number (u8@ (+ 4095 tmp)))
-           (call print-newline)
-           (call push-to-lisp-stack 999)
-           (call drop-lisp-stack 0)
-           (call print-number (fcall peek-lisp-stack 0))
-           (call print-newline)
-           ))
+    (proc print-lisp-stack () ([ptr 0])
+          [
+           (:= ptr lisp-stack-ptr)
+           ,(upl-print-static-string "=== lisp stack top ===\n")
+           (while (>= ptr lisp-stack-bottom)
+                  [
+                   (call print-object (i64@ ptr))
+                   (call print-newline)
+                   (:-= ptr 8)
+                   ])
+           ,(upl-print-static-string "=== lisp stack bottom ===\n")
+           ])
     ))
 
 (define upl-compiler (new-upl-compiler lisp-globals))
@@ -971,12 +1294,27 @@
 (define (compile-top-level-lisp-expression expr)
   (compile-lisp-expression expr '() '()))
 
-((upl-compiler-run upl-compiler) '() 
+((upl-compiler-run upl-compiler) '([handle 0]) 
                                  '(
                                    ;(call tests)
+                                   (call push-to-lisp-stack (fcall allocate-i64 42))
+                                   (:= handle (fcall allocate-number-literal 42))
+                                   (call run-gc)
+                                   ,(upl-debug-print-hex-value "literal obj: " '(i64@ handle))
+                                   (call print-object (i64@ handle))
+                                   (call print-newline)
+                                   (call run-gc)
+
+                                  ; (call print-lisp-stack)
+                                   (block ,(compile-top-level-lisp-expression 
+                                             '((lambda (x) (+ x 2)) 1)
+                                             ))
+                                   (call run-gc)
+
+
+                                   ;,(upl-exit 0)
                                    (block ,(compile-top-level-lisp-expression '(define a 42)))
                                    ;(block ,(compile-lisp-expression '(begin (* a nil) 4242) '()))
-                                   ;(block ,(compile-lisp-expression ''a '()))
                                    (block ,(compile-top-level-lisp-expression ''(1 2 3)))
                                    (call print-object (fcall pop-lisp-stack))
                                    (call print-newline)
