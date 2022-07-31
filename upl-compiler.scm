@@ -161,6 +161,21 @@
             ))
         "set-i64-imm-ptr"))
 
+(define (set-i64-instruction-imm-label-ptr label)
+    (list 14 
+          (lambda (ptr label-locator)
+            (let ([label-ptr (label-locator label (list 'absolute-i64 label (+ ptr 2)))])
+              [begin
+                (write-mem-byte       ptr  #x48) ; mov rax, label-ptr
+                (write-mem-byte (+ 1  ptr) #xb8)
+                (write-mem-i64  (+ 2  ptr) label-ptr)
+                (write-mem-byte (+ 10 ptr) #x5f) ; pop rdi
+                (write-mem-byte (+ 11 ptr) #x48) ; mov [rax], rdi
+                (write-mem-byte (+ 12 ptr) #x89)
+                (write-mem-byte (+ 13 ptr) #x38)
+                ]))
+          (list "set-i64-imm-label-ptr" label)))
+
 (define set-i64-instruction
   (list 5 
         (lambda (ptr)
@@ -523,12 +538,12 @@
       ((equal? '-> (car expr))
        (let ([var (car (cdr expr))]
              [var-index (index-of local-vars var)]
-             [global-var-ptr (alist-lookup (context-globals-mapping context) var)])
+             [global-var-label (alist-lookup (context-globals-mapping context) var)])
          (cond [(not-empty? var-index)
                 (append (list (push-var-addr-instruction var-index))
                         rest)]
-               [(not-empty? global-var-ptr)
-                (append (list (push-imm-instruction global-var-ptr))
+               [(not-empty? global-var-label)
+                (append (list (push-label-pointer-instruction global-var-label))
                         rest)]
                [else (panic "ref: bad variable:" var)])))
       (else
@@ -543,12 +558,12 @@
   (let ((local-vars (context-local-vars context))
         (var-index (index-of local-vars expr))
         (globals-mapping (context-globals-mapping context))
-        (global-var-ptr (alist-lookup globals-mapping expr)))
+        (global-var-label (alist-lookup globals-mapping expr)))
     (cond
       ((not-empty? var-index) (cons (push-var-instruction var-index) rest))
-      ((not-empty? global-var-ptr) (append
+      ((not-empty? global-var-label) (append
                                      (list
-                                       (push-imm-instruction global-var-ptr)
+                                       (push-label-pointer-instruction global-var-label)
                                        get-i64-instruction)
                                      rest))
       ((number? expr) (cons (push-imm-instruction expr) rest))
@@ -647,7 +662,7 @@
            (let ((var (car stmt-args))
                  (var-index (index-of local-vars var))
                  (globals-mapping (context-globals-mapping context))
-                 (global-var-ptr (alist-lookup globals-mapping var))
+                 (global-var-label (alist-lookup globals-mapping var))
                  (val-expr (car (cdr stmt-args))))
              (assert-stmt (list ":= has 2 args, not:" stmt-args) (= (length stmt-args) 2))
              (cond
@@ -655,9 +670,9 @@
                                          val-expr
                                          (list (set-var-instruction var-index))
                                          context))
-               ((not-empty? global-var-ptr) (compile-expression-rec
+               ((not-empty? global-var-label) (compile-expression-rec
                                               val-expr
-                                              (list (set-i64-instruction-imm-ptr global-var-ptr))
+                                              (list (set-i64-instruction-imm-label-ptr global-var-label))
                                               context))
                (else (panic "set-var: bad variable:" var)))
              ))
@@ -910,7 +925,7 @@
                                   (arity number?)))
 
 
-(define (compile-upl-to-native upl-code globals-mapping compiled-func-list)
+(define (compile-upl-to-native upl-code globals-ptr-mapping compiled-func-list)
   (let ((existing-upl-func-and-ptrs
           (map (lambda (compiled-func)
                  (list
@@ -929,6 +944,9 @@
                     (ptr (second f-and-p)))
                 (cons (upl-func-label upl-func) ptr)))
             existing-upl-func-and-ptrs))
+        [globals-labels (map (lambda (_) (new-label)) globals-ptr-mapping)]
+        [globals-mapping (zip (map car globals-ptr-mapping) globals-labels)]
+        [globals-labels-locations (zip globals-labels (map cdr globals-ptr-mapping))]
         (upl-func-list-and-insts (compile-upl upl-code globals-mapping existing-upl-funcs))
         (upl-func-list (first upl-func-list-and-insts))
         (instructions (second upl-func-list-and-insts))
@@ -939,7 +957,11 @@
         (inst-locations (prefix-sum exec-buffer inst-sizes))
         (with-locations (zip instructions inst-locations))
         (insts-and-locations (filter (lambda (x) (not (label? (car x)))) with-locations))
-        (labels-and-locations (append (filter (lambda (x) (label? (car x))) with-locations) existing-labels))
+        (labels-and-locations (--- append
+                                   globals-labels-locations
+                                   existing-labels
+                                   (filter (lambda (x) (label? (car x))) with-locations)
+                                   ))
         (label-locator (lambda (label label-def) (alist-lookup labels-and-locations label))))
     (foreach (lambda (i-and-loc)
                (let ((inst (car i-and-loc))
@@ -1232,22 +1254,22 @@
                              [get-functions procedure?]))
 
 (define (new-upl-compiler globals)
-  (let ((proc-dict-ptr (syscall-mmap-anon 4096))
-        (tmp-4k-buffer (syscall-mmap-anon 4096))
-        (globals-buffer (syscall-mmap-anon (* 8 (length globals))))
-        (globals-mapping (zip globals
-                              (map (lambda (i) (+ globals-buffer (* 8 i))) (range (length globals)))))
-        (core-functions
-          (compile-upl-to-native (core-upl-code proc-dict-ptr tmp-4k-buffer) globals-mapping '()))
-        (func-list-cell (cell core-functions))
-        (get-functions (lambda () (cell-get func-list-cell)))
-        (compile-next (lambda (code)
+  (let ([proc-dict-ptr (syscall-mmap-anon 4096)]
+        [tmp-4k-buffer (syscall-mmap-anon 4096)]
+        [globals-buffer (syscall-mmap-anon (* 8 (length globals)))]
+        [globals-ptrs (map (lambda (i) (+ globals-buffer (* 8 i))) (range (length globals)))]
+        [globals-mapping (zip globals globals-ptrs)]
+        [core-functions
+          (compile-upl-to-native (core-upl-code proc-dict-ptr tmp-4k-buffer) globals-mapping '())]
+        [func-list-cell (cell core-functions)]
+        [get-functions (lambda () (cell-get func-list-cell))]
+        [compile-next (lambda (code)
                         (let ((new-funcs (compile-upl-to-native code globals-mapping (cell-get func-list-cell)))
                               (all-funcs (append new-funcs (cell-get func-list-cell))))
                           (cell-set func-list-cell all-funcs)
                           (create-proc-dict proc-dict-ptr all-funcs)
-                          new-funcs)))
-        (run (lambda (locals code)
+                          new-funcs))]
+        [run (lambda (locals code)
                (let ((main-func-code 
                        '(
                          (proc main () ,(append '((syscall-ret 0)
@@ -1281,9 +1303,9 @@
                                 ))
                          ))
                      (compiled-func-list (compile-upl-to-native main-func-code globals-mapping (cell-get func-list-cell))))
-                 (native-call (compiled-upl-func-ptr (first compiled-func-list))))))
-        (global-value (lambda (var) 
-                        (read-mem-i64 (alist-lookup globals-mapping var)))))
+                 (native-call (compiled-upl-func-ptr (first compiled-func-list)))))]
+        [global-value (lambda (var) 
+                        (read-mem-i64 (alist-lookup globals-mapping var)))])
     ; TODO: unmap exec memory?
     (create-upl-compiler compile-next run global-value get-functions)))
 
