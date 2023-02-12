@@ -365,7 +365,7 @@
   (list 5
         (lambda (ptr label-locator)
           (generate-jmp ptr (+ 
-                              ; assume that the first instruction of the function is save-frame-pointer-instruction
+                              ; assume that the first instruction of the function is save-frame-pointer-instruction and skip it
                               (first save-frame-pointer-instruction)
                               (assert (label-locator target-label (list 'relative-i32 target-label (+ ptr 1) 4)) not-empty? "jmp target"))))
         (list "tail-call" target-label)))
@@ -918,11 +918,114 @@
       instructions)))
 
 
+; object code file
+; external functions references list - to link call sites\function-pointers\tail call sites to the actual functions
+; globals list - mapping from global variable name (symbol) to pointer offset
+; internal constants list - for function-pointer handling
+; list of defined functions
+(define-struct upl-object-code
+               (
+                [external-globals list?] ; (global name (symbol) -> pointer offset) list
+                [internal-constants list?] ; (pointer offset, value, value offset) list
+                [external-func-references list?] ; (function name (symbol),  rel-i32 offset and stuff) list
+                [func-list list?] ; functions list
+                [code number?] ; pointer to code
+                [code-size number?] ; code size
+                ))
+
 (define-struct compiled-upl-func ((name symbol?)
                                   (type symbol?)
                                   (ptr number?)
                                   (size (lambda (size) (and (number? size) (>= size 0))))
                                   (arity number?)))
+
+
+(define (collect-strings x)
+  (cond [(pair? x) (append (collect-strings (car x)) (collect-strings (cdr x)))]
+        [(string? x) (list x)]
+        [else '()]))
+
+(define (compile-upl-to-object-code upl-code global-vars existing-upl-funcs)
+  (let ([globals-labels (map (lambda (_) (new-label)) global-vars)]
+        [globals-mapping (zip global-vars globals-labels)]
+        [code-strings (collect-strings upl-code)]
+        [_ (println (list "code strings" code-strings))]
+        [upl-func-list-and-insts (compile-upl upl-code globals-mapping existing-upl-funcs)]
+        [upl-func-list (first upl-func-list-and-insts)]
+        [instructions (second upl-func-list-and-insts)]
+        [_ [begin
+             (print-instructions instructions)
+             ]]
+        [_ (validate-stack-machine-code instructions)]
+        [inst-sizes (map instruction-size instructions)]
+        [total-code-size (foldl + 0 inst-sizes)]
+        ;[code-buffer (syscall-mmap-anon total-code-size)]
+        [code-buffer (syscall-mmap-anon-exec total-code-size)]
+        [inst-locations (prefix-sum code-buffer inst-sizes)]
+        [with-locations (zip instructions inst-locations)]
+        [insts-and-locations (filter (lambda (x) (not (label? (car x)))) with-locations)]
+        [labels-and-locations 
+                              ;(--- append
+                                  ; globals-labels-locations
+                                  ; existing-labels
+                                   (filter (lambda (x) (label? (car x))) with-locations)
+                                  ; )
+        ]
+        [_ [begin
+             (println "code-buffer:")
+             (println code-buffer)
+             (println "labels:")
+             (foreach println labels-and-locations)
+             ]]
+        [internal-labels-and-locations 
+          (filter (lambda (x) (label? (car x))) with-locations)]
+        [internal-labels (filter label? instructions)]
+        [label-locator (lambda (label label-def)
+                         [begin
+                           (println label-def)
+                           (alist-lookup labels-and-locations label)
+                           ])
+                         ])
+    (foreach (lambda (i-and-loc)
+               (let ((inst (car i-and-loc))
+                     (loc (cdr i-and-loc))
+                     (generator (second inst)))
+                 (if (= (arity generator) 2)
+                   (generator loc label-locator)
+                   (generator loc))))
+             insts-and-locations)
+
+    (let ([resolved-funcs
+            (map (lambda (upl-func)
+                   (let ((name (upl-func-name upl-func))
+                         (ptr (assert (alist-lookup labels-and-locations (upl-func-label upl-func)) not-empty? (list "label location lookup" upl-func)))
+                         (arity (upl-func-arity  upl-func))
+                         (type (upl-func-type upl-func)))
+                     (list name ptr arity type)))
+                 upl-func-list)]
+          [last-ptr (+ code-buffer total-code-size)]
+          [compiled-funcs
+            (map (lambda (prev-next-pair)
+                   (let ((prev (car prev-next-pair))
+                         (next (cdr prev-next-pair))
+                         (name (first prev))
+                         (ptr (second prev))
+                         (arity (nth 2 prev))
+                         (type (nth 3 prev))
+                         (next-ptr (second next)))
+                     (create-compiled-upl-func name type ptr (- next-ptr ptr) arity)))
+                 (zip
+                   resolved-funcs
+                   (append (cdr resolved-funcs) (list (list '() last-ptr)))))])
+
+      (create-upl-object-code '() ; globals
+                              '() ; internal constants
+                              '()
+                              compiled-funcs
+                              code-buffer
+                              total-code-size)
+      ))
+    )
 
 
 (define (compile-upl-to-native upl-code globals-ptr-mapping compiled-func-list)
@@ -962,7 +1065,8 @@
                                    existing-labels
                                    (filter (lambda (x) (label? (car x))) with-locations)
                                    ))
-        (label-locator (lambda (label label-def) (alist-lookup labels-and-locations label))))
+        [internal-labels (filter label? instructions)]
+        [label-locator (lambda (label label-def) (alist-lookup labels-and-locations label)) ])
     (foreach (lambda (i-and-loc)
                (let ((inst (car i-and-loc))
                      (loc (cdr i-and-loc))
@@ -972,7 +1076,7 @@
                    (generator loc))))
              insts-and-locations)
 
-    (let ((resolved-labels
+    (let ((resolved-funcs
             (map (lambda (upl-func)
                    (let ((name (upl-func-name upl-func))
                          (ptr (assert (alist-lookup labels-and-locations (upl-func-label upl-func)) not-empty? (list "label location lookup" upl-func)))
@@ -991,8 +1095,8 @@
                    (next-ptr (second next)))
                (create-compiled-upl-func name type ptr (- next-ptr ptr) arity)))
            (zip
-             resolved-labels
-             (append (cdr resolved-labels) (list (list '() last-ptr))))))))
+             resolved-funcs
+             (append (cdr resolved-funcs) (list (list '() last-ptr))))))))
 
 
 ; returns (list string-ptr string-length)
